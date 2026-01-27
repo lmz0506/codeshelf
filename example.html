@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CodeShelf · 代码书架</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* ====== b 色系 ====== */
+:root{
+  --bg:#f5f7fa;
+  --card:#ffffff;
+  --primary:#0066ff;
+  --primary-light:#e5f0ff;
+  --text:#2c3e50;
+  --text-light:#7f8c8d;
+  --border:#e0e6ed;
+  --star:#ffb400;
+  --shadow:0 4px 16px rgba(0,0,0,.06);
+  --radius:12px;
+  --transition:.25s ease;
+  --nav-width:180px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:"PingFang SC","Helvetica Neue",Arial,sans-serif;display:flex;min-height:100vh;}
+a{color:inherit;text-decoration:none;}
+/* ====== 左侧抽屉 ====== */
+nav{
+  width:var(--nav-width);
+  background:var(--card);
+  border-right:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  padding:20px 0;
+  box-shadow:var(--shadow);
+  transition:var(--transition);
+  flex-shrink:0;
+}
+nav.collapsed{margin-left:calc(-1 * var(--nav-width));}
+nav .logo{font-size:22px;font-weight:600;letter-spacing:1px;text-align:center;margin-bottom:20px;}
+nav .menu{flex:1;display:flex;flex-direction:column;gap:8px;padding:0 16px;}
+nav .menu a{padding:10px 14px;border-radius:var(--radius);font-size:15px;display:flex;align-items:center;gap:8px;transition:var(--transition);}
+nav .menu a:hover,nav .menu a.active{background:var(--primary-light);color:var(--primary);}
+/* ====== 主区域 ====== */
+.main-wrap{flex:1;display:flex;flex-direction:column;transition:var(--transition);}
+header{display:flex;align-items:center;gap:12px;padding:14px 20px;box-shadow:var(--shadow);background:var(--card);}
+header .toggle{font-size:24px;cursor:pointer;}
+header .search-center{flex:1;display:flex;justify-content:center;align-items:center;gap:12px;}
+header .search-box{position:relative;width:100%;max-width:420px;}
+header .search-box input{width:100%;padding:8px 36px 8px 14px;border:1px solid var(--border);border-radius:24px;outline:none;transition:var(--transition);}
+header .search-box input:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-light);}
+header .search-box button{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:var(--primary);color:#fff;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;}
+header .filter-chk{margin-left:12px;font-size:14px;display:flex;gap:12px;}
+header .actions{margin-left:auto;display:flex;gap:8px;}
+.btn{padding:8px 16px;border-radius:24px;border:1px solid var(--border);background:var(--card);cursor:pointer;transition:var(--transition);font-size:14px;}
+.btn:hover{border-color:var(--primary);color:var(--primary);}
+.btn-primary{background:var(--primary);color:#fff;border:none;}
+.btn-primary:hover{background:#0051d5;color:#fff;}
+/* ====== 分类条 ====== */
+.cat-bar{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--card);box-shadow:var(--shadow);margin:0 20px;border-radius:var(--radius);}
+.cat-bar .cat-list{display:flex;gap:8px;flex-wrap:wrap;}
+.cat-bar .cat{cursor:pointer;padding:4px 10px;border-radius:12px;background:var(--primary-light);color:var(--primary);font-size:13px;transition:var(--transition);}
+.cat-bar .cat.active,.cat-bar .cat:hover{background:var(--primary);color:#fff;}
+/* ====== 书架网格 ====== */
+.shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:20px;padding:20px;}
+.project-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;display:flex;flex-direction:column;transition:var(--transition);}
+.project-card:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(0,0,0,.08);}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.card-header h4{font-size:17px;font-weight:600;}
+.star{font-size:20px;color:var(--star);cursor:pointer;transition:var(--transition);}
+.star:hover{transform:scale(1.2);}
+.card-meta{font-size:13px;color:var(--text-light);margin-bottom:6px;}
+.card-cat{font-size:12px;margin-bottom:8px;}
+.card-path{font-size:13px;color:var(--text-light);background:#f8f9fb;padding:6px 10px;border-radius:6px;margin-bottom:14px;word-break:break-all;}
+.card-footer{margin-top:auto;display:flex;align-items:center;justify-content:space-between;}
+.status{font-size:12px;padding:4px 10px;border-radius:12px;background:var(--primary-light);color:var(--primary);}
+.card-actions{display:flex;gap:8px;}
+.icon-btn{width:32px;height:32px;border-radius:6px;border:1px solid var(--border);background:var(--card);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:var(--transition);}
+.icon-btn:hover{border-color:var(--primary);color:var(--primary);}
+/* ====== 响应式 ====== */
+@media(max-width:768px){
+  .shelf{grid-template-columns:1fr}
+}
+</style>
+<base target="_blank">
+<base target="_blank">
+</head>
+<body>
+<nav id="nav">
+  <div class="logo">📚 CodeShelf</div>
+  <div class="menu">
+    <a href="#" class="active">📖 书架</a>
+    <a href="#">📊 统计</a>
+    <a href="#">⚙️ 设置</a>
+  </div>
+</nav>
+
+<div class="main-wrap">
+  <header>
+    <span class="toggle" id="toggleNav">☰</span>
+    <div class="search-center">
+      <div class="search-box">
+        <input id="searchInput" placeholder="搜索项目…">
+        <button>🔍</button>
+      </div>
+      <div class="filter-chk">
+        <label><input type="checkbox" id="chkStar"> 只看收藏</label>
+        <label><input type="checkbox" id="chkModified"> 只看待提交</label>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="addCateBtn">+ 分类</button>
+      <button class="btn btn-primary" id="addProjBtn">+ 项目</button>
+    </div>
+  </header>
+
+  <div class="cat-bar">
+    <span style="font-size:14px;color:var(--text-light)">分类：</span>
+    <div class="cat-list" id="catList"></div>
+  </div>
+
+  <section class="shelf" id="shelf"></section>
+</div>
+
+<script>
+/* ====== 初始数据 ====== */
+let projects = [
+  {name:'activity-api',repo:'@Gitee',branch:'master',path:'C:\\work\\项目\\微信活动小程序\\activity-api',modified:true,starred:false,category:'小程序'},
+  {name:'aes',repo:'@Gitee',branch:'master',path:'C:\\work\\项目\\测试aes',modified:true,starred:true,category:'工具'},
+  {name:'alldata',repo:'☆GitHub',branch:'master',path:'C:\\work\\项目\\数据平台\\alldata',modified:true,starred:false,category:'平台'},
+  {name:'applet-chatgpt',repo:'@Gitee',branch:'dev',path:'C:\\work\\项目\\chatGPT\\applet-chatgpt',modified:true,starred:false,category:'小程序'},
+  {name:'bjsrp',repo:'@Gitee',branch:'master',path:'C:\\work\\项目\\bjsrp',modified:true,starred:true,category:'平台'},
+  {name:'btrace',repo:'☆GitHub',branch:'develop',path:'C:\\work\\项目\\btrace',modified:true,starred:false,category:'工具'},
+  {name:'calcite',repo:'☆GitHub',branch:'main',path:'C:\\work\\项目\\开源的工具包集合\\calcite',modified:true,starred:true,category:'工具'},
+  {name:'Chat2DB',repo:'☆GitHub',branch:'main',path:'C:\\work\\项目\\db管理工具\\Chat2DB',modified:true,starred:false,category:'工具'}
+];
+let categories = ['小程序','平台','工具','其他'];
+let activeCat = '全部';
+
+/* ====== 持久化 ====== */
+function load(){
+  const c = localStorage.getItem('cs_categories');
+  const p = localStorage.getItem('cs_projects');
+  if(c) categories=JSON.parse(c);
+  if(p) projects=JSON.parse(p);
+}
+function save(){
+  localStorage.setItem('cs_categories',JSON.stringify(categories));
+  localStorage.setItem('cs_projects',JSON.stringify(projects));
+}
+load();
+
+/* ====== DOM ====== */
+const $=s=>document.querySelector(s);
+const shelf=$('#shelf'),catList=$('#catList'),searchInput=$('#searchInput');
+const chkStar=$('#chkStar'),chkModified=$('#chkModified');
+const toggleNav=$('#toggleNav'),nav=$('#nav');
+
+/* ====== 渲染分类条 ====== */
+function renderCats(){
+  catList.innerHTML='';
+  ['全部',...categories].forEach(c=>{
+    const span=document.createElement('span');
+    span.className='cat'+(c===activeCat?' active':'');
+    span.textContent=c;
+    span.onclick=()=>{activeCat=c;render();};
+    catList.appendChild(span);
+  });
+}
+/* ====== 渲染书架 ====== */
+function render(){
+  const kw=searchInput.value.trim().toLowerCase();
+  const onlyStar=chkStar.checked,onlyMod=chkModified.checked;
+  const list=projects.filter(p=>{
+    if(activeCat!=='全部'&&p.category!==activeCat) return false;
+    if(onlyStar&&!p.starred) return false;
+    if(onlyMod&&!p.modified) return false;
+    if(kw&&!p.name.toLowerCase().includes(kw)) return false;
+    return true;
+  });
+  shelf.innerHTML='';
+  list.forEach(p=>{
+    const card=document.createElement('div');
+    card.className='project-card';
+    card.innerHTML=`
+      <div class="card-header">
+        <h4>${p.name}</h4>
+        <span class="star" title="${p.starred?'取消收藏':'收藏'}">${p.starred?'★':'☆'}</span>
+      </div>
+      <div class="card-meta">${p.repo} · ${p.branch}</div>
+      <div class="card-cat">分类：${p.category}</div>
+      <div class="card-path">${p.path}</div>
+      <div class="card-footer">
+        <span class="status">${p.modified?'有修改':'无修改'}</span>
+        <div class="card-actions">
+          <button class="icon-btn" title="编辑器">📝</button>
+          <button class="icon-btn" title="终端">💻</button>
+        </div>
+      </div>`;
+    const starBtn=card.querySelector('.star');
+    starBtn.onclick=()=>{p.starred=!p.starred;save();render();};
+    shelf.appendChild(card);
+  });
+}
+/* ====== 事件绑定 ====== */
+searchInput.oninput=render;
+chkStar.onchange=render;
+chkModified.onchange=render;
+toggleNav.onclick=()=>nav.classList.toggle('collapsed');
+
+/* ====== 动态增/改分类 ====== */
+$('#addCateBtn').onclick=()=>{
+  const name=prompt('新分类名称：')?.trim();
+  if(name&&!categories.includes(name)){categories.push(name);save();renderCats();render();}
+};
+/* ====== 初始渲染 ====== */
+renderCats();render();
+</script>
+</body>
+</html>
