@@ -7,9 +7,9 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Button, Input } from "@/components/ui";
-import { ProjectCard } from "@/components/project";
+import { ProjectCard, ScanResultDialog, ProjectDetailDialog } from "@/components/project";
 import { useAppStore } from "@/stores/appStore";
-import type { Project } from "@/types";
+import type { Project, GitRepo } from "@/types";
 import { getProjects, addProject } from "@/services/db";
 import { scanDirectory } from "@/services/git";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -24,6 +24,8 @@ export function ShelfPage() {
     setSearchQuery,
   } = useAppStore();
   const [loading, setLoading] = useState(true);
+  const [scanResults, setScanResults] = useState<GitRepo[] | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
   useEffect(() => {
     loadProjects();
@@ -77,30 +79,54 @@ export function ShelfPage() {
       if (selected) {
         setLoading(true);
         const repos = await scanDirectory(selected as string);
-        const newProjects: Project[] = [];
 
-        for (const repo of repos) {
-          // Check if project already exists
-          if (!projects.some((p) => p.path === repo.path)) {
-            try {
-              const project = await addProject({
-                name: repo.name,
-                path: repo.path,
-                tags: [],
-              });
-              newProjects.push(project);
-            } catch {
-              // Project might already exist, skip
-            }
-          }
-        }
+        // Filter out already added projects
+        const newRepos = repos.filter(
+          repo => !projects.some(p => p.path === repo.path)
+        );
 
-        if (newProjects.length > 0) {
-          setProjects([...projects, ...newProjects]);
+        if (newRepos.length > 0) {
+          setScanResults(newRepos);
+        } else {
+          // Show message that no new repos found
+          alert("未找到新的 Git 仓库");
         }
       }
     } catch (error) {
       console.error("Failed to scan directory:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleConfirmScan(selectedPaths: string[]) {
+    try {
+      setLoading(true);
+      const newProjects: Project[] = [];
+
+      for (const path of selectedPaths) {
+        const repo = scanResults?.find(r => r.path === path);
+        if (repo) {
+          try {
+            const project = await addProject({
+              name: repo.name,
+              path: repo.path,
+              tags: [],
+            });
+            newProjects.push(project);
+          } catch (error) {
+            console.error(`Failed to add project ${repo.name}:`, error);
+          }
+        }
+      }
+
+      if (newProjects.length > 0) {
+        setProjects([...projects, ...newProjects]);
+      }
+
+      setScanResults(null);
+    } catch (error) {
+      console.error("Failed to add projects:", error);
     } finally {
       setLoading(false);
     }
@@ -190,13 +216,14 @@ export function ShelfPage() {
             <p className="text-sm">点击"添加项目"或"扫描目录"开始使用</p>
           </div>
         ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {sortedProjects.map((project) => (
               <ProjectCard
                 key={project.id}
                 project={project}
                 viewMode="grid"
                 onUpdate={handleProjectUpdate}
+                onShowDetail={setSelectedProject}
               />
             ))}
           </div>
@@ -208,11 +235,29 @@ export function ShelfPage() {
                 project={project}
                 viewMode="list"
                 onUpdate={handleProjectUpdate}
+                onShowDetail={setSelectedProject}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Scan Result Dialog */}
+      {scanResults && (
+        <ScanResultDialog
+          repos={scanResults}
+          onConfirm={handleConfirmScan}
+          onCancel={() => setScanResults(null)}
+        />
+      )}
+
+      {/* Project Detail Dialog */}
+      {selectedProject && (
+        <ProjectDetailDialog
+          project={selectedProject}
+          onClose={() => setSelectedProject(null)}
+        />
+      )}
     </div>
   );
 }

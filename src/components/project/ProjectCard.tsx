@@ -7,38 +7,63 @@ import {
   ExternalLink,
   Terminal,
   MoreVertical,
+  Github,
+  Globe,
+  HardDrive,
 } from "lucide-react";
-import type { Project, GitStatus } from "@/types";
-import { getGitStatus } from "@/services/git";
+import type { Project, GitStatus, RemoteInfo } from "@/types";
+import { getGitStatus, getRemotes } from "@/services/git";
 import { openInEditor, openInTerminal, toggleFavorite } from "@/services/db";
 
 interface ProjectCardProps {
   project: Project;
   viewMode: "grid" | "list";
   onUpdate?: (project: Project) => void;
+  onShowDetail?: (project: Project) => void;
 }
 
-export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
+export function ProjectCard({ project, viewMode, onUpdate, onShowDetail }: ProjectCardProps) {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
+  const [remoteType, setRemoteType] = useState<"github" | "gitee" | "gitlab" | "other" | "none">("none");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadGitStatus();
+    loadGitInfo();
   }, [project.path]);
 
-  async function loadGitStatus() {
+  async function loadGitInfo() {
     try {
       setLoading(true);
-      const status = await getGitStatus(project.path);
+      const [status, remotes] = await Promise.all([
+        getGitStatus(project.path),
+        getRemotes(project.path),
+      ]);
       setGitStatus(status);
+
+      // Determine remote type
+      if (remotes.length > 0) {
+        const url = remotes[0].url.toLowerCase();
+        if (url.includes("github.com")) {
+          setRemoteType("github");
+        } else if (url.includes("gitee.com")) {
+          setRemoteType("gitee");
+        } else if (url.includes("gitlab")) {
+          setRemoteType("gitlab");
+        } else {
+          setRemoteType("other");
+        }
+      } else {
+        setRemoteType("none");
+      }
     } catch (error) {
-      console.error("Failed to load git status:", error);
+      console.error("Failed to load git info:", error);
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleToggleFavorite() {
+  async function handleToggleFavorite(e: React.MouseEvent) {
+    e.stopPropagation();
     try {
       const updated = await toggleFavorite(project.id);
       onUpdate?.(updated);
@@ -47,7 +72,8 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
     }
   }
 
-  async function handleOpenEditor() {
+  async function handleOpenEditor(e: React.MouseEvent) {
+    e.stopPropagation();
     try {
       await openInEditor(project.path);
     } catch (error) {
@@ -55,7 +81,8 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
     }
   }
 
-  async function handleOpenTerminal() {
+  async function handleOpenTerminal(e: React.MouseEvent) {
+    e.stopPropagation();
     try {
       await openInTerminal(project.path);
     } catch (error) {
@@ -63,9 +90,40 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
     }
   }
 
+  function getRemoteIcon() {
+    switch (remoteType) {
+      case "github":
+        return <Github className="w-4 h-4" />;
+      case "gitee":
+      case "gitlab":
+      case "other":
+        return <Globe className="w-4 h-4" />;
+      case "none":
+        return <HardDrive className="w-4 h-4" />;
+    }
+  }
+
+  function getRemoteLabel() {
+    switch (remoteType) {
+      case "github":
+        return "GitHub";
+      case "gitee":
+        return "Gitee";
+      case "gitlab":
+        return "GitLab";
+      case "other":
+        return "远程";
+      case "none":
+        return "本地";
+    }
+  }
+
   if (viewMode === "list") {
     return (
-      <div className="flex items-center gap-5 px-5 py-4 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl hover:border-[var(--color-border-hover)] hover:shadow-sm transition-all">
+      <div
+        onClick={() => onShowDetail?.(project)}
+        className="flex items-center gap-5 px-5 py-4 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl hover:border-[var(--color-border-hover)] hover:shadow-sm transition-all cursor-pointer"
+      >
         <button
           onClick={handleToggleFavorite}
           className={`p-1.5 rounded-lg transition-colors ${
@@ -80,6 +138,13 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
         <div className="flex-1 min-w-0">
           <h3 className="text-[var(--color-text-primary)] font-medium truncate text-[15px]">{project.name}</h3>
           <p className="text-[var(--color-text-muted)] text-sm truncate mt-1">{project.path}</p>
+        </div>
+
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-bg-tertiary)] rounded-full">
+          {getRemoteIcon()}
+          <span className="text-sm font-medium text-[var(--color-text-secondary)]">
+            {getRemoteLabel()}
+          </span>
         </div>
 
         {gitStatus && (
@@ -128,7 +193,10 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
 
   // Grid view
   return (
-    <div className="flex flex-col p-5 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl hover:border-[var(--color-border-hover)] hover:shadow-sm transition-all min-h-[180px]">
+    <div
+      onClick={() => onShowDetail?.(project)}
+      className="flex flex-col p-5 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl hover:border-[var(--color-border-hover)] hover:shadow-sm transition-all min-h-[200px] cursor-pointer"
+    >
       <div className="flex items-start justify-between mb-2">
         <h3 className="text-[var(--color-text-primary)] font-semibold truncate flex-1 pr-2 text-[15px] leading-snug">{project.name}</h3>
         <button
@@ -143,7 +211,16 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
         </button>
       </div>
 
-      <p className="text-[var(--color-text-muted)] text-sm truncate mb-5 leading-relaxed">{project.path}</p>
+      <p className="text-[var(--color-text-muted)] text-sm truncate mb-4 leading-relaxed">{project.path}</p>
+
+      <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-bg-tertiary)] rounded-full">
+          {getRemoteIcon()}
+          <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+            {getRemoteLabel()}
+          </span>
+        </div>
+      </div>
 
       {loading ? (
         <div className="h-6 bg-[var(--color-bg-tertiary)] rounded-md animate-pulse" />

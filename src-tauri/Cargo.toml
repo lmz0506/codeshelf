@@ -2,8 +2,8 @@
 name = "codeshelf"
 version = "0.1.0"
 description = "代码书架 - 本地项目管理工具"
-authors = ["you"]
-license = "MIT"
+authors = ["tan"]
+license = " Apache License 2.0"
 repository = "https://github.com/en-o/codeshelf"
 edition = "2021"
 rust-version = "1.77.2"

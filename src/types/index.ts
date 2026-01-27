@@ -8,6 +8,8 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
   lastOpened?: string;
+  remoteUrl?: string;
+  remoteType?: "github" | "gitee" | "gitlab" | "other" | "none";
 }
 
 export interface CreateProjectInput {
