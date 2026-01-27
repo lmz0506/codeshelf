@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ProjectCard, ScanResultDialog, ProjectDetailDialog } from "@/components/project";
+import { ProjectCard, ScanResultDialog, ProjectDetailDialog, AddProjectDialog, AddCategoryDialog } from "@/components/project";
 import { Minus, X, MoreVertical, Plus } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import type { Project, GitRepo } from "@/types";
@@ -17,6 +17,7 @@ export function ShelfPage() {
     searchQuery,
     setSearchQuery,
     scanDepth,
+    categories: storedCategories,
   } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [scanResults, setScanResults] = useState<GitRepo[] | null>(null);
@@ -24,14 +25,16 @@ export function ShelfPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [onlyStarred, setOnlyStarred] = useState(false);
   const [onlyModified, setOnlyModified] = useState(false);
+  const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
+  const [showAddCategoryDialog, setShowAddCategoryDialog] = useState(false);
   const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
 
   useEffect(() => {
     loadProjects();
   }, []);
 
-  // Extract unique categories (tags) from projects
-  const categories = Array.from(new Set(projects.flatMap(p => p.tags)));
+  // Extract unique categories (tags) from projects and stored categories
+  const categories = Array.from(new Set([...storedCategories, ...projects.flatMap(p => p.tags)]));
   const activeCat = selectedTags.length === 0 ? "全部" : selectedTags[0];
 
   async function loadProjects() {
@@ -103,7 +106,7 @@ export function ShelfPage() {
   }
 
 
-  async function handleConfirmScan(selectedPaths: string[]) {
+  async function handleConfirmScan(selectedPaths: string[], categories: string[]) {
     try {
       setLoading(true);
       const newProjects: Project[] = [];
@@ -115,7 +118,7 @@ export function ShelfPage() {
             const project = await addProject({
               name: repo.name,
               path: repo.path,
-              tags: [],
+              tags: categories,
             });
             newProjects.push(project);
           } catch (error) {
@@ -218,16 +221,13 @@ export function ShelfPage() {
               {
                 icon: "🏷️",
                 label: "添加分类",
-                onClick: () => {
-                  // TODO: 实现添加分类功能
-                  alert("添加分类功能待实现");
-                },
+                onClick: () => setShowAddCategoryDialog(true),
               },
             ]}
           />
 
           {/* Primary Action */}
-          <button className="re-btn re-btn-primary flex items-center gap-2" onClick={handleAddProject}>
+          <button className="re-btn re-btn-primary flex items-center gap-2" onClick={() => setShowAddProjectDialog(true)}>
             <Plus size={16} />
             <span>项目</span>
           </button>
@@ -310,6 +310,25 @@ export function ShelfPage() {
         <ProjectDetailDialog
           project={selectedProject}
           onClose={() => setSelectedProject(null)}
+          onUpdate={handleProjectUpdate}
+        />
+      )}
+
+      {/* Add Project Dialog */}
+      {showAddProjectDialog && (
+        <AddProjectDialog
+          onConfirm={(project) => {
+            setProjects([...projects, project]);
+            setShowAddProjectDialog(false);
+          }}
+          onCancel={() => setShowAddProjectDialog(false)}
+        />
+      )}
+
+      {/* Add Category Dialog */}
+      {showAddCategoryDialog && (
+        <AddCategoryDialog
+          onClose={() => setShowAddCategoryDialog(false)}
         />
       )}
     </div>

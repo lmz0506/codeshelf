@@ -33,6 +33,11 @@ interface AppState {
   // Settings
   scanDepth: number;
   setScanDepth: (depth: number) => void;
+
+  // Categories
+  categories: string[];
+  addCategory: (category: string) => void;
+  removeCategory: (category: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -75,6 +80,24 @@ export const useAppStore = create<AppState>()(
       // Settings
       scanDepth: 3,
       setScanDepth: (scanDepth) => set({ scanDepth }),
+
+      // Categories
+      categories: [],
+      addCategory: (category) =>
+        set((state) => ({
+          categories: state.categories.includes(category)
+            ? state.categories
+            : [...state.categories, category],
+        })),
+      removeCategory: (category) =>
+        set((state) => ({
+          categories: state.categories.filter((c) => c !== category),
+          // Also remove from projects
+          projects: state.projects.map((p) => ({
+            ...p,
+            tags: p.tags.filter((t) => t !== category),
+          })),
+        })),
     }),
     {
       name: "codeshelf-storage",
@@ -83,6 +106,7 @@ export const useAppStore = create<AppState>()(
         sidebarCollapsed: state.sidebarCollapsed,
         theme: state.theme,
         scanDepth: state.scanDepth,
+        categories: state.categories,
       }),
     }
   )

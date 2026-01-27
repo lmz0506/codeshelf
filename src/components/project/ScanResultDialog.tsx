@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { X, FolderGit2, Check, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { CategorySelector } from "./CategorySelector";
 import type { GitRepo } from "@/types";
 
 interface ScanResultDialogProps {
   repos: GitRepo[];
-  onConfirm: (selectedPaths: string[]) => void;
+  onConfirm: (selectedPaths: string[], categories: string[]) => void;
   onCancel: () => void;
 }
 
 export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialogProps) {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set(repos.map(r => r.path)));
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   function toggleSelection(path: string) {
     const newSelected = new Set(selectedPaths);
@@ -70,55 +72,68 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-auto px-8 py-6">
-          <div className="space-y-3">
-            {repos.map((repo) => {
-              const isSelected = selectedPaths.has(repo.path);
-              return (
-                <button
-                  key={repo.path}
-                  onClick={() => toggleSelection(repo.path)}
-                  className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl transition-all text-left group ${
-                    isSelected
-                      ? "bg-[var(--primary-light)] border-2 border-[var(--primary)]"
-                      : "bg-[var(--bg-light)] border-2 border-transparent hover:border-[var(--border)] hover:shadow-sm"
-                  }`}
-                >
-                  {/* Checkbox */}
-                  <div
-                    className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+        <div className="flex-1 overflow-auto px-8 py-6 space-y-6">
+          {/* Project List */}
+          <div>
+            <h4 className="text-sm font-semibold text-[var(--text)] mb-3">选择项目</h4>
+            <div className="space-y-3">
+              {repos.map((repo) => {
+                const isSelected = selectedPaths.has(repo.path);
+                return (
+                  <button
+                    key={repo.path}
+                    onClick={() => toggleSelection(repo.path)}
+                    className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl transition-all text-left group ${
                       isSelected
-                        ? "bg-[var(--primary)] border-[var(--primary)]"
-                        : "border-[var(--border)] group-hover:border-[var(--primary)]"
+                        ? "bg-[var(--primary-light)] border-2 border-[var(--primary)]"
+                        : "bg-[var(--bg-light)] border-2 border-transparent hover:border-[var(--border)] hover:shadow-sm"
                     }`}
                   >
-                    {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
-                  </div>
+                    {/* Checkbox */}
+                    <div
+                      className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+                        isSelected
+                          ? "bg-[var(--primary)] border-[var(--primary)]"
+                          : "border-[var(--border)] group-hover:border-[var(--primary)]"
+                      }`}
+                    >
+                      {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                    </div>
 
-                  {/* Icon */}
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${
-                    isSelected ? "bg-[var(--primary)]/10" : "bg-[var(--card)]"
-                  }`}>
-                    <FolderGit2 className={`w-5 h-5 ${isSelected ? "text-[var(--primary)]" : "text-[var(--text-light)]"}`} />
-                  </div>
+                    {/* Icon */}
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${
+                      isSelected ? "bg-[var(--primary)]/10" : "bg-[var(--card)]"
+                    }`}>
+                      <FolderGit2 className={`w-5 h-5 ${isSelected ? "text-[var(--primary)]" : "text-[var(--text-light)]"}`} />
+                    </div>
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-[var(--text)] mb-0.5 truncate">
-                      {repo.name}
-                    </p>
-                    <p className="text-sm text-[var(--text-light)] truncate">
-                      {repo.path}
-                    </p>
-                  </div>
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-[var(--text)] mb-0.5 truncate">
+                        {repo.name}
+                      </p>
+                      <p className="text-sm text-[var(--text-light)] truncate">
+                        {repo.path}
+                      </p>
+                    </div>
 
-                  {/* Selected Badge */}
-                  {isSelected && (
-                    <CheckCircle2 className="w-5 h-5 text-[var(--primary)] flex-shrink-0" />
-                  )}
-                </button>
-              );
-            })}
+                    {/* Selected Badge */}
+                    {isSelected && (
+                      <CheckCircle2 className="w-5 h-5 text-[var(--primary)] flex-shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Category Selector */}
+          <div className="border-t border-[var(--border)] pt-6">
+            <CategorySelector
+              selectedCategories={selectedCategories}
+              onChange={setSelectedCategories}
+              multiple={true}
+            />
           </div>
         </div>
 
@@ -132,7 +147,7 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
               取消
             </Button>
             <Button
-              onClick={() => onConfirm(Array.from(selectedPaths))}
+              onClick={() => onConfirm(Array.from(selectedPaths), selectedCategories)}
               disabled={selectedPaths.size === 0}
             >
               确认添加

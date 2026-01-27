@@ -1,20 +1,24 @@
 import { useState, useEffect } from "react";
-import { X, GitBranch, GitCommit, ExternalLink, Terminal, Github, Globe, AlertCircle, CheckCircle } from "lucide-react";
+import { X, GitBranch, GitCommit, ExternalLink, Terminal, Github, Globe, AlertCircle, CheckCircle, Tag, Edit2 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { CategorySelector } from "./CategorySelector";
 import type { Project, GitStatus, CommitInfo, RemoteInfo } from "@/types";
 import { getGitStatus, getCommitHistory, getRemotes } from "@/services/git";
-import { openInEditor, openInTerminal } from "@/services/db";
+import { openInEditor, openInTerminal, updateProject } from "@/services/db";
 
 interface ProjectDetailDialogProps {
   project: Project;
   onClose: () => void;
+  onUpdate?: (project: Project) => void;
 }
 
-export function ProjectDetailDialog({ project, onClose }: ProjectDetailDialogProps) {
+export function ProjectDetailDialog({ project, onClose, onUpdate }: ProjectDetailDialogProps) {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingCategories, setEditingCategories] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(project.tags);
 
   useEffect(() => {
     loadProjectDetails();
@@ -54,6 +58,19 @@ export function ProjectDetailDialog({ project, onClose }: ProjectDetailDialogPro
     }
   }
 
+  async function handleSaveCategories() {
+    try {
+      const updated = await updateProject({
+        id: project.id,
+        tags: selectedCategories,
+      });
+      onUpdate?.(updated);
+      setEditingCategories(false);
+    } catch (error) {
+      console.error("Failed to update categories:", error);
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-[var(--card)] rounded-2xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col">
@@ -83,6 +100,68 @@ export function ProjectDetailDialog({ project, onClose }: ProjectDetailDialogPro
             </div>
           ) : (
             <div className="space-y-6">
+              {/* Categories Section */}
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-[var(--text)] flex items-center gap-2">
+                    <Tag className="w-5 h-5 text-[var(--text-light)]" />
+                    项目分类
+                  </h3>
+                  {!editingCategories && (
+                    <button
+                      onClick={() => setEditingCategories(true)}
+                      className="text-sm text-[var(--primary)] hover:underline font-medium flex items-center gap-1"
+                    >
+                      <Edit2 size={14} />
+                      编辑
+                    </button>
+                  )}
+                </div>
+
+                {editingCategories ? (
+                  <div className="space-y-4">
+                    <CategorySelector
+                      selectedCategories={selectedCategories}
+                      onChange={setSelectedCategories}
+                      multiple={true}
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => {
+                          setSelectedCategories(project.tags);
+                          setEditingCategories(false);
+                        }}
+                        className="px-4 py-2 border border-[var(--border)] text-[var(--text)] rounded-lg hover:bg-[var(--bg-light)] transition-colors text-sm font-medium"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleSaveCategories}
+                        className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary)]/90 transition-colors text-sm font-medium"
+                      >
+                        保存
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {project.tags.length === 0 ? (
+                      <span className="text-sm text-[var(--text-light)]">未设置分类</span>
+                    ) : (
+                      project.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-[var(--primary-light)] text-[var(--primary)] rounded-lg text-sm font-medium"
+                        >
+                          <Tag size={14} />
+                          {tag}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                )}
+              </section>
+
               {/* Git Status Cards */}
               {gitStatus && (
                 <div className="grid grid-cols-2 gap-4">

@@ -296,3 +296,28 @@ pub async fn git_fetch(path: String, remote: Option<String>) -> Result<String, S
         None => run_git_command(&path, &["fetch", "--all"]),
     }
 }
+
+#[tauri::command]
+pub async fn git_clone(url: String, target_dir: String, repo_name: String) -> Result<String, String> {
+    use std::path::PathBuf;
+
+    let target_path = PathBuf::from(&target_dir).join(&repo_name);
+    let target_path_str = target_path.to_string_lossy().to_string();
+
+    // Check if directory already exists
+    if target_path.exists() {
+        return Err(format!("Directory '{}' already exists", repo_name));
+    }
+
+    // Clone the repository
+    let output = Command::new("git")
+        .args(&["clone", &url, &target_path_str])
+        .output()
+        .map_err(|e| format!("Failed to execute git clone: {}", e))?;
+
+    if output.status.success() {
+        Ok(target_path_str)
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
