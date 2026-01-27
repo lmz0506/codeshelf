@@ -65,7 +65,7 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
 
   if (viewMode === "list") {
     return (
-      <div className="flex items-center gap-4 p-4 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl hover:border-[var(--color-border-hover)] hover:shadow-sm transition-all">
+      <div className="flex items-center gap-5 px-5 py-4 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl hover:border-[var(--color-border-hover)] hover:shadow-sm transition-all">
         <button
           onClick={handleToggleFavorite}
           className={`p-1.5 rounded-lg transition-colors ${
@@ -78,24 +78,24 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
         </button>
 
         <div className="flex-1 min-w-0">
-          <h3 className="text-[var(--color-text-primary)] font-medium truncate">{project.name}</h3>
-          <p className="text-[var(--color-text-muted)] text-sm truncate mt-0.5">{project.path}</p>
+          <h3 className="text-[var(--color-text-primary)] font-medium truncate text-[15px]">{project.name}</h3>
+          <p className="text-[var(--color-text-muted)] text-sm truncate mt-1">{project.path}</p>
         </div>
 
         {gitStatus && (
-          <div className="flex items-center gap-4 text-sm">
-            <div className="flex items-center gap-1.5 text-[var(--color-text-tertiary)]">
+          <div className="flex items-center gap-5 text-sm">
+            <div className="flex items-center gap-2 text-[var(--color-text-tertiary)]">
               <GitBranch className="w-4 h-4" />
               <span className="font-medium">{gitStatus.branch}</span>
             </div>
             {gitStatus.ahead > 0 && (
-              <div className="flex items-center gap-1 text-emerald-500">
+              <div className="flex items-center gap-1.5 text-emerald-500">
                 <ArrowUp className="w-4 h-4" />
                 <span className="font-medium">{gitStatus.ahead}</span>
               </div>
             )}
             {gitStatus.behind > 0 && (
-              <div className="flex items-center gap-1 text-orange-500">
+              <div className="flex items-center gap-1.5 text-orange-500">
                 <ArrowDown className="w-4 h-4" />
                 <span className="font-medium">{gitStatus.behind}</span>
               </div>
@@ -106,19 +106,19 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
         <div className="flex items-center gap-1">
           <button
             onClick={handleOpenEditor}
-            className="p-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
+            className="p-2.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
             title="在编辑器中打开"
           >
             <ExternalLink className="w-4 h-4" />
           </button>
           <button
             onClick={handleOpenTerminal}
-            className="p-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
+            className="p-2.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
             title="打开终端"
           >
             <Terminal className="w-4 h-4" />
           </button>
-          <button className="p-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors">
+          <button className="p-2.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors">
             <MoreVertical className="w-4 h-4" />
           </button>
         </div>
@@ -128,12 +128,12 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
 
   // Grid view
   return (
-    <div className="flex flex-col p-5 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl hover:border-[var(--color-border-hover)] hover:shadow-sm transition-all">
-      <div className="flex items-start justify-between mb-3">
-        <h3 className="text-[var(--color-text-primary)] font-medium truncate flex-1 pr-2">{project.name}</h3>
+    <div className="flex flex-col p-5 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl hover:border-[var(--color-border-hover)] hover:shadow-sm transition-all min-h-[180px]">
+      <div className="flex items-start justify-between mb-2">
+        <h3 className="text-[var(--color-text-primary)] font-semibold truncate flex-1 pr-2 text-[15px] leading-snug">{project.name}</h3>
         <button
           onClick={handleToggleFavorite}
-          className={`p-1 rounded-lg transition-colors ${
+          className={`p-1 rounded-lg transition-colors flex-shrink-0 ${
             project.isFavorite
               ? "text-amber-500"
               : "text-[var(--color-text-muted)] hover:text-amber-500"
@@ -143,42 +143,42 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
         </button>
       </div>
 
-      <p className="text-[var(--color-text-muted)] text-sm truncate mb-4">{project.path}</p>
+      <p className="text-[var(--color-text-muted)] text-sm truncate mb-5 leading-relaxed">{project.path}</p>
 
       {loading ? (
         <div className="h-6 bg-[var(--color-bg-tertiary)] rounded-md animate-pulse" />
       ) : (
         gitStatus && (
-          <div className="flex items-center gap-3 text-sm mb-4">
-            <div className="flex items-center gap-1.5 text-[var(--color-text-tertiary)]">
+          <div className="flex items-center gap-4 text-sm mb-5">
+            <div className="flex items-center gap-2 text-[var(--color-text-tertiary)]">
               <GitBranch className="w-4 h-4" />
               <span className="truncate max-w-[100px] font-medium">{gitStatus.branch}</span>
             </div>
             {gitStatus.ahead > 0 && (
-              <div className="flex items-center gap-1 text-emerald-500">
-                <ArrowUp className="w-3 h-3" />
+              <div className="flex items-center gap-1.5 text-emerald-500">
+                <ArrowUp className="w-3.5 h-3.5" />
                 <span className="font-medium">{gitStatus.ahead}</span>
               </div>
             )}
             {gitStatus.behind > 0 && (
-              <div className="flex items-center gap-1 text-orange-500">
-                <ArrowDown className="w-3 h-3" />
+              <div className="flex items-center gap-1.5 text-orange-500">
+                <ArrowDown className="w-3.5 h-3.5" />
                 <span className="font-medium">{gitStatus.behind}</span>
               </div>
             )}
             {!gitStatus.isClean && (
-              <span className="text-amber-500 text-xs font-medium px-2 py-0.5 bg-amber-50 dark:bg-amber-500/10 rounded-full">有修改</span>
+              <span className="text-amber-600 dark:text-amber-400 text-xs font-medium px-2.5 py-1 bg-amber-50 dark:bg-amber-500/10 rounded-full">有修改</span>
             )}
           </div>
         )
       )}
 
       {project.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-4">
+        <div className="flex flex-wrap gap-2 mb-5">
           {project.tags.slice(0, 3).map((tag) => (
             <span
               key={tag}
-              className="px-2.5 py-1 text-xs bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] rounded-full font-medium"
+              className="px-3 py-1 text-xs bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] rounded-full font-medium"
             >
               {tag}
             </span>
@@ -191,7 +191,7 @@ export function ProjectCard({ project, viewMode, onUpdate }: ProjectCardProps) {
         </div>
       )}
 
-      <div className="flex items-center gap-2 mt-auto pt-4 border-t border-[var(--color-border)]">
+      <div className="flex items-center gap-3 mt-auto pt-4 border-t border-[var(--color-border)]">
         <button
           onClick={handleOpenEditor}
           className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"

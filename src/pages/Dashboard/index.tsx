@@ -16,11 +16,11 @@ export function DashboardPage() {
   };
 
   return (
-    <div className="flex flex-col h-full p-8">
-      <h1 className="text-[var(--color-text-primary)] mb-8">数据统计</h1>
+    <div className="flex flex-col h-full p-10">
+      <h1 className="text-[var(--color-text-primary)] mb-10 text-2xl">数据统计</h1>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatCard
           icon={FolderGit2}
           label="总项目数"
@@ -48,16 +48,16 @@ export function DashboardPage() {
       </div>
 
       {/* Heatmap Placeholder */}
-      <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl p-6 mb-6 shadow-sm">
-        <h2 className="text-[var(--color-text-primary)] mb-5">编码足迹</h2>
+      <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl p-7 mb-6 shadow-sm">
+        <h2 className="text-[var(--color-text-primary)] mb-6 text-lg">编码足迹</h2>
         <div className="flex flex-col items-center justify-center h-48 text-[var(--color-text-muted)]">
           <p>热力图将在添加项目后显示</p>
         </div>
       </div>
 
       {/* Recent Activity Placeholder */}
-      <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl p-6 shadow-sm">
-        <h2 className="text-[var(--color-text-primary)] mb-5">最近活动</h2>
+      <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl p-7 shadow-sm">
+        <h2 className="text-[var(--color-text-primary)] mb-6 text-lg">最近活动</h2>
         <div className="flex flex-col items-center justify-center h-32 text-[var(--color-text-muted)]">
           <p>暂无活动记录</p>
         </div>
@@ -82,14 +82,14 @@ function StatCard({ icon: Icon, label, value, color }: StatCardProps) {
   };
 
   return (
-    <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl p-5 shadow-sm">
+    <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl p-6 shadow-sm">
       <div className="flex items-center gap-4">
-        <div className={`p-3 rounded-xl ${colors[color]}`}>
+        <div className={`p-3.5 rounded-xl ${colors[color]}`}>
           <Icon className="w-5 h-5" />
         </div>
         <div>
-          <p className="text-[var(--color-text-tertiary)] text-sm font-medium">{label}</p>
-          <p className="text-2xl font-semibold text-[var(--color-text-primary)] mt-0.5">{value}</p>
+          <p className="text-[var(--color-text-tertiary)] text-sm font-medium mb-1">{label}</p>
+          <p className="text-2xl font-semibold text-[var(--color-text-primary)]">{value}</p>
         </div>
       </div>
     </div>

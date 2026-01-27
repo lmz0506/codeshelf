@@ -127,17 +127,17 @@ export function ShelfPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <header className="flex items-center justify-between gap-4 px-6 py-4 border-b border-[var(--color-border)] bg-[var(--color-bg-primary)]">
-        <h1 className="text-[var(--color-text-primary)] whitespace-nowrap">项目书架</h1>
+      <header className="flex items-center justify-between gap-6 px-8 py-5 border-b border-[var(--color-border)] bg-[var(--color-bg-primary)]">
+        <h1 className="text-[var(--color-text-primary)] whitespace-nowrap text-xl">项目书架</h1>
 
-        <div className="flex items-center gap-3 flex-1 max-w-2xl">
+        <div className="flex items-center gap-4 flex-1 max-w-2xl">
           <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]" />
             <Input
               placeholder="搜索项目..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="pl-11"
             />
           </div>
 
@@ -165,7 +165,7 @@ export function ShelfPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Button variant="secondary" onClick={handleScanDirectory}>
             <RefreshCw className="w-4 h-4 mr-2" />
             扫描目录
@@ -178,7 +178,7 @@ export function ShelfPage() {
       </header>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-8">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
@@ -190,7 +190,7 @@ export function ShelfPage() {
             <p className="text-sm">点击"添加项目"或"扫描目录"开始使用</p>
           </div>
         ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
             {sortedProjects.map((project) => (
               <ProjectCard
                 key={project.id}
@@ -201,7 +201,7 @@ export function ShelfPage() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4">
             {sortedProjects.map((project) => (
               <ProjectCard
                 key={project.id}
