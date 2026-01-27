@@ -99,7 +99,6 @@ npm run tauri dev
 ```
 
 开发服务器启动后：
-- 前端服务：http://localhost:1420
 - Tauri 应用会自动打开桌面窗口
 
 ## 📦 构建与打包
