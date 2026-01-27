@@ -42,24 +42,24 @@ export function TitleBar({ onNavigate, currentPage }: TitleBarProps) {
   return (
     <div
       data-tauri-drag-region
-      className="flex items-center justify-between h-8 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] select-none"
+      className="titlebar flex items-center justify-between h-8 bg-[var(--card)] border-b border-[var(--border)] select-none z-20"
     >
       {/* Left: App Icon and Title */}
       <div
         data-tauri-drag-region
-        className="flex items-center gap-2 px-3 flex-1"
+        className="flex items-center gap-2 px-3 flex-1 h-full"
       >
         <img
           src="/favicon.svg"
           alt="CodeShelf"
           className="w-4 h-4 pointer-events-none"
         />
-        <span className="text-xs font-medium text-[var(--color-text-primary)] pointer-events-none">
-          CodeShelf - 代码书架
+        <span className="text-xs font-medium text-[var(--text-light)] pointer-events-none">
+          CodeShelf · 代码书架
         </span>
       </div>
 
-      {/* Center: Quick Actions (Optional) */}
+      {/* Center: Quick Actions (Optional) - styled like example but keeping current logic */}
       {onNavigate && (
         <div className="flex items-center gap-1">
           <button
@@ -67,11 +67,10 @@ export function TitleBar({ onNavigate, currentPage }: TitleBarProps) {
               e.stopPropagation();
               onNavigate("shelf");
             }}
-            className={`px-3 py-1 text-xs rounded transition-colors ${
-              currentPage === "shelf"
-                ? "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]"
-            }`}
+            className={`px-3 py-1 text-xs rounded transition-all ${currentPage === "shelf"
+                ? "bg-[var(--primary-light)] text-[var(--primary)]"
+                : "text-[var(--text-light)] hover:text-[var(--primary)] hover:bg-[var(--primary-light)]"
+              }`}
             title="项目书架"
           >
             <Search className="w-3.5 h-3.5" />
@@ -81,11 +80,10 @@ export function TitleBar({ onNavigate, currentPage }: TitleBarProps) {
               e.stopPropagation();
               onNavigate("settings");
             }}
-            className={`px-3 py-1 text-xs rounded transition-colors ${
-              currentPage === "settings"
-                ? "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]"
-            }`}
+            className={`px-3 py-1 text-xs rounded transition-all ${currentPage === "settings"
+                ? "bg-[var(--primary-light)] text-[var(--primary)]"
+                : "text-[var(--text-light)] hover:text-[var(--primary)] hover:bg-[var(--primary-light)]"
+              }`}
             title="设置"
           >
             <SettingsIcon className="w-3.5 h-3.5" />
@@ -97,21 +95,21 @@ export function TitleBar({ onNavigate, currentPage }: TitleBarProps) {
       <div className="flex items-center h-full">
         <button
           onClick={handleMinimize}
-          className="h-full px-4 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] transition-colors flex items-center justify-center"
+          className="h-full px-3.5 text-[var(--text-light)] hover:bg-[rgba(0,0,0,0.05)] transition-colors flex items-center justify-center"
           title="最小化"
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={handleMaximize}
-          className="h-full px-4 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] transition-colors flex items-center justify-center"
+          className="h-full px-3.5 text-[var(--text-light)] hover:bg-[rgba(0,0,0,0.05)] transition-colors flex items-center justify-center"
           title={isMaximized ? "还原" : "最大化"}
         >
           <Square className="w-3 h-3" />
         </button>
         <button
           onClick={handleClose}
-          className="h-full px-4 text-[var(--color-text-tertiary)] hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center"
+          className="h-full px-3.5 text-[var(--text-light)] hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center"
           title="关闭"
         >
           <X className="w-4 h-4" />

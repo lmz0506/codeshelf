@@ -1,35 +1,35 @@
 import { useState, useEffect } from "react";
-import {
-  Search,
-  Grid3X3,
-  List,
-  FolderPlus,
-  RefreshCw,
-} from "lucide-react";
-import { Button, Input } from "@/components/ui";
 import { ProjectCard, ScanResultDialog, ProjectDetailDialog } from "@/components/project";
+import { Minus, X } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import type { Project, GitRepo } from "@/types";
 import { getProjects, addProject } from "@/services/db";
-import { scanDirectory } from "@/services/git";
 import { open } from "@tauri-apps/plugin-dialog";
+
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export function ShelfPage() {
   const {
     projects,
     setProjects,
-    viewMode,
-    setViewMode,
     searchQuery,
     setSearchQuery,
   } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [scanResults, setScanResults] = useState<GitRepo[] | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [onlyStarred, setOnlyStarred] = useState(false);
+  const [onlyModified, setOnlyModified] = useState(false);
+  const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
 
   useEffect(() => {
     loadProjects();
   }, []);
+
+  // Extract unique categories (tags) from projects
+  const categories = Array.from(new Set(projects.flatMap(p => p.tags)));
+  const activeCat = selectedTags.length === 0 ? "全部" : selectedTags[0];
 
   async function loadProjects() {
     try {
@@ -68,36 +68,6 @@ export function ShelfPage() {
     }
   }
 
-  async function handleScanDirectory() {
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: "选择要扫描的目录",
-      });
-
-      if (selected) {
-        setLoading(true);
-        const repos = await scanDirectory(selected as string);
-
-        // Filter out already added projects
-        const newRepos = repos.filter(
-          repo => !projects.some(p => p.path === repo.path)
-        );
-
-        if (newRepos.length > 0) {
-          setScanResults(newRepos);
-        } else {
-          // Show message that no new repos found
-          alert("未找到新的 Git 仓库");
-        }
-      }
-    } catch (error) {
-      console.error("Failed to scan directory:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleConfirmScan(selectedPaths: string[]) {
     try {
@@ -136,14 +106,19 @@ export function ShelfPage() {
     setProjects(projects.map((p) => (p.id === updated.id ? updated : p)));
   }
 
-  // Filter projects based on search query
-  const filteredProjects = projects.filter(
-    (project) =>
-      project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      project.path.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter projects
+  const filteredProjects = projects.filter((p) => {
+    const matchesSearch =
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.path.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
 
-  // Sort: favorites first, then by name
+    if (activeCat !== "全部" && !p.tags.includes(activeCat)) return false;
+    if (onlyStarred && !p.isFavorite) return false;
+
+    return true;
+  });
+
   const sortedProjects = [...filteredProjects].sort((a, b) => {
     if (a.isFavorite && !b.isFavorite) return -1;
     if (!a.isFavorite && b.isFavorite) return 1;
@@ -151,89 +126,108 @@ export function ShelfPage() {
   });
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <header className="flex items-center justify-between gap-6 px-8 py-5 border-b border-[var(--color-border)] bg-[var(--color-bg-primary)]">
-        <h1 className="text-[var(--color-text-primary)] whitespace-nowrap text-xl">项目书架</h1>
+    <div className="re-main-wrap min-h-screen">
+      {/* Header with Drag Region and Window Controls integrated */}
+      <header className="re-header sticky top-0 z-20" data-tauri-drag-region>
+        <span
+          className="toggle"
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        >
+          ☰
+        </span>
 
-        <div className="flex items-center gap-4 flex-1 max-w-2xl">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]" />
-            <Input
-              placeholder="搜索项目..."
+        <div className="re-search-center" data-tauri-drag-region>
+          <div className="re-search-box">
+            <input
+              id="searchInput"
+              placeholder="搜索项目…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-11"
             />
+            <button>🔍</button>
           </div>
 
-          <div className="flex items-center border border-[var(--color-border)] rounded-lg overflow-hidden">
-            <button
-              onClick={() => setViewMode("grid")}
-              className={`p-2.5 transition-colors ${
-                viewMode === "grid"
-                  ? "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                  : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]"
-              }`}
-            >
-              <Grid3X3 className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={`p-2.5 transition-colors ${
-                viewMode === "list"
-                  ? "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                  : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]"
-              }`}
-            >
-              <List className="w-4 h-4" />
-            </button>
+          <div className="re-filter-chk">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={onlyStarred}
+                onChange={(e) => setOnlyStarred(e.target.checked)}
+              />
+              只看收藏
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={onlyModified}
+                onChange={(e) => setOnlyModified(e.target.checked)}
+              />
+              只看待提交
+            </label>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Button variant="secondary" onClick={handleScanDirectory}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            扫描目录
-          </Button>
-          <Button onClick={handleAddProject}>
-            <FolderPlus className="w-4 h-4 mr-2" />
-            添加项目
-          </Button>
+        <div className="re-actions flex items-center">
+          <button className="re-btn">+ 分类</button>
+          <button className="re-btn re-btn-primary" onClick={handleAddProject}>
+            + 项目
+          </button>
+
+          {/* Integrated Window Controls - Minimalist and high-end */}
+          <div className="flex items-center ml-4 border-l border-[var(--border)] pl-3 gap-1 h-6">
+            <button
+              onClick={() => getCurrentWindow()?.minimize()}
+              className="w-7 h-7 flex items-center justify-center hover:bg-[rgba(0,0,0,0.05)] rounded-md transition-colors text-[var(--text-light)] hover:text-[var(--text)]"
+              title="最小化"
+            >
+              <Minus size={14} />
+            </button>
+            <button
+              onClick={() => getCurrentWindow()?.close()}
+              className="w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white rounded-md transition-colors text-[var(--text-light)]"
+              title="关闭"
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
       </header>
 
+      {/* Category Bar */}
+      <div className="re-cat-bar">
+        <span style={{ fontSize: "14px", color: "var(--text-light)" }}>分类：</span>
+        <div className="re-cat-list">
+          {["全部", ...categories].map((c) => (
+            <span
+              key={c}
+              className={`re-cat ${c === activeCat ? "active" : ""}`}
+              onClick={() => setSelectedTags(c === "全部" ? [] : [c])}
+            >
+              {c}
+            </span>
+          ))}
+        </div>
+      </div>
+
       {/* Content */}
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1">
         {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
+          <div className="flex flex-col items-center justify-center py-20 text-[var(--text-light)]">
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--primary)] border-t-transparent mb-4" />
+            <p>加载中...</p>
           </div>
         ) : sortedProjects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-[var(--color-text-muted)]">
-            <FolderPlus className="w-16 h-16 mb-4 opacity-50" />
-            <p className="text-lg font-medium mb-2 text-[var(--color-text-secondary)]">还没有项目</p>
-            <p className="text-sm">点击"添加项目"或"扫描目录"开始使用</p>
-          </div>
-        ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sortedProjects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                viewMode="grid"
-                onUpdate={handleProjectUpdate}
-                onShowDetail={setSelectedProject}
-              />
-            ))}
+          <div className="flex flex-col items-center justify-center py-20 text-[var(--text-light)]">
+            <span className="text-6xl mb-4 opacity-50">📂</span>
+            <p className="text-lg font-medium mb-2 text-[var(--text)]">还没有项目</p>
+            <p className="text-sm">点击"+ 项目"开始使用</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="re-shelf">
             {sortedProjects.map((project) => (
               <ProjectCard
                 key={project.id}
                 project={project}
-                viewMode="list"
                 onUpdate={handleProjectUpdate}
                 onShowDetail={setSelectedProject}
               />

@@ -1,6 +1,5 @@
 import { ReactNode, useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
-import { TitleBar } from "./TitleBar";
 import { useAppStore } from "@/stores/appStore";
 
 interface MainLayoutProps {
@@ -20,15 +19,13 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
   }, [theme]);
 
+  // Use the 1:1 classes from index.css
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]">
-      {/* Custom Title Bar with Quick Actions */}
-      <TitleBar onNavigate={setCurrentPage} currentPage={currentPage} />
+    <div className="flex w-full bg-[var(--bg)] text-[var(--text)]">
+      <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
 
-      {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
-        <main className="flex-1 overflow-auto bg-[var(--color-bg-secondary)]">
+      <div className="re-main-wrap">
+        <main className="flex-1">
           {children(currentPage)}
         </main>
       </div>
