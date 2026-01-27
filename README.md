@@ -2,10 +2,10 @@
 代码书架 - 本地项目管理工具
 
 # 技术栈
-- 桌面端框架：Tauri (Rust 后端 + Web 前端)
-- 前端框架：React 19 + TypeScript
-- 样式方案：Tailwind CSS
-- Git 操作：simple-git (Node.js) 通过 Tauri Command 调用
+- 桌面端框架：[Tauri](https://v2.tauri.app/zh-cn/) ([Rust](https://rust-lang.org/tools/install/) 后端 + Web 前端)
+- 前端框架：[React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- 样式方案：[Tailwind CSS](https://tailwindcss.com/)
+- Git 操作：[simple-git](https://www.npmjs.com/package/simple-git) (Node.js) 通过 Tauri Command 调用
 - 状态管理：Zustand / React Query
 - 数据存储：Tauri FS API + SQLite (via tauri-plugin-sql)
 
