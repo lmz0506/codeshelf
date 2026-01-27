@@ -29,7 +29,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
       }`}
     >
       {/* Logo */}
-      <div className="flex items-center h-16 px-5 border-b border-[var(--color-border)]">
+      <div className="flex items-center h-14 px-5 border-b border-[var(--color-border)]">
         <FolderGit2 className="w-8 h-8 text-blue-500 flex-shrink-0" />
         {!sidebarCollapsed && (
           <span className="ml-3 text-lg font-semibold text-[var(--color-text-primary)] tracking-tight">
