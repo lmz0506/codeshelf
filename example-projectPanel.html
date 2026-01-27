@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Git Repository Manager - 项目分类版</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2563eb',
+            secondary: '#64748b',
+            success: '#059669',
+            warning: '#d97706',
+            surface: '#ffffff',
+            'surface-hover': '#f8fafc',
+            border: '#e2e8f0'
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.3s ease-in-out',
+            'slide-up': 'slideUp 0.4s ease-out',
+            'bounce-in': 'bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            slideUp: {
+              '0%': { transform: 'translateY(10px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            bounceIn: {
+              '0%': { transform: 'scale(0.3)', opacity: '0' },
+              '50%': { transform: 'scale(1.05)' },
+              '70%': { transform: 'scale(0.9)' },
+              '100%': { transform: 'scale(1)', opacity: '1' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .hover-card {
+      transition: all 0.3s ease;
+    }
+    .hover-card:hover {
+      transform: translateX(4px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+    .branch-active {
+      position: relative;
+    }
+    .branch-active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 3px;
+      height: 20px;
+      background: #2563eb;
+      border-radius: 0 4px 4px 0;
+    }
+    .commit-line {
+      background: linear-gradient(to bottom, #cbd5e1 0%, #cbd5e1 50%, transparent 100%);
+    }
+    .glass-effect {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+    }
+    .category-tag {
+      transition: all 0.2s ease;
+    }
+    .category-tag:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .color-dot {
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1);
+    }
+    .category-option {
+      transition: all 0.2s ease;
+    }
+    .category-option:hover {
+      transform: scale(1.02);
+    }
+    .category-option.selected {
+      ring: 2px;
+      ring-offset: 2px;
+    }
+    /* 自定义滚动条 */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+  <base target="_blank">
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen overflow-hidden">
+
+<!-- 顶部导航栏 -->
+<header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 shadow-sm z-20">
+  <div class="flex items-center gap-4">
+    <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
+      <i class="fas fa-code-branch text-white text-lg"></i>
+    </div>
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center gap-3">
+        <h1 class="font-bold text-gray-900 text-base tracking-tight">zhi_du_admin</h1>
+
+        <!-- 项目分类标签区域 -->
+        <div id="categoryDisplay" class="flex items-center gap-2 flex-wrap">
+                        <span id="currentCategory" class="hidden category-tag px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200 flex items-center gap-1.5">
+                            <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                            <span class="category-name">未设置</span>
+                        </span>
+          <button onclick="openCategoryModal()" class="group flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all">
+            <i class="fas fa-pen text-[10px] opacity-70 group-hover:opacity-100"></i>
+            <span id="categoryBtnText">设置分类</span>
+          </button>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 flex items-center gap-1.5 font-mono">
+        <i class="fas fa-folder-open text-gray-400"></i>
+        C:\work\尚唯\尚唯通用AI平台\zhi_du_admin
+      </p>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-3">
+    <button class="px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs flex items-center gap-2 transition-colors border border-gray-300">
+      <i class="fas fa-sync-alt text-gray-600"></i>
+      <span>拉取</span>
+    </button>
+    <button class="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs flex items-center gap-2 transition-colors shadow-md shadow-blue-500/20">
+      <i class="fas fa-cloud-upload-alt"></i>
+      <span>推送</span>
+    </button>
+    <div class="w-px h-6 bg-gray-300 mx-1"></div>
+    <button class="w-8 h-8 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors">
+      <i class="fas fa-ellipsis-v"></i>
+    </button>
+  </div>
+</header>
+
+<div class="flex h-[calc(100vh-64px)]">
+  <!-- 左侧边栏 -->
+  <aside class="w-72 bg-white border-r border-gray-200 flex flex-col">
+    <!-- 分支状态卡片 -->
+    <div class="p-4 border-b border-gray-100">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-xs font-medium text-gray-500 uppercase tracking-wider">当前分支</span>
+        <span class="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] border border-green-200 font-medium">
+                        已同步
+                    </span>
+      </div>
+
+      <div class="bg-gray-50 rounded-lg p-3 border border-gray-200 branch-active shadow-sm">
+        <div class="flex items-center gap-2 mb-2">
+          <i class="fas fa-code-branch text-blue-600"></i>
+          <span class="font-semibold text-gray-900">master</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs text-gray-600">
+          <i class="fas fa-circle text-[8px] text-green-500"></i>
+          <span class="font-medium text-orange-600">0 个修改</span>
+        </div>
+      </div>
+
+      <button class="w-full mt-3 py-2 rounded-md border border-dashed border-gray-300 text-gray-500 text-xs hover:border-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-all flex items-center justify-center gap-2">
+        <i class="fas fa-plus text-gray-400"></i>
+        切换或创建分支
+      </button>
+    </div>
+
+    <!-- 远程仓库信息 -->
+    <div class="p-4 flex-1 overflow-y-auto">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-xs font-medium text-gray-500 uppercase tracking-wider">远程仓库</span>
+        <button class="text-gray-400 hover:text-gray-600 transition-colors">
+          <i class="fas fa-cog text-xs"></i>
+        </button>
+      </div>
+
+      <!-- 当前远程 origin -->
+      <div class="bg-white rounded-lg p-3 mb-3 border border-blue-200 bg-blue-50/30 shadow-sm relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-16 h-16 bg-blue-100 rounded-full -mr-8 -mt-8 opacity-50"></div>
+        <div class="flex items-center gap-2 mb-2 relative z-10">
+          <div class="w-6 h-6 rounded-full bg-red-50 flex items-center justify-center border border-red-100">
+            <i class="fab fa-git-alt text-red-500 text-xs"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold text-gray-900 flex items-center gap-1">
+              origin
+              <span class="px-1.5 py-0 rounded bg-blue-100 text-blue-700 text-[9px] font-medium">当前</span>
+            </div>
+            <div class="text-[10px] text-gray-500 truncate">Gitee</div>
+          </div>
+        </div>
+        <div class="text-[11px] text-gray-600 truncate font-mono bg-white/80 px-2 py-1.5 rounded border border-blue-100 relative z-10">
+          https://gitee.com/etn/zhi_du_admin.git
+        </div>
+      </div>
+
+      <!-- 同步到其他远程按钮 -->
+      <button onclick="openSyncModal()" class="w-full mb-4 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-xs font-medium flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 transform hover:-translate-y-0.5">
+        <i class="fas fa-exchange-alt"></i>
+        同步到其他远程库
+      </button>
+
+      <!-- 快捷操作 -->
+      <div class="space-y-1 mt-4">
+        <div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 px-1">快捷操作</div>
+        <button class="w-full text-left px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 text-xs flex items-center gap-2 transition-colors group">
+          <i class="fas fa-history text-gray-400 group-hover:text-blue-600 transition-colors"></i>
+          查看历史记录
+        </button>
+        <button class="w-full text-left px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 text-xs flex items-center gap-2 transition-colors group">
+          <i class="fas fa-code text-gray-400 group-hover:text-blue-600 transition-colors"></i>
+          查看更改
+        </button>
+        <button class="w-full text-left px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 text-xs flex items-center gap-2 transition-colors group">
+          <i class="fas fa-tag text-gray-400 group-hover:text-blue-600 transition-colors"></i>
+          标签管理
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 主内容区 -->
+  <main class="flex-1 flex flex-col bg-gray-50 overflow-hidden">
+    <!-- 提交历史头部 -->
+    <div class="h-12 border-b border-gray-200 flex items-center justify-between px-4 bg-white">
+      <div class="flex items-center gap-2">
+        <i class="fas fa-history text-gray-500"></i>
+        <span class="font-semibold text-sm text-gray-900">最近提交</span>
+        <span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-medium">10</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="w-8 h-8 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors" title="刷新">
+          <i class="fas fa-sync-alt text-xs"></i>
+        </button>
+        <div class="relative">
+          <input type="text" placeholder="搜索提交..." class="bg-white border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 w-48 transition-all">
+          <i class="fas fa-search absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- 提交列表 -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-2" id="commitList">
+      <!-- 提交项将通过JS动态生成 -->
+    </div>
+  </main>
+</div>
+
+<!-- 分类编辑模态框 -->
+<div id="categoryModal" class="fixed inset-0 z-50 hidden">
+  <!-- 遮罩层 -->
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm transition-opacity opacity-0" id="categoryOverlay" onclick="closeCategoryModal()"></div>
+
+  <!-- 模态框内容 -->
+  <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto transform scale-95 opacity-0 transition-all duration-300" id="categoryContent">
+      <!-- 头部 -->
+      <div class="flex items-center justify-between p-5 border-b border-gray-100">
+        <div>
+          <h3 class="text-lg font-bold text-gray-900">项目分类</h3>
+          <p class="text-xs text-gray-500 mt-0.5">为项目设置分类标签，便于管理</p>
+        </div>
+        <button onclick="closeCategoryModal()" class="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <!-- 内容区 -->
+      <div class="p-5">
+        <!-- 当前分类展示 -->
+        <div class="mb-5">
+          <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">当前分类</label>
+          <div id="currentCategoryDisplay" class="p-3 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 text-center text-gray-400 text-sm">
+            未设置分类
+          </div>
+        </div>
+
+        <!-- 预设分类选项 -->
+        <div class="mb-5">
+          <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 block">选择分类</label>
+          <div class="grid grid-cols-2 gap-2" id="categoryGrid">
+            <!-- 动态生成分类选项 -->
+          </div>
+        </div>
+
+        <!-- 添加自定义分类 -->
+        <div class="border-t border-gray-100 pt-4">
+          <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 block">添加自定义分类</label>
+          <div class="flex gap-2">
+            <input type="text" id="customCategoryInput" placeholder="输入分类名称..."
+                   class="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all">
+            <button onclick="addCustomCategory()"
+                    class="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1">
+              <i class="fas fa-plus text-xs"></i>
+              添加
+            </button>
+          </div>
+
+          <!-- 颜色选择 -->
+          <div class="mt-3 flex gap-2 justify-center">
+            <button onclick="selectColor('blue')" class="w-6 h-6 rounded-full bg-blue-500 ring-2 ring-offset-2 ring-transparent hover:ring-blue-200 transition-all color-select selected" data-color="blue"></button>
+            <button onclick="selectColor('green')" class="w-6 h-6 rounded-full bg-green-500 ring-2 ring-offset-2 ring-transparent hover:ring-green-200 transition-all color-select" data-color="green"></button>
+            <button onclick="selectColor('purple')" class="w-6 h-6 rounded-full bg-purple-500 ring-2 ring-offset-2 ring-transparent hover:ring-purple-200 transition-all color-select" data-color="purple"></button>
+            <button onclick="selectColor('orange')" class="w-6 h-6 rounded-full bg-orange-500 ring-2 ring-offset-2 ring-transparent hover:ring-orange-200 transition-all color-select" data-color="orange"></button>
+            <button onclick="selectColor('red')" class="w-6 h-6 rounded-full bg-red-500 ring-2 ring-offset-2 ring-transparent hover:ring-red-200 transition-all color-select" data-color="red"></button>
+            <button onclick="selectColor('gray')" class="w-6 h-6 rounded-full bg-gray-500 ring-2 ring-offset-2 ring-transparent hover:ring-gray-200 transition-all color-select" data-color="gray"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部操作栏 -->
+      <div class="p-5 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex items-center justify-between">
+        <button onclick="clearCategory()" class="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1 px-3 py-2 rounded-md hover:bg-red-50 transition-colors">
+          <i class="fas fa-trash-alt"></i>
+          清除分类
+        </button>
+        <div class="flex gap-2">
+          <button onclick="closeCategoryModal()" class="px-4 py-2 rounded-lg text-gray-600 text-sm font-medium hover:bg-gray-200 transition-colors">
+            取消
+          </button>
+          <button onclick="saveCategory()" class="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium shadow-md shadow-blue-500/20 transition-all transform active:scale-95">
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 同步远程库模态框（保留之前的功能） -->
+<div id="syncModal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity opacity-0" id="syncOverlay" onclick="closeSyncModal()"></div>
+  <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl pointer-events-auto transform scale-95 opacity-0 transition-all duration-300" id="syncContent">
+      <div class="flex items-center justify-between p-5 border-b border-gray-100 bg-gray-50/50 rounded-t-2xl">
+        <div>
+          <h3 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <i class="fas fa-sync text-blue-600"></i>
+            同步到远程库
+          </h3>
+          <p class="text-xs text-gray-500 mt-1">将 origin 的所有分支同步到目标远程库</p>
+        </div>
+        <button onclick="closeSyncModal()" class="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="p-5 max-h-[60vh] overflow-y-auto">
+        <div class="mb-6 p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <i class="fas fa-database text-blue-600"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold text-gray-900">源远程库</div>
+            <div class="text-xs text-gray-600 truncate">origin (https://gitee.com/etn/zhi_du_admin.git)</div>
+          </div>
+          <div class="px-2 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium">
+            所有分支
+          </div>
+        </div>
+        <div class="mb-4">
+          <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 block">选择目标远程库</label>
+          <div id="existingRemotes" class="space-y-2 mb-4"></div>
+          <div id="addRemoteSection" class="border-t border-gray-200 pt-4 mt-4">
+            <button onclick="toggleAddRemote()" class="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 mb-3 transition-colors" id="toggleAddBtn">
+              <i class="fas fa-plus-circle"></i>
+              <span>添加新的远程库</span>
+            </button>
+            <div id="newRemoteForm" class="hidden space-y-3 p-4 bg-gray-50 rounded-xl border border-gray-200">
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">远程库名称</label>
+                <input type="text" id="newRemoteName" placeholder="例如：github、backup" class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">远程库地址 (URL)</label>
+                <input type="text" id="newRemoteUrl" placeholder="https://github.com/username/repo.git" class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 font-mono text-xs">
+              </div>
+              <div class="flex gap-2">
+                <button onclick="addNewRemote()" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors">
+                  确认添加
+                </button>
+                <button onclick="toggleAddRemote()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-medium rounded-lg transition-colors">
+                  取消
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="border-t border-gray-200 pt-4">
+          <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 block">同步选项</label>
+          <div class="space-y-2">
+            <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors group">
+              <input type="radio" name="syncOption" value="all" checked class="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300">
+              <div class="flex-1">
+                <div class="text-sm font-semibold text-gray-900 group-hover:text-blue-700">同步所有分支</div>
+                <div class="text-xs text-gray-500 mt-0.5">推送所有本地分支到目标远程库</div>
+              </div>
+            </label>
+            <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors group">
+              <input type="radio" name="syncOption" value="current" class="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300">
+              <div class="flex-1">
+                <div class="text-sm font-semibold text-gray-900 group-hover:text-blue-700">仅同步当前分支</div>
+                <div class="text-xs text-gray-500 mt-0.5">仅推送当前分支 (master)</div>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="p-5 border-t border-gray-200 bg-gray-50 rounded-b-2xl flex items-center justify-between">
+        <div class="text-xs text-gray-500 flex items-center gap-1">
+          <i class="fas fa-info-circle"></i>
+          <span>此操作会强制更新目标远程库的分支</span>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="closeSyncModal()" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-100 transition-colors">
+            取消
+          </button>
+          <button onclick="startSync()" id="syncBtn" class="px-6 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center gap-2 transition-all shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
+            <i class="fas fa-sync-alt"></i>
+            开始同步
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 同步进度提示（保留） -->
+<div id="syncToast" class="fixed bottom-4 right-4 bg-white rounded-xl shadow-2xl border border-gray-200 p-4 transform translate-y-24 opacity-0 transition-all duration-300 z-50 max-w-sm">
+  <div class="flex items-start gap-3">
+    <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+      <i class="fas fa-spinner fa-spin text-blue-600"></i>
+    </div>
+    <div class="flex-1">
+      <div class="text-sm font-semibold text-gray-900">正在同步...</div>
+      <div class="text-xs text-gray-500 mt-1" id="syncStatus">正在推送分支到目标远程库</div>
+      <div class="mt-3 w-full bg-gray-200 rounded-full h-2">
+        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%" id="syncProgress"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 提交历史数据
+  const commits = [
+    { id: 1, message: '解析追加', hash: '489a062', author: 'tan', date: '2026/1/8', isNew: true },
+    { id: 2, message: '追加setFileName', hash: '374a62f', author: 'tan', date: '2025/11/24', isNew: false },
+    { id: 3, message: '123', hash: '3e2c4cf', author: 'tan', date: '2025/11/11', isNew: false },
+    { id: 4, message: '123', hash: '3e6ca10', author: 'tan', date: '2025/11/11', isNew: false },
+    { id: 5, message: '123', hash: '1069533', author: 'tan', date: '2025/11/11', isNew: false },
+    { id: 6, message: '123', hash: '7396406', author: 'tan', date: '2025/11/11', isNew: false },
+    { id: 7, message: '123', hash: 'a93338b', author: 'tan', date: '2025/11/11', isNew: false },
+    { id: 8, message: '123', hash: '9bf9e2a', author: 'tan', date: '2025/11/11', isNew: false },
+    { id: 9, message: '123', hash: '72a41bc', author: 'tan', date: '2025/11/11', isNew: false },
+    { id: 10, message: '123', hash: 'c16f4ef', author: 'tan', date: '2025/11/11', isNew: false }
+  ];
+
+  // 预定义分类数据
+  const defaultCategories = [
+    { name: '工作中', color: 'blue', icon: 'briefcase' },
+    { name: '个人项目', color: 'green', icon: 'user' },
+    { name: '开源项目', color: 'purple', icon: 'code-branch' },
+    { name: '学习测试', color: 'orange', icon: 'graduation-cap' },
+    { name: '客户项目', color: 'red', icon: 'handshake' },
+    { name: '归档', color: 'gray', icon: 'archive' }
+  ];
+
+  // 当前选中的分类
+  let currentCategory = null;
+  let selectedCategoryTemp = null;
+  let selectedColor = 'blue';
+
+  // 颜色配置
+  const colorMap = {
+    blue: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' },
+    green: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200', dot: 'bg-green-500' },
+    purple: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' },
+    orange: { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-500' },
+    red: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-500' },
+    gray: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-200', dot: 'bg-gray-500' }
+  };
+
+  // 远程库数据（保留同步功能）
+  let remotes = [
+    { name: 'origin', url: 'https://gitee.com/etn/zhi_du_admin.git', type: 'gitee', isSource: true }
+  ];
+  let selectedRemote = null;
+
+  // 初始化
+  document.addEventListener('DOMContentLoaded', () => {
+    renderCommits();
+    updateCategoryDisplay();
+
+    // 点击外部关闭分类下拉（如果有的话）
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#categoryModal') && !e.target.closest('#categoryDisplay')) {
+        // 可选：点击外部关闭
+      }
+    });
+  });
+
+  // 分类相关函数
+  function openCategoryModal() {
+    const modal = document.getElementById('categoryModal');
+    const overlay = document.getElementById('categoryOverlay');
+    const content = document.getElementById('categoryContent');
+
+    selectedCategoryTemp = currentCategory;
+    renderCategoryGrid();
+    updateCurrentCategoryDisplay();
+
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+      overlay.classList.remove('opacity-0');
+      content.classList.remove('opacity-0', 'scale-95');
+      content.classList.add('scale-100');
+    }, 10);
+  }
+
+  function closeCategoryModal() {
+    const modal = document.getElementById('categoryModal');
+    const overlay = document.getElementById('categoryOverlay');
+    const content = document.getElementById('categoryContent');
+
+    overlay.classList.add('opacity-0');
+    content.classList.remove('scale-100');
+    content.classList.add('opacity-0', 'scale-95');
+
+    setTimeout(() => {
+      modal.classList.add('hidden');
+    }, 300);
+  }
+
+  function renderCategoryGrid() {
+    const grid = document.getElementById('categoryGrid');
+    grid.innerHTML = '';
+
+    defaultCategories.forEach(cat => {
+      const colors = colorMap[cat.color];
+      const isSelected = selectedCategoryTemp && selectedCategoryTemp.name === cat.name;
+
+      const btn = document.createElement('button');
+      btn.className = `category-option p-3 rounded-xl border-2 text-left transition-all ${isSelected ? 'border-current ' + colors.text + ' ' + colors.bg : 'border-gray-200 hover:border-gray-300 bg-white'}`;
+      btn.onclick = () => selectCategory(cat);
+
+      btn.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full ${colors.dot}"></div>
+                        <i class="fas fa-${cat.icon} text-xs ${isSelected ? colors.text : 'text-gray-400'}"></i>
+                        <span class="text-sm font-medium ${isSelected ? colors.text : 'text-gray-700'}">${cat.name}</span>
+                    </div>
+                `;
+
+      grid.appendChild(btn);
+    });
+  }
+
+  function selectCategory(category) {
+    selectedCategoryTemp = { ...category };
+    renderCategoryGrid();
+    updateCurrentCategoryDisplay();
+  }
+
+  function selectColor(color) {
+    selectedColor = color;
+    document.querySelectorAll('.color-select').forEach(btn => {
+      btn.classList.remove('ring-2', 'ring-offset-2');
+      if (btn.dataset.color === color) {
+        btn.classList.add('ring-2', 'ring-offset-2');
+      }
+    });
+  }
+
+  function addCustomCategory() {
+    const input = document.getElementById('customCategoryInput');
+    const name = input.value.trim();
+
+    if (!name) {
+      input.classList.add('ring-2', 'ring-red-500');
+      setTimeout(() => input.classList.remove('ring-2', 'ring-red-500'), 1000);
+      return;
+    }
+
+    // 检查是否已存在
+    if (defaultCategories.find(c => c.name === name)) {
+      alert('该分类已存在');
+      return;
+    }
+
+    const newCategory = {
+      name: name,
+      color: selectedColor,
+      icon: 'folder'
+    };
+
+    defaultCategories.push(newCategory);
+    selectCategory(newCategory);
+    input.value = '';
+
+    // 添加成功动画
+    const grid = document.getElementById('categoryGrid');
+    grid.lastElementChild.classList.add('animate-bounce-in');
+  }
+
+  function updateCurrentCategoryDisplay() {
+    const display = document.getElementById('currentCategoryDisplay');
+    if (selectedCategoryTemp) {
+      const colors = colorMap[selectedCategoryTemp.color];
+      display.className = `p-4 rounded-xl border-2 transition-all ${colors.bg} ${colors.border}`;
+      display.innerHTML = `
+                    <div class="flex items-center justify-center gap-2 ${colors.text}">
+                        <i class="fas fa-${selectedCategoryTemp.icon}"></i>
+                        <span class="font-semibold">${selectedCategoryTemp.name}</span>
+                    </div>
+                `;
+    } else {
+      display.className = 'p-3 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 text-center text-gray-400 text-sm';
+      display.innerHTML = '未设置分类';
+    }
+  }
+
+  function saveCategory() {
+    currentCategory = selectedCategoryTemp;
+    updateCategoryDisplay();
+    closeCategoryModal();
+
+    // 保存成功提示（可选）
+    showToast('分类已保存', 'success');
+  }
+
+  function clearCategory() {
+    currentCategory = null;
+    selectedCategoryTemp = null;
+    updateCurrentCategoryDisplay();
+  }
+
+  function updateCategoryDisplay() {
+    const tag = document.getElementById('currentCategory');
+    const btnText = document.getElementById('categoryBtnText');
+
+    if (currentCategory) {
+      const colors = colorMap[currentCategory.color];
+      tag.className = `category-tag px-3 py-1.5 rounded-full text-xs font-medium ${colors.bg} ${colors.text} border ${colors.border} flex items-center gap-1.5 animate-fade-in`;
+      tag.innerHTML = `
+                    <span class="w-1.5 h-1.5 rounded-full ${colors.dot}"></span>
+                    <i class="fas fa-${currentCategory.icon} text-[10px]"></i>
+                    <span>${currentCategory.name}</span>
+                `;
+      tag.classList.remove('hidden');
+      btnText.textContent = '编辑分类';
+    } else {
+      tag.classList.add('hidden');
+      btnText.textContent = '设置分类';
+    }
+  }
+
+  // Toast提示
+  function showToast(message, type = 'info') {
+    // 简单的toast实现，可以扩展
+    console.log(message);
+  }
+
+  // 远程库同步函数（保留）
+  function openSyncModal() {
+    const modal = document.getElementById('syncModal');
+    const overlay = document.getElementById('syncOverlay');
+    const content = document.getElementById('syncContent');
+
+    modal.classList.remove('hidden');
+    renderRemotes();
+
+    setTimeout(() => {
+      overlay.classList.remove('opacity-0');
+      content.classList.remove('opacity-0', 'scale-95');
+      content.classList.add('scale-100');
+    }, 10);
+  }
+
+  function closeSyncModal() {
+    const modal = document.getElementById('syncModal');
+    const overlay = document.getElementById('syncOverlay');
+    const content = document.getElementById('syncContent');
+
+    overlay.classList.add('opacity-0');
+    content.classList.remove('scale-100');
+    content.classList.add('opacity-0', 'scale-95');
+
+    setTimeout(() => {
+      modal.classList.add('hidden');
+    }, 300);
+  }
+
+  function renderRemotes() {
+    const container = document.getElementById('existingRemotes');
+    const otherRemotes = remotes.filter(r => !r.isSource);
+
+    container.innerHTML = '';
+
+    if (otherRemotes.length === 0) {
+      container.innerHTML = `
+                    <div class="text-center py-8 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
+                        <i class="fas fa-cloud mb-2 text-3xl opacity-30"></i>
+                        <div class="text-xs font-medium">暂无其他远程库</div>
+                        <div class="text-[10px] mt-1 opacity-70">请添加新的远程库进行同步</div>
+                    </div>
+                `;
+      selectedRemote = null;
+      updateSyncButton();
+      return;
+    }
+
+    otherRemotes.forEach(remote => {
+      const label = document.createElement('label');
+      label.className = 'relative block cursor-pointer group';
+      label.innerHTML = `
+                    <input type="radio" name="targetRemote" value="${remote.name}" class="peer sr-only" onchange="selectRemote('${remote.name}')">
+                    <div class="p-4 rounded-xl border-2 border-gray-200 hover:border-blue-300 peer-checked:border-blue-500 peer-checked:bg-blue-50 transition-all">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fab fa-${remote.type === 'github' ? 'github' : remote.type === 'gitlab' ? 'gitlab' : 'git-alt'} text-gray-600"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="text-sm font-bold text-gray-900 flex items-center gap-2 peer-checked:text-blue-700">
+                                        ${remote.name}
+                                        <i class="fas fa-check-circle text-blue-600 opacity-0 peer-checked:opacity-100 transition-opacity"></i>
+                                    </div>
+                                    <div class="text-xs text-gray-500 truncate font-mono max-w-[280px]">${remote.url}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+      container.appendChild(label);
+    });
+  }
+
+  function selectRemote(name) {
+    selectedRemote = name;
+    updateSyncButton();
+  }
+
+  function updateSyncButton() {
+    const btn = document.getElementById('syncBtn');
+    if (selectedRemote) {
+      btn.innerHTML = `<i class="fas fa-sync-alt"></i> 同步到 ${selectedRemote}`;
+      btn.disabled = false;
+    } else {
+      btn.innerHTML = `<i class="fas fa-sync-alt"></i> 开始同步`;
+      btn.disabled = remotes.filter(r => !r.isSource).length > 0;
+    }
+  }
+
+  function toggleAddRemote() {
+    const form = document.getElementById('newRemoteForm');
+    const btn = document.getElementById('toggleAddBtn');
+
+    if (form.classList.contains('hidden')) {
+      form.classList.remove('hidden');
+      btn.innerHTML = '<i class="fas fa-minus-circle"></i><span>收起添加表单</span>';
+    } else {
+      form.classList.add('hidden');
+      btn.innerHTML = '<i class="fas fa-plus-circle"></i><span>添加新的远程库</span>';
+    }
+  }
+
+  function addNewRemote() {
+    const name = document.getElementById('newRemoteName').value.trim();
+    const url = document.getElementById('newRemoteUrl').value.trim();
+
+    if (!name || !url) return;
+    if (remotes.find(r => r.name === name)) {
+      alert('该名称已存在');
+      return;
+    }
+
+    let type = 'git';
+    if (url.includes('github.com')) type = 'github';
+    else if (url.includes('gitee.com')) type = 'gitee';
+    else if (url.includes('gitlab')) type = 'gitlab';
+
+    remotes.push({ name, url, type, isSource: false });
+
+    document.getElementById('newRemoteForm').classList.add('hidden');
+    document.getElementById('newRemoteName').value = '';
+    document.getElementById('newRemoteUrl').value = '';
+    document.getElementById('toggleAddBtn').innerHTML = '<i class="fas fa-plus-circle"></i><span>添加新的远程库</span>';
+
+    renderRemotes();
+    setTimeout(() => {
+      const radio = document.querySelector(`input[value="${name}"]`);
+      if (radio) {
+        radio.checked = true;
+        selectRemote(name);
+      }
+    }, 100);
+  }
+
+  function startSync() {
+    if (!selectedRemote) return;
+    closeSyncModal();
+
+    const toast = document.getElementById('syncToast');
+    const progress = document.getElementById('syncProgress');
+    const status = document.getElementById('syncStatus');
+
+    toast.classList.remove('translate-y-24', 'opacity-0');
+
+    let width = 0;
+    const interval = setInterval(() => {
+      width += Math.random() * 15;
+      if (width > 100) width = 100;
+      progress.style.width = width + '%';
+
+      if (width < 30) status.textContent = `正在连接到 ${selectedRemote}...`;
+      else if (width < 60) status.textContent = '正在推送分支...';
+      else if (width < 90) status.textContent = '正在同步标签...';
+      else status.textContent = '正在完成...';
+
+      if (width === 100) {
+        clearInterval(interval);
+        setTimeout(() => {
+          status.textContent = '同步完成！';
+          progress.classList.remove('bg-blue-600');
+          progress.classList.add('bg-green-500');
+          toast.querySelector('.fa-spinner').style.display = 'none';
+          toast.querySelector('.rounded-full').innerHTML = '<i class="fas fa-check text-green-600"></i>';
+
+          setTimeout(() => {
+            toast.classList.add('translate-y-24', 'opacity-0');
+            setTimeout(() => {
+              progress.style.width = '0%';
+              progress.classList.remove('bg-green-500');
+              progress.classList.add('bg-blue-600');
+              toast.querySelector('.fa-spinner').style.display = 'block';
+              toast.querySelector('.rounded-full').innerHTML = '<i class="fas fa-spinner fa-spin text-blue-600"></i>';
+              status.textContent = '正在推送分支到目标远程库';
+            }, 300);
+          }, 2000);
+        }, 500);
+      }
+    }, 200);
+  }
+
+  // 渲染提交列表
+  function renderCommits() {
+    const container = document.getElementById('commitList');
+
+    commits.forEach((commit, index) => {
+      const isFirst = index === 0;
+      const div = document.createElement('div');
+      div.className = `hover-card bg-white rounded-xl p-4 border border-gray-200 hover:border-blue-300 cursor-pointer group animate-slide-up`;
+      div.style.animationDelay = `${index * 0.05}s`;
+
+      div.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <div class="flex flex-col items-center self-stretch pt-1">
+                            <div class="w-3 h-3 rounded-full ${isFirst ? 'bg-blue-600 ring-4 ring-blue-100' : 'bg-gray-300'} z-10"></div>
+                            ${index !== commits.length - 1 ? '<div class="w-0.5 flex-1 bg-gray-200 mt-1"></div>' : ''}
+                        </div>
+                        <div class="flex-1 min-w-0 pb-1">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2 mb-1.5">
+                                        <span class="font-bold text-sm text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1">
+                                            ${commit.message}
+                                        </span>
+                                        ${commit.isNew ? '<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold border border-blue-200">最新</span>' : ''}
+                                    </div>
+                                    <div class="flex items-center gap-3 text-xs text-gray-600">
+                                        <span class="font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-md border border-gray-200">${commit.hash}</span>
+                                        <span class="flex items-center gap-1 text-gray-500">
+                                            <i class="fas fa-user-circle text-gray-400"></i>
+                                            ${commit.author}
+                                        </span>
+                                        <span class="flex items-center gap-1 text-gray-400">
+                                            <i class="far fa-clock"></i>
+                                            ${commit.date}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                    <button class="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-blue-600 transition-colors" title="检出">
+                                        <i class="fas fa-code-branch text-xs"></i>
+                                    </button>
+                                    <button class="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-700 transition-colors" title="更多">
+                                        <i class="fas fa-ellipsis-h text-xs"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+      container.appendChild(div);
+    });
+  }
+</script>
+</body>
+</html>

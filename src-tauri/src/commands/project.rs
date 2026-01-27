@@ -7,6 +7,7 @@ pub struct Project {
     pub path: String,
     pub is_favorite: bool,
     pub tags: Vec<String>,
+    pub labels: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
     pub last_opened: Option<String>,
@@ -17,6 +18,7 @@ pub struct CreateProjectInput {
     pub name: String,
     pub path: String,
     pub tags: Option<Vec<String>>,
+    pub labels: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -24,6 +26,7 @@ pub struct UpdateProjectInput {
     pub id: String,
     pub name: Option<String>,
     pub tags: Option<Vec<String>>,
+    pub labels: Option<Vec<String>>,
 }
 
 // In-memory store for now, will be replaced with SQLite
@@ -52,6 +55,7 @@ pub async fn add_project(input: CreateProjectInput) -> Result<Project, String> {
         path: input.path,
         is_favorite: false,
         tags: input.tags.unwrap_or_default(),
+        labels: input.labels.unwrap_or_default(),
         created_at: get_current_time(),
         updated_at: get_current_time(),
         last_opened: None,
@@ -115,6 +119,9 @@ pub async fn update_project(input: UpdateProjectInput) -> Result<Project, String
         }
         if let Some(tags) = input.tags {
             project.tags = tags;
+        }
+        if let Some(labels) = input.labels {
+            project.labels = labels;
         }
         project.updated_at = get_current_time();
         Ok(project.clone())

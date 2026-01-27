@@ -2,17 +2,19 @@ import { useState } from "react";
 import { X, FolderGit2, Check, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { CategorySelector } from "./CategorySelector";
+import { LabelSelector } from "./LabelSelector";
 import type { GitRepo } from "@/types";
 
 interface ScanResultDialogProps {
   repos: GitRepo[];
-  onConfirm: (selectedPaths: string[], categories: string[]) => void;
+  onConfirm: (selectedPaths: string[], categories: string[], labels: string[]) => void;
   onCancel: () => void;
 }
 
 export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialogProps) {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set(repos.map(r => r.path)));
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
 
   function toggleSelection(path: string) {
     const newSelected = new Set(selectedPaths);
@@ -135,6 +137,15 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
               multiple={true}
             />
           </div>
+
+          {/* Label Selector */}
+          <div className="border-t border-[var(--border)] pt-6">
+            <LabelSelector
+              selectedLabels={selectedLabels}
+              onChange={setSelectedLabels}
+              multiple={true}
+            />
+          </div>
         </div>
 
         {/* Footer */}
@@ -147,7 +158,7 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
               取消
             </Button>
             <Button
-              onClick={() => onConfirm(Array.from(selectedPaths), selectedCategories)}
+              onClick={() => onConfirm(Array.from(selectedPaths), selectedCategories, selectedLabels)}
               disabled={selectedPaths.size === 0}
             >
               确认添加

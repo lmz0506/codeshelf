@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { X, GitBranch, GitCommit, ExternalLink, Terminal, Github, Globe, AlertCircle, CheckCircle, Tag, Edit2 } from "lucide-react";
+import { X, GitBranch, GitCommit, ExternalLink, Terminal, Github, Globe, AlertCircle, CheckCircle, Tag, Edit2, Code } from "lucide-react";
 import { Button } from "@/components/ui";
 import { CategorySelector } from "./CategorySelector";
+import { LabelSelector } from "./LabelSelector";
 import type { Project, GitStatus, CommitInfo, RemoteInfo } from "@/types";
 import { getGitStatus, getCommitHistory, getRemotes } from "@/services/git";
 import { openInEditor, openInTerminal, updateProject } from "@/services/db";
@@ -18,7 +19,9 @@ export function ProjectDetailDialog({ project, onClose, onUpdate }: ProjectDetai
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingCategories, setEditingCategories] = useState(false);
+  const [editingLabels, setEditingLabels] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(project.tags);
+  const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
 
   useEffect(() => {
     loadProjectDetails();
@@ -68,6 +71,19 @@ export function ProjectDetailDialog({ project, onClose, onUpdate }: ProjectDetai
       setEditingCategories(false);
     } catch (error) {
       console.error("Failed to update categories:", error);
+    }
+  }
+
+  async function handleSaveLabels() {
+    try {
+      const updated = await updateProject({
+        id: project.id,
+        labels: selectedLabels,
+      });
+      onUpdate?.(updated);
+      setEditingLabels(false);
+    } catch (error) {
+      console.error("Failed to update labels:", error);
     }
   }
 
@@ -155,6 +171,67 @@ export function ProjectDetailDialog({ project, onClose, onUpdate }: ProjectDetai
                         >
                           <Tag size={14} />
                           {tag}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                )}
+              </section>
+
+              {/* Labels Section */}
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-[var(--text)] flex items-center gap-2">
+                    <Code className="w-5 h-5 text-[var(--text-light)]" />
+                    技术栈标签
+                  </h3>
+                  {!editingLabels && (
+                    <button
+                      onClick={() => setEditingLabels(true)}
+                      className="text-sm text-[var(--primary)] hover:underline font-medium flex items-center gap-1"
+                    >
+                      <Edit2 size={14} />
+                      编辑
+                    </button>
+                  )}
+                </div>
+
+                {editingLabels ? (
+                  <div className="space-y-4">
+                    <LabelSelector
+                      selectedLabels={selectedLabels}
+                      onChange={setSelectedLabels}
+                      multiple={true}
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => {
+                          setSelectedLabels(project.labels || []);
+                          setEditingLabels(false);
+                        }}
+                        className="px-4 py-2 border border-[var(--border)] text-[var(--text)] rounded-lg hover:bg-[var(--bg-light)] transition-colors text-sm font-medium"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleSaveLabels}
+                        className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary)]/90 transition-colors text-sm font-medium"
+                      >
+                        保存
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {(!project.labels || project.labels.length === 0) ? (
+                      <span className="text-sm text-[var(--text-light)]">未设置技术栈标签</span>
+                    ) : (
+                      project.labels.map((label) => (
+                        <span
+                          key={label}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-[var(--primary-light)] text-[var(--primary)] rounded-lg text-sm font-medium"
+                        >
+                          {label}
                         </span>
                       ))
                     )}

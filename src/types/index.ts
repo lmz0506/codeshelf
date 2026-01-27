@@ -4,7 +4,8 @@ export interface Project {
   name: string;
   path: string;
   isFavorite: boolean;
-  tags: string[];
+  tags: string[]; // Categories for organization (工作、个人、学习等)
+  labels: string[]; // Tech stack labels (Java, Vue, 小程序等)
   createdAt: string;
   updatedAt: string;
   lastOpened?: string;
@@ -16,12 +17,14 @@ export interface CreateProjectInput {
   name: string;
   path: string;
   tags?: string[];
+  labels?: string[];
 }
 
 export interface UpdateProjectInput {
   id: string;
   name?: string;
   tags?: string[];
+  labels?: string[];
 }
 
 // Git types

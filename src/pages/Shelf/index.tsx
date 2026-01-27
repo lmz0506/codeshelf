@@ -106,7 +106,7 @@ export function ShelfPage() {
   }
 
 
-  async function handleConfirmScan(selectedPaths: string[], categories: string[]) {
+  async function handleConfirmScan(selectedPaths: string[], categories: string[], labels: string[]) {
     try {
       setLoading(true);
       const newProjects: Project[] = [];
@@ -119,6 +119,7 @@ export function ShelfPage() {
               name: repo.name,
               path: repo.path,
               tags: categories,
+              labels: labels,
             });
             newProjects.push(project);
           } catch (error) {

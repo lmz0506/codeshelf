@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X, Folder, GitBranch, Plus, Loader2 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CategorySelector } from "./CategorySelector";
+import { LabelSelector } from "./LabelSelector";
 import { addProject } from "@/services/db";
 import { invoke } from "@tauri-apps/api/core";
 import type { Project } from "@/types";
@@ -18,6 +19,7 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
   const [gitTargetPath, setGitTargetPath] = useState("");
   const [projectName, setProjectName] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -77,6 +79,7 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
           name,
           path: localPath,
           tags: selectedCategories,
+          labels: selectedLabels,
         });
 
         onConfirm(project);
@@ -110,6 +113,7 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
           name,
           path: clonePath,
           tags: selectedCategories,
+          labels: selectedLabels,
         });
 
         onConfirm(project);
@@ -290,6 +294,13 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
           <CategorySelector
             selectedCategories={selectedCategories}
             onChange={setSelectedCategories}
+            multiple={true}
+          />
+
+          {/* Labels */}
+          <LabelSelector
+            selectedLabels={selectedLabels}
+            onChange={setSelectedLabels}
             multiple={true}
           />
 

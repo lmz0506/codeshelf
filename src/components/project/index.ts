@@ -4,4 +4,5 @@ export { ProjectDetailDialog } from "./ProjectDetailDialog";
 export { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 export { AddCategoryDialog } from "./AddCategoryDialog";
 export { CategorySelector } from "./CategorySelector";
+export { LabelSelector } from "./LabelSelector";
 export { AddProjectDialog } from "./AddProjectDialog";
