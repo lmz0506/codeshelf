@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Filter } from "lucide-react";
+import { Filter, Star, GitCommit, X } from "lucide-react";
 
 interface FilterPopoverProps {
   onlyStarred: boolean;
@@ -44,50 +44,121 @@ export function FilterPopover({
         <Filter size={16} />
         <span>过滤</span>
         {activeFiltersCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--primary)] text-white text-xs rounded-full flex items-center justify-center">
+          <span className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--primary)] text-white text-xs rounded-full flex items-center justify-center font-semibold">
             {activeFiltersCount}
           </span>
         )}
       </button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-[var(--border)] py-2 z-50">
-          <div className="px-3 py-2 text-xs font-semibold text-[var(--text-light)] uppercase tracking-wider">
-            过滤选项
+        <div className="absolute top-full right-0 mt-2 w-72 bg-[var(--card)] rounded-xl shadow-2xl border border-[var(--border)] z-50 overflow-hidden">
+          {/* Header */}
+          <div className="px-5 py-4 border-b border-[var(--border)] bg-[var(--bg-light)]">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[var(--text)]">过滤选项</h3>
+              {activeFiltersCount > 0 && (
+                <button
+                  onClick={() => {
+                    onStarredChange(false);
+                    onModifiedChange(false);
+                  }}
+                  className="text-xs text-[var(--primary)] hover:underline font-medium flex items-center gap-1"
+                >
+                  <X size={12} />
+                  清除
+                </button>
+              )}
+            </div>
           </div>
-          <div className="px-3 py-1 space-y-2">
-            <label className="flex items-center gap-2.5 cursor-pointer py-2 hover:bg-[var(--bg-light)] px-2 rounded transition-colors">
-              <input
-                type="checkbox"
-                checked={onlyStarred}
-                onChange={(e) => onStarredChange(e.target.checked)}
-                className="w-4 h-4"
-              />
-              <span className="text-sm text-[var(--text)]">只看收藏</span>
-            </label>
-            <label className="flex items-center gap-2.5 cursor-pointer py-2 hover:bg-[var(--bg-light)] px-2 rounded transition-colors">
-              <input
-                type="checkbox"
-                checked={onlyModified}
-                onChange={(e) => onModifiedChange(e.target.checked)}
-                className="w-4 h-4"
-              />
-              <span className="text-sm text-[var(--text)]">只看待提交</span>
-            </label>
+
+          {/* Filter Options */}
+          <div className="p-3 space-y-2">
+            {/* Starred Filter */}
+            <button
+              onClick={() => onStarredChange(!onlyStarred)}
+              className={`w-full text-left p-4 rounded-lg transition-all ${
+                onlyStarred
+                  ? "bg-[var(--primary-light)] border-2 border-[var(--primary)]"
+                  : "bg-[var(--bg-light)] border-2 border-transparent hover:border-[var(--border)]"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
+                  onlyStarred ? "bg-[var(--primary)]/10" : "bg-[var(--card)]"
+                }`}>
+                  <Star className={`w-4 h-4 ${
+                    onlyStarred ? "text-[var(--primary)] fill-[var(--primary)]" : "text-[var(--text-light)]"
+                  }`} />
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium text-[var(--text)] text-sm">
+                    只看收藏
+                  </div>
+                  <div className="text-xs text-[var(--text-light)] mt-0.5">
+                    显示已收藏的项目
+                  </div>
+                </div>
+                <div className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center ${
+                  onlyStarred
+                    ? "border-[var(--primary)] bg-[var(--primary)]"
+                    : "border-[var(--border)]"
+                }`}>
+                  {onlyStarred && (
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+            </button>
+
+            {/* Modified Filter */}
+            <button
+              onClick={() => onModifiedChange(!onlyModified)}
+              className={`w-full text-left p-4 rounded-lg transition-all ${
+                onlyModified
+                  ? "bg-[var(--primary-light)] border-2 border-[var(--primary)]"
+                  : "bg-[var(--bg-light)] border-2 border-transparent hover:border-[var(--border)]"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
+                  onlyModified ? "bg-[var(--primary)]/10" : "bg-[var(--card)]"
+                }`}>
+                  <GitCommit className={`w-4 h-4 ${
+                    onlyModified ? "text-[var(--primary)]" : "text-[var(--text-light)]"
+                  }`} />
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium text-[var(--text)] text-sm">
+                    只看待提交
+                  </div>
+                  <div className="text-xs text-[var(--text-light)] mt-0.5">
+                    显示有未提交修改的项目
+                  </div>
+                </div>
+                <div className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center ${
+                  onlyModified
+                    ? "border-[var(--primary)] bg-[var(--primary)]"
+                    : "border-[var(--border)]"
+                }`}>
+                  {onlyModified && (
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+            </button>
           </div>
-          {activeFiltersCount > 0 && (
-            <>
-              <div className="h-px bg-[var(--border)] my-2" />
-              <button
-                onClick={() => {
-                  onStarredChange(false);
-                  onModifiedChange(false);
-                }}
-                className="w-full px-5 py-2 text-left text-sm text-[var(--primary)] hover:bg-[var(--bg-light)] transition-colors"
-              >
-                清除所有过滤
-              </button>
-            </>
+
+          {/* Footer Hint */}
+          {activeFiltersCount === 0 && (
+            <div className="px-5 py-3 border-t border-[var(--border)] bg-[var(--bg-light)]">
+              <p className="text-xs text-[var(--text-light)] text-center">
+                选择过滤条件以筛选项目
+              </p>
+            </div>
           )}
         </div>
       )}
