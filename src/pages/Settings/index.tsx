@@ -4,12 +4,19 @@ import { Sun, Moon, Minus, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export function SettingsPage() {
-  const { theme, setTheme } = useAppStore();
+  const { theme, setTheme, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
 
   return (
-    <div className="re-main-wrap">
+    <div className="flex flex-col min-h-full">
       {/* Header with Title and Integrated Window Controls */}
       <header className="re-header sticky top-0 z-20" data-tauri-drag-region>
+        <span
+          className="toggle"
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        >
+          ☰
+        </span>
+
         <div className="flex-1 flex items-center gap-3" data-tauri-drag-region>
           <span className="text-lg font-semibold ml-2">⚙️ 设置</span>
         </div>
@@ -34,7 +41,7 @@ export function SettingsPage() {
         </div>
       </header>
 
-      <div className="p-5 mt-5 max-w-3xl flex flex-col gap-6">
+      <div className="p-5 mt-5 flex flex-col gap-6">
         {/* Theme Settings */}
         <section className="re-card">
           <h2 className="text-[17px] font-semibold mb-6">外观</h2>
@@ -92,18 +99,6 @@ export function SettingsPage() {
             />
             <p className="text-sm text-[var(--text-light)] leading-relaxed">
               扫描目录时的最大递归深度
-            </p>
-          </div>
-        </section>
-
-        {/* About */}
-        <section className="re-card">
-          <h2 className="text-[17px] font-semibold mb-6">关于</h2>
-          <div className="text-[var(--text-light)] space-y-3">
-            <p className="font-medium text-base text-[var(--text)]">CodeShelf v0.1.0</p>
-            <p className="leading-relaxed">代码书架 - 本地项目管理工具</p>
-            <p className="text-sm leading-relaxed">
-              基于 Tauri + React + TypeScript 构建
             </p>
           </div>
         </section>

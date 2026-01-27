@@ -14,7 +14,7 @@ import type { DashboardStats, DailyActivity } from "@/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export function DashboardPage() {
-  const { projects } = useAppStore();
+  const { projects, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
   const [stats, setStats] = useState<DashboardStats>({
     totalProjects: 0,
     todayCommits: 0,
@@ -91,9 +91,16 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="re-main-wrap">
+    <div className="flex flex-col min-h-full">
       {/* Header with Title and Integrated Window Controls */}
       <header className="re-header sticky top-0 z-20" data-tauri-drag-region>
+        <span
+          className="toggle"
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        >
+          ☰
+        </span>
+
         <div className="flex-1 flex items-center gap-3" data-tauri-drag-region>
           <span className="text-lg font-semibold ml-2">📊 数据统计</span>
         </div>
