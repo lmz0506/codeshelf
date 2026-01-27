@@ -132,6 +132,48 @@ export function FloatingCategoryBall({
     };
   }, [isExpanded]);
 
+  // 展开时自动调整位置，避免溢出
+  useEffect(() => {
+    if (!isExpanded || !ballRef.current) return;
+
+    const adjustPosition = () => {
+      const expandedWidth = 200; // 展开后的宽度
+      const expandedHeight = itemHeight * maxVisible + 120; // 展开后的高度（包括标题和底部）
+
+      let newX = position.x;
+      let newY = position.y;
+
+      // 检查右侧溢出
+      if (position.x + expandedWidth > window.innerWidth) {
+        newX = window.innerWidth - expandedWidth - 20;
+      }
+
+      // 检查左侧溢出
+      if (newX < 20) {
+        newX = 20;
+      }
+
+      // 检查底部溢出
+      if (position.y + expandedHeight > window.innerHeight) {
+        newY = window.innerHeight - expandedHeight - 20;
+      }
+
+      // 检查顶部溢出
+      if (newY < 20) {
+        newY = 20;
+      }
+
+      // 如果位置需要调整，更新位置
+      if (newX !== position.x || newY !== position.y) {
+        setPosition({ x: newX, y: newY });
+      }
+    };
+
+    // 延迟调整，等待DOM更新
+    const timer = setTimeout(adjustPosition, 50);
+    return () => clearTimeout(timer);
+  }, [isExpanded, position.x, position.y, itemHeight, maxVisible]);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isExpanded) return; // 展开时不允许拖动
 
@@ -196,7 +238,7 @@ export function FloatingCategoryBall({
         </div>
       ) : (
         // 展开状态：显示分类列表（轮盘效果）
-        <div className="bg-white rounded-2xl shadow-2xl p-4 min-w-[240px] animate-scale-in">
+        <div className="bg-white rounded-2xl shadow-2xl p-4 min-w-[180px] animate-scale-in">
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
             <span className="text-sm font-semibold text-gray-700">选择分类</span>
             <button
