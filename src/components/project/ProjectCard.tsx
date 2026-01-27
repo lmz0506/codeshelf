@@ -133,6 +133,19 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
           分类：{project.tags.length > 0 ? project.tags.join(", ") : "未分类"}
         </div>
 
+        {project.labels && project.labels.length > 0 && (
+          <div className="flex flex-wrap gap-1 px-4 pb-2">
+            {project.labels.map((label) => (
+              <span
+                key={label}
+                className="inline-flex items-center px-2 py-0.5 bg-[var(--primary-light)] text-[var(--primary)] rounded text-xs font-medium"
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="re-card-path">
           {project.path}
         </div>
