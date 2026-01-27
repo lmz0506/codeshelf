@@ -127,12 +127,12 @@ export function ShelfPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <header className="flex items-center justify-between gap-4 p-4 border-b border-gray-800">
-        <h1 className="text-xl font-semibold text-white">项目书架</h1>
+      <header className="flex items-center justify-between gap-4 px-6 py-4 border-b border-[var(--color-border)] bg-[var(--color-bg-primary)]">
+        <h1 className="text-[var(--color-text-primary)] whitespace-nowrap">项目书架</h1>
 
         <div className="flex items-center gap-3 flex-1 max-w-2xl">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]" />
             <Input
               placeholder="搜索项目..."
               value={searchQuery}
@@ -141,23 +141,23 @@ export function ShelfPage() {
             />
           </div>
 
-          <div className="flex items-center border border-gray-700 rounded-lg">
+          <div className="flex items-center border border-[var(--color-border)] rounded-lg overflow-hidden">
             <button
               onClick={() => setViewMode("grid")}
-              className={`p-2 ${
+              className={`p-2.5 transition-colors ${
                 viewMode === "grid"
-                  ? "bg-gray-700 text-white"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                  : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]"
               }`}
             >
               <Grid3X3 className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode("list")}
-              className={`p-2 ${
+              className={`p-2.5 transition-colors ${
                 viewMode === "list"
-                  ? "bg-gray-700 text-white"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                  : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]"
               }`}
             >
               <List className="w-4 h-4" />
@@ -178,19 +178,19 @@ export function ShelfPage() {
       </header>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto p-6">
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
           </div>
         ) : sortedProjects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-            <FolderPlus className="w-12 h-12 mb-4" />
-            <p className="text-lg mb-2">还没有项目</p>
+          <div className="flex flex-col items-center justify-center h-64 text-[var(--color-text-muted)]">
+            <FolderPlus className="w-16 h-16 mb-4 opacity-50" />
+            <p className="text-lg font-medium mb-2 text-[var(--color-text-secondary)]">还没有项目</p>
             <p className="text-sm">点击"添加项目"或"扫描目录"开始使用</p>
           </div>
         ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {sortedProjects.map((project) => (
               <ProjectCard
                 key={project.id}
@@ -201,7 +201,7 @@ export function ShelfPage() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {sortedProjects.map((project) => (
               <ProjectCard
                 key={project.id}

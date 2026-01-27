@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Project, ViewMode } from "@/types";
 
+export type Theme = "light" | "dark";
+
 interface AppState {
   // Projects
   projects: Project[];
@@ -19,6 +21,10 @@ interface AppState {
   setSearchQuery: (query: string) => void;
   selectedTags: string[];
   setSelectedTags: (tags: string[]) => void;
+
+  // Theme
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
 
   // Sidebar
   sidebarCollapsed: boolean;
@@ -54,6 +60,10 @@ export const useAppStore = create<AppState>()(
       selectedTags: [],
       setSelectedTags: (selectedTags) => set({ selectedTags }),
 
+      // Theme
+      theme: "light",
+      setTheme: (theme) => set({ theme }),
+
       // Sidebar
       sidebarCollapsed: false,
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
@@ -63,6 +73,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         viewMode: state.viewMode,
         sidebarCollapsed: state.sidebarCollapsed,
+        theme: state.theme,
       }),
     }
   )
