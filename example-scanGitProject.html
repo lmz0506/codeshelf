@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>发现 Git 项目 - 智能归类</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+
+    .project-row {
+      transition: all 0.15s ease;
+      border-left: 3px solid transparent;
+    }
+    .project-row:hover { background-color: #f8fafc; }
+    .project-row.selected {
+      background-color: #eff6ff;
+      border-left-color: #3b82f6;
+    }
+    .project-row.assigned { opacity: 0.5; }
+
+    .category-card {
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .category-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+    }
+    .category-card.active {
+      box-shadow: 0 0 0 2px #3b82f6, 0 10px 25px -5px rgba(59, 130, 246, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .recommend-card {
+      animation: slideDown 0.3s ease-out;
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border: 2px solid #fbbf24;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .history-tag {
+      animation: popIn 0.3s ease-out;
+    }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .custom-checkbox {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #cbd5e1;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.15s;
+      position: relative;
+    }
+    .custom-checkbox:checked {
+      background-color: #3b82f6;
+      border-color: #3b82f6;
+    }
+    .custom-checkbox:checked::after {
+      content: '';
+      position: absolute;
+      left: 5px;
+      top: 2px;
+      width: 5px;
+      height: 9px;
+      border: solid white;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 20px;
+    }
+  </style>
+  <base target="_blank">
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-6">
+
+<div class="max-w-7xl mx-auto space-y-4">
+
+  <!-- 头部 -->
+  <header class="bg-white rounded-xl shadow-sm border border-gray-200 px-6 py-4 flex justify-between items-center">
+    <div class="flex items-center gap-4">
+      <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold text-gray-900">发现 Git 项目</h1>
+        <div class="flex items-center gap-3 text-sm text-gray-500 mt-0.5">
+          <span>扫描到 <strong class="text-gray-900">68</strong> 个仓库</span>
+          <span class="w-1 h-1 rounded-full bg-gray-300"></span>
+          <span class="text-orange-600 font-medium"><strong id="unclassified-count">68</strong> 个待分类</span>
+        </div>
+      </div>
+    </div>
+    <button class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+      </svg>
+    </button>
+  </header>
+
+  <!-- 主内容 -->
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+    <!-- 左侧：项目列表 -->
+    <div class="lg:col-span-8">
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
+        <!-- 工具栏 -->
+        <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between flex-shrink-0">
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" class="custom-checkbox" id="select-all-checkbox" onchange="toggleSelectAll()">
+              <span class="text-sm font-medium text-gray-700">全选</span>
+            </label>
+            <div class="h-4 w-px bg-gray-300"></div>
+            <span class="text-sm text-gray-500">
+                                已选 <span class="font-bold text-blue-600" id="selected-count">0</span> 项
+                            </span>
+          </div>
+          <button onclick="filterUnassigned()" id="filter-btn" class="text-xs font-medium px-3 py-1.5 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors">
+            仅看未分类
+          </button>
+        </div>
+
+        <!-- 表头 -->
+        <div class="grid grid-cols-12 gap-4 px-5 py-2 bg-gray-50 text-xs font-semibold text-gray-500 border-b border-gray-100 flex-shrink-0">
+          <div class="col-span-1">选择</div>
+          <div class="col-span-8">项目信息</div>
+          <div class="col-span-3 text-right">状态</div>
+        </div>
+
+        <!-- 列表 -->
+        <div class="flex-1 overflow-y-auto scrollbar-thin divide-y divide-gray-50" id="project-list" style="max-height: 600px;">
+          <!-- JS生成 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧：操作面板 -->
+    <div class="lg:col-span-4 flex flex-col gap-4">
+
+      <!-- 1. 选中状态 -->
+      <div class="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl shadow-lg shadow-blue-500/30 p-5 text-white relative overflow-hidden flex-shrink-0">
+        <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
+        <div class="relative">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold flex items-center gap-2">
+              <svg class="w-5 h-5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z"></path>
+              </svg>
+              批量归类
+            </h3>
+            <span class="text-3xl font-bold" id="preview-count">0</span>
+          </div>
+          <div class="text-sm text-blue-100 mb-3" id="preview-names">请在左侧选择项目</div>
+          <div class="text-xs text-blue-200 bg-blue-800/30 rounded-lg p-2.5">
+            💡 智能检测：选择多个项目后，系统将自动识别共同前缀并推荐分类
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 智能推荐区（动态显示） -->
+      <div id="recommend-section" class="hidden">
+        <!-- 推荐卡片 -->
+        <div class="recommend-card rounded-xl p-4 mb-3 relative">
+          <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-lg bg-amber-500 text-white flex items-center justify-center flex-shrink-0 shadow-lg">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h4 class="font-semibold text-amber-900 text-sm mb-1">检测到共同前缀</h4>
+              <p class="text-xs text-amber-800 mb-3" id="recommend-text">
+                选中的 3 个项目均以 "battery" 开头
+              </p>
+
+              <!-- 重命名输入（默认隐藏） -->
+              <div id="rename-input-container" class="hidden mb-3">
+                <input type="text" id="rename-input" class="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-sm mb-2 focus:outline-none focus:border-amber-500" placeholder="输入分类名称...">
+                <div class="flex gap-2">
+                  <button onclick="confirmRename()" class="flex-1 py-1.5 bg-amber-500 text-white rounded-lg text-xs font-medium hover:bg-amber-600">确认使用此名称</button>
+                  <button onclick="cancelRename()" class="px-3 py-1.5 border border-amber-300 text-amber-700 rounded-lg text-xs hover:bg-amber-100">取消</button>
+                </div>
+              </div>
+
+              <!-- 操作按钮 -->
+              <div id="recommend-actions" class="flex flex-wrap gap-2">
+                <button onclick="acceptRecommend()" class="flex-1 min-w-[100px] py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold shadow-md transition-colors flex items-center justify-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  创建 "<span id="recommend-name">battery</span>"
+                </button>
+                <button onclick="showRename()" class="px-3 py-2 border-2 border-amber-500 text-amber-700 rounded-lg text-xs font-medium hover:bg-amber-100 transition-colors">
+                  重命名
+                </button>
+                <button onclick="dismissRecommend()" class="px-3 py-2 border border-amber-400 text-amber-600 rounded-lg text-xs hover:bg-amber-100 transition-colors">
+                  添加到已有
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 关闭按钮 -->
+          <button onclick="dismissRecommend()" class="absolute top-2 right-2 text-amber-600/60 hover:text-amber-800 p-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. 分类选择 -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex-shrink-0">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="font-semibold text-gray-900 text-sm">选择目标分类</h3>
+          <button onclick="createNewCategory()" class="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            新建
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 gap-2" id="category-grid">
+          <!-- 分类卡片 -->
+          <div class="category-card cursor-pointer border-2 border-gray-100 rounded-lg p-3 hover:border-blue-200 bg-white group flex items-center gap-3" onclick="selectCategory('work')" data-category="work">
+            <div class="w-10 h-10 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center text-xl flex-shrink-0">💼</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold text-gray-900 text-sm">工作项目</div>
+              <div class="text-xs text-gray-500 truncate">公司业务代码</div>
+            </div>
+            <div class="check-icon opacity-0 group-hover:opacity-50 transition-opacity text-blue-600">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+          </div>
+
+          <div class="category-card cursor-pointer border-2 border-gray-100 rounded-lg p-3 hover:border-emerald-200 bg-white group flex items-center gap-3" onclick="selectCategory('personal')" data-category="personal">
+            <div class="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center text-xl flex-shrink-0">🎯</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold text-gray-900 text-sm">个人学习</div>
+              <div class="text-xs text-gray-500 truncate">试验性学习项目</div>
+            </div>
+            <div class="check-icon opacity-0 group-hover:opacity-50 transition-opacity text-emerald-600">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+          </div>
+
+          <div class="category-card cursor-pointer border-2 border-gray-100 rounded-lg p-3 hover:border-purple-200 bg-white group flex items-center gap-3" onclick="selectCategory('open')" data-category="open">
+            <div class="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center text-xl flex-shrink-0">🌟</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold text-gray-900 text-sm">开源贡献</div>
+              <div class="text-xs text-gray-500 truncate">第三方开源库</div>
+            </div>
+            <div class="check-icon opacity-0 group-hover:opacity-50 transition-opacity text-purple-600">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 新建分类输入 -->
+        <div id="new-category-input" class="hidden mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <input type="text" id="new-cat-name" placeholder="分类名称..." class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm mb-2 focus:outline-none focus:border-blue-500">
+          <div class="flex gap-2 justify-end">
+            <button onclick="cancelNewCategory()" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1">取消</button>
+            <button onclick="confirmNewCategory()" class="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">确定</button>
+          </div>
+        </div>
+
+        <!-- 应用按钮 -->
+        <button onclick="applyCategory()" id="apply-btn" disabled class="w-full mt-3 py-2.5 bg-gray-100 text-gray-400 rounded-lg font-semibold cursor-not-allowed transition-all flex items-center justify-center gap-2 text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          应用归类
+        </button>
+      </div>
+
+      <!-- 4. 操作总结 -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex-1 flex flex-col">
+        <div class="flex-1">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">本次操作记录</h3>
+            <span class="text-xs text-gray-400" id="history-count">0 次操作</span>
+          </div>
+          <div id="history-container" class="flex flex-wrap gap-2 content-start">
+            <div class="text-xs text-gray-400 italic py-2" id="empty-history">暂无归类操作</div>
+          </div>
+        </div>
+
+        <div class="h-px bg-gray-200 my-4"></div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between text-xs text-gray-500 mb-2">
+            <span>已归类: <strong class="text-gray-900" id="total-assigned">0</strong> 个</span>
+            <span>待导入: <strong class="text-blue-600" id="total-pending">0</strong> 个</span>
+          </div>
+
+          <div class="grid grid-cols-4 gap-2">
+            <button onclick="resetAll()" class="col-span-1 py-2.5 border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm flex items-center justify-center" title="重置">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+              </svg>
+            </button>
+            <button onclick="finishImport()" class="col-span-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 text-sm flex items-center justify-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              确认导入所有项目
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-3 rounded-lg shadow-2xl opacity-0 pointer-events-none transition-all duration-300 z-50 flex items-center gap-2 text-sm">
+  <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+  </svg>
+  <span id="toast-message">操作成功</span>
+</div>
+
+<script>
+  // 包含 battery 前缀的测试数据
+  const projects = [
+    { id: 1, name: 'trpc', path: 'C:\\work\\tan\\code\\trpc', icon: '⚡', category: null },
+    { id: 2, name: 'van-nav', path: 'C:\\work\\tan\\code\\van-nav', icon: '🧭', category: null },
+    { id: 3, name: 'vite-mui-ts', path: 'C:\\work\\tan\\code\\vite-mui-ts', icon: '🎨', category: null },
+    { id: 4, name: 'battery-core', path: 'C:\\work\\tan\\code\\battery-core', icon: '🔋', category: null },
+    { id: 5, name: 'battery-server', path: 'C:\\work\\tan\\code\\battery-server', icon: '⚡', category: null },
+    { id: 6, name: 'battery-admin', path: 'C:\\work\\tan\\code\\battery-admin', icon: '🔌', category: null },
+    { id: 7, name: 'battery-gateway', path: 'C:\\work\\tan\\code\\battery-gateway', icon: '🌐', category: null },
+    { id: 8, name: '1Panel', path: 'C:\\work\\tan\\code\\1Panel', icon: '🖥️', category: null },
+    { id: 9, name: 'acme4j', path: 'C:\\work\\tan\\code\\acme4j', icon: '🔐', category: null },
+    { id: 10, name: 'blog-api', path: 'C:\\work\\tan\\code\\blog-api', icon: '📝', category: null },
+    { id: 11, name: 'blog-web', path: 'C:\\work\\tan\\code\\blog-web', icon: '📱', category: null },
+    { id: 12, name: 'blog-admin', path: 'C:\\work\\tan\\code\\blog-admin', icon: '💻', category: null }
+  ];
+
+  let selectedProjects = new Set();
+  let selectedCategory = null;
+  let history = [];
+  let showingAll = true;
+  let currentRecommendPrefix = null;
+
+  const categories = {
+    work: { name: '工作项目', icon: '💼', color: 'orange', bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
+    personal: { name: '个人学习', icon: '🎯', color: 'emerald', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+    open: { name: '开源贡献', icon: '🌟', color: 'purple', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' }
+  };
+
+  // 检测共同前缀
+  function detectCommonPrefix(projectIds) {
+    if (projectIds.size < 2) return null;
+
+    const names = Array.from(projectIds).map(id =>
+            projects.find(p => p.id === id).name
+    );
+
+    // 找最长公共前缀
+    let prefix = names[0];
+    for (let i = 1; i < names.length; i++) {
+      while (!names[i].startsWith(prefix) && prefix.length > 0) {
+        prefix = prefix.slice(0, -1);
+      }
+      if (prefix.length === 0) break;
+    }
+
+    // 清理前缀（去除末尾的 - _ 等特殊字符）
+    prefix = prefix.replace(/[-_]+$/, '');
+
+    // 前缀长度至少为2，且不是所有项目的完整名称
+    if (prefix.length >= 2 && !names.every(n => n === prefix)) {
+      return prefix;
+    }
+    return null;
+  }
+
+  function updateRecommendation() {
+    const recommendSection = document.getElementById('recommend-section');
+    const prefix = detectCommonPrefix(selectedProjects);
+
+    if (prefix && selectedProjects.size >= 2) {
+      currentRecommendPrefix = prefix;
+      document.getElementById('recommend-text').textContent =
+              `选中的 ${selectedProjects.size} 个项目均以 "${prefix}" 开头`;
+      document.getElementById('recommend-name').textContent = prefix;
+      recommendSection.classList.remove('hidden');
+
+      // 重置重命名状态
+      document.getElementById('rename-input-container').classList.add('hidden');
+      document.getElementById('recommend-actions').classList.remove('hidden');
+      document.getElementById('rename-input').value = prefix;
+    } else {
+      currentRecommendPrefix = null;
+      recommendSection.classList.add('hidden');
+    }
+  }
+
+  function acceptRecommend() {
+    if (!currentRecommendPrefix) return;
+    createCategoryWithName(currentRecommendPrefix);
+    dismissRecommend();
+    showToast(`已创建分类 "${currentRecommendPrefix}"`);
+  }
+
+  function showRename() {
+    document.getElementById('recommend-actions').classList.add('hidden');
+    document.getElementById('rename-input-container').classList.remove('hidden');
+    document.getElementById('rename-input').focus();
+    document.getElementById('rename-input').select();
+  }
+
+  function confirmRename() {
+    const name = document.getElementById('rename-input').value.trim();
+    if (name) {
+      createCategoryWithName(name);
+      dismissRecommend();
+      showToast(`已创建分类 "${name}"`);
+    }
+  }
+
+  function cancelRename() {
+    document.getElementById('rename-input-container').classList.add('hidden');
+    document.getElementById('recommend-actions').classList.remove('hidden');
+  }
+
+  function dismissRecommend() {
+    document.getElementById('recommend-section').classList.add('hidden');
+    currentRecommendPrefix = null;
+  }
+
+  function createCategoryWithName(name) {
+    const id = 'auto_' + Date.now();
+    const color = 'amber';
+
+    categories[id] = {
+      name: name,
+      icon: '📦',
+      color: color,
+      bg: `bg-${color}-50`,
+      text: `text-${color}-700`,
+      border: `border-${color}-200`
+    };
+
+    // 添加到网格
+    const grid = document.getElementById('category-grid');
+    const div = document.createElement('div');
+    div.className = 'category-card cursor-pointer border-2 border-amber-300 rounded-lg p-3 bg-amber-50 group flex items-center gap-3 animate-pulse';
+    div.setAttribute('onclick', `selectCategory('${id}')`);
+    div.setAttribute('data-category', id);
+    div.innerHTML = `
+                <div class="w-10 h-10 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center text-xl flex-shrink-0">📦</div>
+                <div class="flex-1 min-w-0">
+                    <div class="font-semibold text-gray-900 text-sm">${name}</div>
+                    <div class="text-xs text-amber-600 truncate">智能推荐</div>
+                </div>
+                <div class="check-icon opacity-0 group-hover:opacity-50 transition-opacity text-amber-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+            `;
+    grid.insertBefore(div, grid.firstChild);
+
+    // 自动选中
+    setTimeout(() => {
+      selectCategory(id);
+      div.classList.remove('animate-pulse', 'bg-amber-50', 'border-amber-300');
+      div.classList.add('bg-white', 'border-gray-100');
+      // 更新文本
+      div.querySelector('.text-xs').textContent = '自定义';
+      div.querySelector('.text-xs').classList.remove('text-amber-600');
+      div.querySelector('.text-xs').classList.add('text-gray-500');
+    }, 500);
+  }
+
+  function renderProjects() {
+    const container = document.getElementById('project-list');
+    const filtered = showingAll ? projects : projects.filter(p => p.category === null);
+
+    container.innerHTML = filtered.map(project => {
+      const isSelected = selectedProjects.has(project.id);
+      const hasCategory = project.category !== null;
+      const cat = hasCategory ? categories[project.category] : null;
+
+      return `
+                    <div class="project-row grid grid-cols-12 gap-4 px-5 py-3 items-center cursor-pointer ${isSelected ? 'selected' : ''} ${hasCategory ? 'assigned' : ''}"
+                         onclick="toggleProject(${project.id})" data-id="${project.id}">
+
+                        <div class="col-span-1 flex items-center">
+                            <input type="checkbox" class="custom-checkbox" ${isSelected ? 'checked' : ''}
+                                   onclick="event.stopPropagation(); toggleProject(${project.id})">
+                        </div>
+
+                        <div class="col-span-8 flex items-center gap-3 min-w-0">
+                            <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-lg flex-shrink-0">${project.icon}</div>
+                            <div class="min-w-0">
+                                <div class="font-medium text-gray-900 text-sm truncate ${hasCategory ? 'text-gray-500' : ''}">${project.name}</div>
+                                <div class="text-xs text-gray-400 truncate font-mono mt-0.5">${project.path}</div>
+                            </div>
+                        </div>
+
+                        <div class="col-span-3 text-right">
+                            ${hasCategory ? `
+                                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${cat.bg} ${cat.text} border ${cat.border}">
+                                    ${cat.icon} ${cat.name}
+                                </span>
+                            ` : '<span class="text-xs text-gray-400">-</span>'}
+                        </div>
+                    </div>
+                `;
+    }).join('');
+
+    updateStats();
+  }
+
+  function toggleProject(id) {
+    if (selectedProjects.has(id)) {
+      selectedProjects.delete(id);
+    } else {
+      const p = projects.find(proj => proj.id === id);
+      if (p.category && !confirm('该项目已归类，重新归类将覆盖，是否继续？')) return;
+      selectedProjects.add(id);
+    }
+    renderProjects();
+    updatePreview();
+    updateRecommendation(); // 检查前缀推荐
+  }
+
+  function toggleSelectAll() {
+    const checkbox = document.getElementById('select-all-checkbox');
+    if (checkbox.checked) {
+      projects.filter(p => p.category === null).forEach(p => selectedProjects.add(p.id));
+    } else {
+      selectedProjects.clear();
+    }
+    renderProjects();
+    updatePreview();
+    updateRecommendation();
+  }
+
+  function filterUnassigned() {
+    showingAll = !showingAll;
+    const btn = document.getElementById('filter-btn');
+    if (!showingAll) {
+      btn.textContent = '显示全部';
+      btn.classList.remove('bg-orange-50', 'text-orange-600');
+      btn.classList.add('bg-gray-100', 'text-gray-600');
+    } else {
+      btn.textContent = '仅看未分类';
+      btn.classList.add('bg-orange-50', 'text-orange-600');
+      btn.classList.remove('bg-gray-100', 'text-gray-600');
+    }
+    renderProjects();
+  }
+
+  function updateStats() {
+    const assignedCount = projects.filter(p => p.category !== null).length;
+    document.getElementById('selected-count').textContent = selectedProjects.size;
+    document.getElementById('preview-count').textContent = selectedProjects.size;
+    document.getElementById('unclassified-count').textContent = projects.filter(p => p.category === null).length;
+    document.getElementById('total-assigned').textContent = assignedCount;
+    document.getElementById('total-pending').textContent = projects.length - assignedCount;
+
+    const checkbox = document.getElementById('select-all-checkbox');
+    const unclassifiedCount = projects.filter(p => p.category === null).length;
+    checkbox.checked = selectedProjects.size === unclassifiedCount && unclassifiedCount > 0;
+
+    updateApplyButton();
+  }
+
+  function updatePreview() {
+    const names = Array.from(selectedProjects).slice(0, 2).map(id =>
+            projects.find(p => p.id === id).name
+    ).join('、');
+    const count = selectedProjects.size;
+    const el = document.getElementById('preview-names');
+
+    if (count === 0) {
+      el.textContent = '请在左侧选择项目';
+      el.className = 'text-sm text-blue-200 mb-3';
+    } else {
+      el.textContent = names + (count > 2 ? ` 等 ${count} 个` : '');
+      el.className = 'text-sm text-white font-medium mb-3';
+    }
+  }
+
+  function selectCategory(catId) {
+    document.querySelectorAll('.category-card').forEach(card => {
+      card.classList.remove('active');
+      card.querySelector('.check-icon').style.opacity = '0';
+      card.querySelector('.check-icon').classList.remove('opacity-100');
+    });
+
+    if (selectedCategory === catId) {
+      selectedCategory = null;
+    } else {
+      selectedCategory = catId;
+      const card = document.querySelector(`[data-category="${catId}"]`);
+      card.classList.add('active');
+      card.querySelector('.check-icon').style.opacity = '1';
+      card.querySelector('.check-icon').classList.add('opacity-100');
+    }
+    updateApplyButton();
+  }
+
+  function updateApplyButton() {
+    const btn = document.getElementById('apply-btn');
+    const hasSelection = selectedProjects.size > 0;
+    const hasCategory = selectedCategory !== null;
+
+    if (hasSelection && hasCategory) {
+      btn.disabled = false;
+      btn.className = 'w-full mt-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold cursor-pointer transition-all flex items-center justify-center gap-2 text-sm shadow-lg shadow-blue-500/30';
+      btn.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    应用到「${categories[selectedCategory].name}」
+                `;
+    } else {
+      btn.disabled = true;
+      btn.className = 'w-full mt-3 py-2.5 bg-gray-100 text-gray-400 rounded-lg font-semibold cursor-not-allowed transition-all flex items-center justify-center gap-2 text-sm';
+      btn.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    应用归类
+                `;
+    }
+  }
+
+  function applyCategory() {
+    if (!selectedCategory || selectedProjects.size === 0) return;
+
+    const catInfo = categories[selectedCategory];
+    const ids = Array.from(selectedProjects);
+
+    ids.forEach(id => {
+      projects.find(p => p.id === id).category = selectedCategory;
+    });
+
+    history.push({
+      category: selectedCategory,
+      name: catInfo.name,
+      count: ids.length
+    });
+
+    renderHistory();
+    selectedProjects.clear();
+    selectedCategory = null;
+    dismissRecommend(); // 清除推荐
+
+    document.querySelectorAll('.category-card').forEach(card => {
+      card.classList.remove('active');
+      card.querySelector('.check-icon').style.opacity = '0';
+    });
+
+    renderProjects();
+    updatePreview();
+    showToast(`已归类 ${ids.length} 个项目`);
+  }
+
+  function renderHistory() {
+    const container = document.getElementById('history-container');
+    const countEl = document.getElementById('history-count');
+
+    countEl.textContent = `${history.length} 次操作`;
+
+    if (history.length === 0) {
+      container.innerHTML = '<div class="text-xs text-gray-400 italic py-2" id="empty-history">暂无归类操作</div>';
+      return;
+    }
+
+    container.innerHTML = history.map((item, idx) => `
+                <div class="history-tag inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium ${categories[item.category].bg} ${categories[item.category].text} border ${categories[item.category].border} cursor-pointer hover:opacity-80" onclick="undoHistory(${idx})" title="点击撤销">
+                    <span>${categories[item.category].icon}</span>
+                    <span>${item.name}</span>
+                    <span class="opacity-60">×${item.count}</span>
+                    <svg class="w-3 h-3 ml-1 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </div>
+            `).join('');
+  }
+
+  function undoHistory(index) {
+    if (!confirm('撤销此次归类？')) return;
+    const item = history[index];
+    projects.forEach(p => {
+      if (p.category === item.category) p.category = null;
+    });
+    history.splice(index, 1);
+    renderHistory();
+    renderProjects();
+    showToast('已撤销');
+  }
+
+  function createNewCategory() {
+    document.getElementById('new-category-input').classList.remove('hidden');
+    document.getElementById('new-cat-name').focus();
+  }
+
+  function cancelNewCategory() {
+    document.getElementById('new-category-input').classList.add('hidden');
+    document.getElementById('new-cat-name').value = '';
+  }
+
+  function confirmNewCategory() {
+    const name = document.getElementById('new-cat-name').value.trim();
+    if (!name) return;
+    createCategoryWithName(name);
+    cancelNewCategory();
+    showToast(`分类「${name}」已创建`);
+  }
+
+  function finishImport() {
+    const assigned = projects.filter(p => p.category !== null).length;
+    if (assigned === 0) {
+      showToast('请至少归类一个项目', 'error');
+      return;
+    }
+    const summary = history.map(h => `• ${h.name}: ${h.count}个`).join('\n');
+    alert(`✅ 成功导入 ${assigned} 个 Git 项目\n\n分类详情：\n${summary}`);
+  }
+
+  function resetAll() {
+    if (!confirm('确定重置所有归类？')) return;
+    projects.forEach(p => p.category = null);
+    selectedProjects.clear();
+    selectedCategory = null;
+    history = [];
+    dismissRecommend();
+    renderProjects();
+    renderHistory();
+    updatePreview();
+    document.querySelectorAll('.category-card').forEach(c => {
+      c.classList.remove('active');
+      c.querySelector('.check-icon').style.opacity = '0';
+    });
+    showToast('已重置');
+  }
+
+  function showToast(msg, type = 'success') {
+    const toast = document.getElementById('toast');
+    document.getElementById('toast-message').textContent = msg;
+    toast.classList.remove('opacity-0');
+    setTimeout(() => toast.classList.add('opacity-0'), 2500);
+  }
+
+  renderProjects();
+  renderHistory();
+</script>
+</body>
+</html>

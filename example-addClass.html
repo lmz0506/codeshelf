@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeShelf 分类管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    body { font-family: 'Inter', sans-serif; }
+
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.98);
+      border: 1px solid rgba(226, 232, 240, 0.8);
+    }
+
+    .category-item {
+      transition: all 0.2s ease;
+    }
+
+    .category-item:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    .drag-ghost {
+      opacity: 0.5;
+      background: #f1f5f9;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 20px;
+    }
+  </style>
+  <base target="_blank">
+</head>
+<body class="bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen flex items-center justify-center p-4">
+
+<div class="glass-panel w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+
+  <!-- 头部 -->
+  <div class="bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+        <i class="fa-solid fa-tags text-lg"></i>
+      </div>
+      <h2 class="text-xl font-bold text-slate-800">管理分类</h2>
+    </div>
+    <button onclick="closeModal()" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+      <i class="fa-solid fa-xmark text-lg"></i>
+    </button>
+  </div>
+
+  <div class="p-6 space-y-6">
+
+    <!-- 添加新分类 -->
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-2">添加新分类</label>
+      <div class="flex gap-3">
+        <input type="text"
+               id="newCategoryInput"
+               placeholder="输入分类名称..."
+               class="flex-1 px-4 py-3 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+               onkeypress="if(event.key==='Enter')addCategory()">
+        <button onclick="addCategory()"
+                class="px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-lg shadow-blue-200 transition-all active:scale-95 flex items-center gap-2">
+          <i class="fa-solid fa-plus"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 现有分类列表 -->
+    <div>
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-slate-700">现有分类 <span id="categoryCount" class="ml-1 text-slate-400 font-normal">(2)</span></h3>
+        <button onclick="toggleSort()" class="text-xs text-slate-500 hover:text-blue-600 flex items-center gap-1 transition-colors">
+          <i class="fa-solid fa-arrow-down-a-z"></i>
+          排序
+        </button>
+      </div>
+
+      <div id="categoryList" class="space-y-2 max-h-[320px] overflow-y-auto pr-1 custom-scrollbar">
+        <!-- 分类项 1 -->
+        <div class="category-item group bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between hover:border-blue-300 cursor-move" draggable="true">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center">
+              <i class="fa-solid fa-folder text-sm"></i>
+            </div>
+            <div>
+              <span class="font-medium text-slate-700">希二世</span>
+              <span class="text-xs text-slate-400 ml-2">12 个项目</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onclick="startEdit(this)" class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+              <i class="fa-solid fa-pen text-sm"></i>
+            </button>
+            <button onclick="deleteCategory(this)" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+              <i class="fa-solid fa-trash text-sm"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 分类项 2 -->
+        <div class="category-item group bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between hover:border-blue-300 cursor-move" draggable="true">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center">
+              <i class="fa-solid fa-folder text-sm"></i>
+            </div>
+            <div>
+              <span class="font-medium text-slate-700">七千万</span>
+              <span class="text-xs text-slate-400 ml-2">5 个项目</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onclick="startEdit(this)" class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+              <i class="fa-solid fa-pen text-sm"></i>
+            </button>
+            <button onclick="deleteCategory(this)" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+              <i class="fa-solid fa-trash text-sm"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部：仅保留完成按钮 -->
+  <div class="bg-slate-50 border-t border-slate-200 px-6 py-4 flex justify-end">
+    <button onclick="confirmAndClose()" class="px-8 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-xl shadow-lg shadow-slate-200 transition-all active:scale-95 flex items-center gap-2">
+      <i class="fa-solid fa-check"></i>
+      完成
+    </button>
+  </div>
+</div>
+
+<script>
+  function addCategory() {
+    const input = document.getElementById('newCategoryInput');
+    const name = input.value.trim();
+    if (!name) return;
+
+    const list = document.getElementById('categoryList');
+    const colors = [
+      {bg: 'bg-purple-100', text: 'text-purple-600'},
+      {bg: 'bg-pink-100', text: 'text-pink-600'},
+      {bg: 'bg-cyan-100', text: 'text-cyan-600'},
+      {bg: 'bg-amber-100', text: 'text-amber-600'},
+      {bg: 'bg-rose-100', text: 'text-rose-600'}
+    ];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+
+    const item = document.createElement('div');
+    item.className = 'category-item group bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between hover:border-blue-300 cursor-move';
+    item.draggable = true;
+    item.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 ${color.bg} ${color.text} rounded-lg flex items-center justify-center">
+                        <i class="fa-solid fa-folder text-sm"></i>
+                    </div>
+                    <div>
+                        <span class="font-medium text-slate-700">${name}</span>
+                        <span class="text-xs text-slate-400 ml-2">0 个项目</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onclick="startEdit(this)" class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                        <i class="fa-solid fa-pen text-sm"></i>
+                    </button>
+                    <button onclick="deleteCategory(this)" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                        <i class="fa-solid fa-trash text-sm"></i>
+                    </button>
+                </div>
+            `;
+
+    list.insertBefore(item, list.firstChild);
+    input.value = '';
+    updateCount();
+    setupDragEvents(item);
+  }
+
+  function startEdit(btn) {
+    const item = btn.closest('.category-item');
+    const nameSpan = item.querySelector('.font-medium');
+    const currentName = nameSpan.textContent;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentName;
+    input.className = 'px-2 py-1 text-sm border border-blue-400 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+
+    nameSpan.replaceWith(input);
+    input.focus();
+    input.select();
+
+    function save() {
+      const newName = input.value.trim() || currentName;
+      const newSpan = document.createElement('span');
+      newSpan.className = 'font-medium text-slate-700';
+      newSpan.textContent = newName;
+      input.replaceWith(newSpan);
+    }
+
+    input.onblur = save;
+    input.onkeypress = (e) => { if(e.key==='Enter') save(); };
+  }
+
+  function deleteCategory(btn) {
+    if (confirm('确定删除此分类吗？相关项目将变为未分类')) {
+      const item = btn.closest('.category-item');
+      item.style.opacity = '0';
+      item.style.transform = 'translateX(20px)';
+      setTimeout(() => {
+        item.remove();
+        updateCount();
+      }, 200);
+    }
+  }
+
+  function updateCount() {
+    const count = document.querySelectorAll('.category-item').length;
+    document.getElementById('categoryCount').textContent = `(${count})`;
+  }
+
+  function toggleSort() {
+    const list = document.getElementById('categoryList');
+    const items = Array.from(list.children);
+    items.sort((a, b) => {
+      const aName = a.querySelector('.font-medium').textContent;
+      const bName = b.querySelector('.font-medium').textContent;
+      return aName.localeCompare(bName, 'zh-CN');
+    });
+    items.forEach(item => list.appendChild(item));
+  }
+
+  function confirmAndClose() {
+    console.log('保存并关闭');
+  }
+
+  function closeModal() {
+    console.log('关闭弹窗');
+  }
+
+  let draggedElement = null;
+
+  function setupDragEvents(element) {
+    element.addEventListener('dragstart', (e) => {
+      draggedElement = element;
+      element.classList.add('drag-ghost');
+    });
+
+    element.addEventListener('dragend', () => {
+      element.classList.remove('drag-ghost');
+      draggedElement = null;
+    });
+  }
+
+  document.querySelectorAll('.category-item').forEach(setupDragEvents);
+
+  document.getElementById('categoryList').addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const afterElement = getDragAfterElement(e.currentTarget, e.clientY);
+    if (draggedElement) {
+      if (afterElement == null) {
+        e.currentTarget.appendChild(draggedElement);
+      } else {
+        e.currentTarget.insertBefore(draggedElement, afterElement);
+      }
+    }
+  });
+
+  function getDragAfterElement(container, y) {
+    const draggableElements = [...container.querySelectorAll('.category-item:not(.drag-ghost)')];
+    return draggableElements.reduce((closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) {
+        return { offset: offset, element: child };
+      } else {
+        return closest;
+      }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+  }
+</script>
+</body>
+</html>
