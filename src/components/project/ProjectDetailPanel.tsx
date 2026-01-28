@@ -75,6 +75,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
       setPulling(true);
       await gitPull(project.path, remotes[0].name, gitStatus.branch);
       await loadProjectDetails();
+      incrementStatsVersion(); // Trigger dashboard stats refresh
       showToast("success", "拉取成功", `已从 ${remotes[0].name}/${gitStatus.branch} 拉取最新代码`);
     } catch (error) {
       console.error("Failed to pull:", error);
@@ -90,6 +91,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
       setPushing(true);
       await gitPush(project.path, remotes[0].name, gitStatus.branch);
       await loadProjectDetails();
+      incrementStatsVersion(); // Trigger dashboard stats refresh
       showToast("success", "推送成功", `已推送到 ${remotes[0].name}/${gitStatus.branch}`);
     } catch (error) {
       console.error("Failed to push:", error);
@@ -536,7 +538,10 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
           remotes={remotes}
           sourceRemote={remotes[0].name}
           onClose={() => setShowSyncModal(false)}
-          onSuccess={loadProjectDetails}
+          onSuccess={() => {
+            loadProjectDetails();
+            incrementStatsVersion();
+          }}
         />
       )}
 
@@ -555,7 +560,10 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
         <GitCommitModal
           projectPath={project.path}
           onClose={() => setShowCommitModal(false)}
-          onSuccess={loadProjectDetails}
+          onSuccess={() => {
+            loadProjectDetails();
+            incrementStatsVersion();
+          }}
         />
       )}
 
