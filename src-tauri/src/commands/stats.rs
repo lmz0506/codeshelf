@@ -220,7 +220,7 @@ pub async fn get_dashboard_stats() -> Result<CachedDashboardData, String> {
 
 /// Refresh stats for a single project (after git operations)
 #[tauri::command]
-pub async fn refresh_project_stats(project: ProjectInfo, all_projects: Vec<ProjectInfo>) -> Result<CachedDashboardData, String> {
+pub async fn refresh_project_stats(_project: ProjectInfo, all_projects: Vec<ProjectInfo>) -> Result<CachedDashboardData, String> {
     // For simplicity, just refresh all stats
     // In a more optimized version, we could update only the affected project's data
     refresh_dashboard_stats(all_projects).await
