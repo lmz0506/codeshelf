@@ -3,7 +3,7 @@ import { MainLayout } from "@/components/layout";
 import { ShelfPage } from "@/pages/Shelf";
 import { DashboardPage } from "@/pages/Dashboard";
 import { SettingsPage } from "@/pages/Settings";
-import { ToastContainer } from "@/components/ui";
+import { ToastContainer, UpdateNotification } from "@/components/ui";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,6 +32,7 @@ function App() {
         }}
       </MainLayout>
       <ToastContainer />
+      <UpdateNotification />
     </QueryClientProvider>
   );
 }

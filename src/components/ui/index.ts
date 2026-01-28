@@ -6,3 +6,4 @@ export { FilterPopover } from "./FilterPopover";
 export { FloatingCategoryBall } from "./FloatingCategoryBall";
 export { ToastContainer, showToast, removeToast } from "./Toast";
 export type { ToastType, ToastMessage } from "./Toast";
+export { UpdateNotification } from "./UpdateNotification";

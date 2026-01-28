@@ -1,4 +1,4 @@
-import { check } from "@tauri-apps/plugin-updater";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
 export interface UpdateInfo {
@@ -9,9 +9,13 @@ export interface UpdateInfo {
   body?: string;
 }
 
+// 缓存已检查的更新对象
+let cachedUpdate: Update | null = null;
+
 export async function checkForUpdates(): Promise<UpdateInfo> {
   try {
     const update = await check();
+    cachedUpdate = update;
 
     if (update) {
       return {
@@ -33,19 +37,32 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
   }
 }
 
-export async function downloadAndInstallUpdate(
+// 静默检查更新（不抛出错误）
+export async function silentCheckForUpdates(): Promise<UpdateInfo | null> {
+  try {
+    return await checkForUpdates();
+  } catch (error) {
+    console.error("Silent update check failed:", error);
+    return null;
+  }
+}
+
+// 仅下载更新（不安装）
+export async function downloadUpdate(
   onProgress?: (progress: number, total: number) => void
 ): Promise<void> {
-  const update = await check();
-
-  if (!update) {
-    throw new Error("No update available");
+  if (!cachedUpdate) {
+    const update = await check();
+    if (!update) {
+      throw new Error("No update available");
+    }
+    cachedUpdate = update;
   }
 
   let downloaded = 0;
   let contentLength = 0;
 
-  await update.downloadAndInstall((event) => {
+  await cachedUpdate.download((event) => {
     switch (event.event) {
       case "Started":
         contentLength = event.data.contentLength || 0;
@@ -63,7 +80,21 @@ export async function downloadAndInstallUpdate(
         break;
     }
   });
+}
 
-  // Relaunch the app to apply the update
+// 安装已下载的更新并重启
+export async function installUpdate(): Promise<void> {
+  if (!cachedUpdate) {
+    throw new Error("No update downloaded");
+  }
+  await cachedUpdate.install();
   await relaunch();
+}
+
+// 下载并安装更新（保留原有功能）
+export async function downloadAndInstallUpdate(
+  onProgress?: (progress: number, total: number) => void
+): Promise<void> {
+  await downloadUpdate(onProgress);
+  await installUpdate();
 }
