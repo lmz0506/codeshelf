@@ -5,12 +5,21 @@ import {
   ArrowUpCircle,
   Minus,
   X,
+  User,
+  Clock,
+  FolderOpen,
 } from "lucide-react";
 import { CommitHeatmap } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import { getGitStatus, getCommitHistory } from "@/services/git";
-import type { DashboardStats, DailyActivity } from "@/types";
+import type { DashboardStats, DailyActivity, CommitInfo } from "@/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+
+// Extended commit info with project name
+interface RecentActivity extends CommitInfo {
+  projectName: string;
+  projectPath: string;
+}
 
 export function DashboardPage() {
   const { projects, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
@@ -22,6 +31,7 @@ export function DashboardPage() {
     unmergedBranches: 0,
   });
   const [heatmapData, setHeatmapData] = useState<DailyActivity[]>([]);
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -35,6 +45,7 @@ export function DashboardPage() {
       const totalProjects = projects.length;
       let unpushedCommits = 0;
       const commitsByDate: Record<string, number> = {};
+      const allRecentCommits: RecentActivity[] = [];
 
       await Promise.all(
         projects.map(async (project) => {
@@ -50,11 +61,25 @@ export function DashboardPage() {
               const date = new Date(commit.date).toISOString().split("T")[0];
               commitsByDate[date] = (commitsByDate[date] || 0) + 1;
             });
+
+            // Add recent commits (last 5 per project)
+            commits.slice(0, 5).forEach((commit) => {
+              allRecentCommits.push({
+                ...commit,
+                projectName: project.name,
+                projectPath: project.path,
+              });
+            });
           } catch (error) {
             console.error(`Failed to load data for ${project.name}:`, error);
           }
         })
       );
+
+      // Sort all recent commits by date and take the most recent 10
+      const sortedRecentActivity = allRecentCommits
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 10);
 
       const today = new Date().toISOString().split("T")[0];
       const todayCommits = commitsByDate[today] || 0;
@@ -82,11 +107,27 @@ export function DashboardPage() {
         unmergedBranches: 0,
       });
       setHeatmapData(heatmap);
+      setRecentActivity(sortedRecentActivity);
     } catch (error) {
       console.error("Failed to load dashboard data:", error);
     } finally {
       setLoading(false);
     }
+  }
+
+  function formatRelativeTime(dateStr: string): string {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 1) return "刚刚";
+    if (diffMins < 60) return `${diffMins} 分钟前`;
+    if (diffHours < 24) return `${diffHours} 小时前`;
+    if (diffDays < 7) return `${diffDays} 天前`;
+    return date.toLocaleDateString("zh-CN");
   }
 
   return (
@@ -176,9 +217,51 @@ export function DashboardPage() {
             {/* Recent Activity */}
             <div className="re-card">
               <h2 className="text-[17px] font-semibold mb-6">最近活动</h2>
-              <div className="flex flex-col items-center justify-center h-32 text-gray-400">
-                <p>功能开发中...</p>
-              </div>
+              {recentActivity.length > 0 ? (
+                <div className="space-y-3">
+                  {recentActivity.map((activity, index) => (
+                    <div
+                      key={`${activity.hash}-${index}`}
+                      className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      {/* Commit dot */}
+                      <div className="flex-shrink-0 w-2 h-2 mt-2 rounded-full bg-blue-500"></div>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Commit message */}
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {activity.message}
+                        </p>
+
+                        {/* Meta info */}
+                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                          <span className="flex items-center gap-1">
+                            <FolderOpen size={12} />
+                            <span className="truncate max-w-[120px]">{activity.projectName}</span>
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <User size={12} />
+                            <span>{activity.author}</span>
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock size={12} />
+                            <span>{formatRelativeTime(activity.date)}</span>
+                          </span>
+                          <span className="font-mono text-gray-400">
+                            {activity.shortHash}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-32 text-gray-400">
+                  <GitCommit size={32} className="mb-2 opacity-50" />
+                  <p>暂无提交记录</p>
+                </div>
+              )}
             </div>
           </div>
         )}

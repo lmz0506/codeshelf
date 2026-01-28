@@ -9,3 +9,4 @@ export { LabelSelector } from "./LabelSelector";
 export { AddProjectDialog } from "./AddProjectDialog";
 export { SyncRemoteModal } from "./SyncRemoteModal";
 export { MarkdownRenderer } from "./MarkdownRenderer";
+export { BranchSwitchModal } from "./BranchSwitchModal";

@@ -381,3 +381,19 @@ pub async fn sync_to_remote(
         Ok(format!("Successfully synced branch '{}' to '{}'", branch, target_remote))
     }
 }
+
+#[tauri::command]
+pub async fn checkout_branch(path: String, branch: String) -> Result<String, String> {
+    run_git_command(&path, &["checkout", &branch])
+}
+
+#[tauri::command]
+pub async fn create_branch(path: String, branch: String, checkout: bool) -> Result<String, String> {
+    if checkout {
+        // Create and checkout the new branch
+        run_git_command(&path, &["checkout", "-b", &branch])
+    } else {
+        // Just create the branch without checking out
+        run_git_command(&path, &["branch", &branch])
+    }
+}

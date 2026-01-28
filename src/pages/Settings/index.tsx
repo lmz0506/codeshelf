@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
-import { Minus, X, Monitor, Code, Terminal, Search, ChevronRight } from "lucide-react";
+import { Minus, X, Monitor, Code, Terminal, Search, ChevronRight, Tag } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { EditorSettings } from "./EditorSettings";
 import { TerminalSettings } from "./TerminalSettings";
 import { ScanSettings } from "./ScanSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { LabelSettings } from "./LabelSettings";
 
-type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | null;
+type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | null;
 
 export function SettingsPage() {
-  const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth } = useAppStore();
+  const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, categories } = useAppStore();
   const [activeSection, setActiveSection] = useState<SettingsSection>(null);
 
   // 获取默认编辑器名称
@@ -69,6 +70,14 @@ export function SettingsPage() {
       icon: Search,
       value: `${scanDepth} 层`,
       component: ScanSettings,
+    },
+    {
+      id: "labels" as const,
+      title: "分类标签",
+      description: "管理项目分类标签",
+      icon: Tag,
+      value: `${categories.length} 个标签`,
+      component: LabelSettings,
     },
   ];
 

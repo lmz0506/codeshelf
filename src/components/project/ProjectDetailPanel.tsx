@@ -4,6 +4,8 @@ import { CategorySelector } from "./CategorySelector";
 import { LabelSelector } from "./LabelSelector";
 import { SyncRemoteModal } from "./SyncRemoteModal";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { BranchSwitchModal } from "./BranchSwitchModal";
+import { showToast } from "@/components/ui";
 import type { Project, GitStatus, CommitInfo, RemoteInfo } from "@/types";
 import { getGitStatus, getCommitHistory, getRemotes, gitPull, gitPush } from "@/services/git";
 import { openInEditor, openInTerminal, updateProject } from "@/services/db";
@@ -24,6 +26,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showReadme, setShowReadme] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [showBranchModal, setShowBranchModal] = useState(false);
   const [readmeContent, setReadmeContent] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>(project.tags);
   const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
@@ -56,8 +59,10 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
     try {
       await gitPull(project.path, remotes[0].name, gitStatus.branch);
       await loadProjectDetails();
+      showToast("success", "拉取成功", `已从 ${remotes[0].name}/${gitStatus.branch} 拉取最新代码`);
     } catch (error) {
       console.error("Failed to pull:", error);
+      showToast("error", "拉取失败", String(error));
     }
   }
 
@@ -66,8 +71,10 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
     try {
       await gitPush(project.path, remotes[0].name, gitStatus.branch);
       await loadProjectDetails();
+      showToast("success", "推送成功", `已推送到 ${remotes[0].name}/${gitStatus.branch}`);
     } catch (error) {
       console.error("Failed to push:", error);
+      showToast("error", "推送失败", String(error));
     }
   }
 
@@ -80,8 +87,10 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
       });
       onUpdate?.(updated);
       setShowCategoryModal(false);
+      showToast("success", "保存成功", "项目分类和标签已更新");
     } catch (error) {
       console.error("Failed to update categories:", error);
+      showToast("error", "保存失败", String(error));
     }
   }
 
@@ -203,7 +212,10 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
               </div>
             </div>
 
-            <button className="branch-switch-btn">
+            <button
+              onClick={() => setShowBranchModal(true)}
+              className="branch-switch-btn"
+            >
               <span>+</span>
               <span>切换或创建分支</span>
             </button>
@@ -450,6 +462,16 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
           sourceRemote={remotes[0].name}
           onClose={() => setShowSyncModal(false)}
           onSuccess={loadProjectDetails}
+        />
+      )}
+
+      {/* Branch Switch Modal */}
+      {showBranchModal && gitStatus && (
+        <BranchSwitchModal
+          projectPath={project.path}
+          currentBranch={gitStatus.branch}
+          onClose={() => setShowBranchModal(false)}
+          onBranchChange={loadProjectDetails}
         />
       )}
     </div>

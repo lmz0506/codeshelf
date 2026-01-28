@@ -3,9 +3,9 @@ import { ProjectCard, ScanResultDialog, ProjectDetailPanel, AddProjectDialog, Ad
 import { FloatingCategoryBall } from "@/components/ui/FloatingCategoryBall";
 import { Minus, X, MoreVertical, Plus } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
-import type { Project, GitRepo } from "@/types";
+import type { Project, GitRepo, GitStatus } from "@/types";
 import { getProjects, addProject } from "@/services/db";
-import { scanDirectory } from "@/services/git";
+import { scanDirectory, getGitStatus } from "@/services/git";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Dropdown, FilterPopover } from "@/components/ui";
 
@@ -31,10 +31,35 @@ export function ShelfPage() {
   const [showFloatingBall, setShowFloatingBall] = useState(false);
   const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
   const categoryBarRef = useRef<HTMLDivElement>(null);
+  // Git 状态缓存，用于筛选功能
+  const [gitStatusMap, setGitStatusMap] = useState<Record<string, GitStatus>>({});
 
   useEffect(() => {
     loadProjects();
   }, []);
+
+  // 当启用 onlyModified 筛选时，加载所有项目的 git 状态
+  useEffect(() => {
+    if (onlyModified && projects.length > 0) {
+      loadAllGitStatus();
+    }
+  }, [onlyModified, projects.length]);
+
+  // 加载所有项目的 git 状态
+  async function loadAllGitStatus() {
+    const statusMap: Record<string, GitStatus> = {};
+    await Promise.all(
+      projects.map(async (project) => {
+        try {
+          const status = await getGitStatus(project.path);
+          statusMap[project.id] = status;
+        } catch (error) {
+          console.error(`Failed to get git status for ${project.name}:`, error);
+        }
+      })
+    );
+    setGitStatusMap(statusMap);
+  }
 
   // 监听滚动，显示/隐藏浮动分类球
   useEffect(() => {
@@ -150,6 +175,15 @@ export function ShelfPage() {
 
     if (activeCat !== "全部" && !p.tags.includes(activeCat)) return false;
     if (onlyStarred && !p.isFavorite) return false;
+
+    // onlyModified 筛选：检查项目是否有未提交的修改
+    if (onlyModified) {
+      const status = gitStatusMap[p.id];
+      // 如果没有状态信息，暂时显示（等待加载）
+      if (!status) return true;
+      // 只显示有修改的项目
+      if (status.isClean) return false;
+    }
 
     return true;
   });

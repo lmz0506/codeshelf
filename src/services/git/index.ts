@@ -81,3 +81,18 @@ export async function syncToRemote(
     force,
   });
 }
+
+export async function checkoutBranch(
+  path: string,
+  branch: string
+): Promise<string> {
+  return invoke("checkout_branch", { path, branch });
+}
+
+export async function createBranch(
+  path: string,
+  branch: string,
+  checkout: boolean = true
+): Promise<string> {
+  return invoke("create_branch", { path, branch, checkout });
+}
