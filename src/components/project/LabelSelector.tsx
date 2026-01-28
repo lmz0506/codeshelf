@@ -1,105 +1,6 @@
 import { useState } from "react";
 import { X } from "lucide-react";
-
-// 预设的技术栈标签 - 与HTML版本完全一致
-const DEFAULT_LABELS = [
-  {
-    value: "Java",
-    icon: (
-      <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}>
-        <path d="M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l2-1.09V17h2V9L12 3z" stroke="#e97f15" />
-      </svg>
-    ),
-  },
-  {
-    value: "Vue",
-    icon: (
-      <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
-        <span className="text-white text-xs font-bold">V</span>
-      </div>
-    ),
-  },
-  {
-    value: "React",
-    icon: (
-      <div className="w-6 h-6 rounded-full bg-blue-400 flex items-center justify-center">
-        <span className="text-white text-xs font-bold">⚛</span>
-      </div>
-    ),
-  },
-  {
-    value: "Angular",
-    icon: (
-      <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center">
-        <span className="text-white text-xs font-bold">A</span>
-      </div>
-    ),
-  },
-  {
-    value: "小程序",
-    icon: (
-      <div className="w-6 h-6 rounded bg-green-600 flex items-center justify-center">
-        <span className="text-white text-[10px]">微</span>
-      </div>
-    ),
-  },
-  {
-    value: "Node.js",
-    icon: (
-      <div className="w-6 h-6 rounded bg-green-500 flex items-center justify-center">
-        <span className="text-white text-xs">N</span>
-      </div>
-    ),
-  },
-  {
-    value: "Python",
-    icon: (
-      <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
-        <span className="text-white text-xs">P</span>
-      </div>
-    ),
-  },
-  {
-    value: "Go",
-    icon: (
-      <div className="w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center">
-        <span className="text-white text-xs font-bold">G</span>
-      </div>
-    ),
-  },
-  {
-    value: "Rust",
-    icon: (
-      <div className="w-6 h-6 rounded-full bg-orange-700 flex items-center justify-center">
-        <span className="text-white text-xs">R</span>
-      </div>
-    ),
-  },
-  {
-    value: "TypeScript",
-    icon: (
-      <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center">
-        <span className="text-white text-xs font-bold">TS</span>
-      </div>
-    ),
-  },
-  {
-    value: "JavaScript",
-    icon: (
-      <div className="w-6 h-6 rounded bg-yellow-400 flex items-center justify-center">
-        <span className="text-white text-xs font-bold">JS</span>
-      </div>
-    ),
-  },
-  {
-    value: "PHP",
-    icon: (
-      <div className="w-6 h-6 rounded bg-indigo-500 flex items-center justify-center">
-        <span className="text-white text-xs">P</span>
-      </div>
-    ),
-  },
-];
+import { useAppStore } from "@/stores/appStore";
 
 interface LabelSelectorProps {
   selectedLabels: string[];
@@ -107,27 +8,46 @@ interface LabelSelectorProps {
   multiple?: boolean;
 }
 
+// 获取标签图标
+function getLabelIcon(label: string) {
+  const iconMap: Record<string, { bg: string; text: string; round?: boolean }> = {
+    "Java": { bg: "bg-orange-600", text: "J" },
+    "Vue": { bg: "bg-green-500", text: "V", round: true },
+    "React": { bg: "bg-blue-400", text: "⚛", round: true },
+    "Angular": { bg: "bg-red-500", text: "A", round: true },
+    "小程序": { bg: "bg-green-600", text: "微" },
+    "Node.js": { bg: "bg-green-500", text: "N" },
+    "Python": { bg: "bg-blue-500", text: "P", round: true },
+    "Go": { bg: "bg-cyan-500", text: "G", round: true },
+    "Rust": { bg: "bg-orange-700", text: "R", round: true },
+    "TypeScript": { bg: "bg-blue-600", text: "TS" },
+    "JavaScript": { bg: "bg-yellow-400", text: "JS" },
+    "PHP": { bg: "bg-indigo-500", text: "P" },
+    "Spring Boot": { bg: "bg-green-600", text: "S" },
+    "Docker": { bg: "bg-blue-500", text: "D" },
+    "Kubernetes": { bg: "bg-blue-600", text: "K8" },
+  };
+
+  const config = iconMap[label] || { bg: "bg-gray-600", text: label.slice(0, 2) };
+
+  return (
+    <div className={`w-6 h-6 ${config.round ? 'rounded-full' : 'rounded'} ${config.bg} flex items-center justify-center`}>
+      <span className="text-white text-xs font-medium">{config.text}</span>
+    </div>
+  );
+}
+
 export function LabelSelector({
   selectedLabels,
   onChange,
   multiple = true,
 }: LabelSelectorProps) {
+  const { labels: storeLabels, addLabel } = useAppStore();
   const [customLabel, setCustomLabel] = useState("");
   const [showCustomInput, setShowCustomInput] = useState(false);
 
-  const allLabels = [
-    ...DEFAULT_LABELS,
-    ...selectedLabels
-      .filter((label) => !DEFAULT_LABELS.some((d) => d.value === label))
-      .map((label) => ({
-        value: label,
-        icon: (
-          <div className="w-6 h-6 rounded bg-gray-600 flex items-center justify-center">
-            <span className="text-white text-xs">{label.slice(0, 2)}</span>
-          </div>
-        ),
-      })),
-  ];
+  // 合并 store 中的标签和已选标签（去重）
+  const allLabels = Array.from(new Set([...storeLabels, ...selectedLabels]));
 
   function toggleLabel(label: string) {
     if (multiple) {
@@ -144,6 +64,8 @@ export function LabelSelector({
   function handleAddCustomLabel() {
     const trimmed = customLabel.trim();
     if (trimmed && !selectedLabels.includes(trimmed)) {
+      // 同时添加到 store
+      addLabel(trimmed);
       onChange([...selectedLabels, trimmed]);
     }
     setCustomLabel("");
@@ -200,26 +122,29 @@ export function LabelSelector({
         </div>
       )}
 
-      {/* Label Grid - 使用与HTML完全一致的类名 */}
-      <div className="grid grid-cols-3 gap-2" id="techContainer">
+      {/* Label Grid */}
+      <div className="grid grid-cols-3 gap-2">
         {allLabels.map((label) => {
-          const isSelected = selectedLabels.includes(label.value);
+          const isSelected = selectedLabels.includes(label);
           return (
-            <label key={label.value} className="cursor-pointer tech-tag">
-              <input
-                type="checkbox"
-                className="tag-checkbox hidden"
-                checked={isSelected}
-                onChange={() => toggleLabel(label.value)}
-                value={label.value}
-              />
-              <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg hover:border-gray-300 transition-all">
-                <div className="w-6 h-6 flex items-center justify-center">
-                  {label.icon}
-                </div>
-                <span className="text-sm font-medium text-gray-700">{label.value}</span>
+            <button
+              key={label}
+              type="button"
+              onClick={() => toggleLabel(label)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-left ${
+                isSelected
+                  ? "bg-blue-50 border-2 border-blue-500"
+                  : "bg-gray-50 border-2 border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              <div className="w-6 h-6 flex items-center justify-center">
+                {getLabelIcon(label)}
               </div>
-            </label>
+              <span className={`text-sm font-medium ${isSelected ? "text-blue-700" : "text-gray-700"}`}>
+                {label}
+              </span>
+              {isSelected && <span className="ml-auto text-blue-500">✓</span>}
+            </button>
           );
         })}
       </div>

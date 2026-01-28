@@ -39,6 +39,7 @@ export function ShelfPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBatchCategoryModal, setShowBatchCategoryModal] = useState(false);
   const [batchCategories, setBatchCategories] = useState<string[]>([]);
+  const [batchCategoryMode, setBatchCategoryMode] = useState<"replace" | "append">("append");
 
   useEffect(() => {
     loadProjects();
@@ -223,7 +224,7 @@ export function ShelfPage() {
     }
   }
 
-  async function handleBatchUpdateCategory(newCategories: string[]) {
+  async function handleBatchUpdateCategory(newCategories: string[], mode: "replace" | "append") {
     if (selectedIds.size === 0) return;
 
     try {
@@ -231,7 +232,19 @@ export function ShelfPage() {
       const updatedProjects: Project[] = [];
 
       for (const id of selectedIds) {
-        const updated = await updateProject({ id, tags: newCategories });
+        const currentProject = projects.find(p => p.id === id);
+        let finalTags: string[];
+
+        if (mode === "append") {
+          // 追加模式：合并原有分类和新分类，去重
+          const existingTags = currentProject?.tags || [];
+          finalTags = Array.from(new Set([...existingTags, ...newCategories]));
+        } else {
+          // 替换模式：直接使用新分类
+          finalTags = newCategories;
+        }
+
+        const updated = await updateProject({ id, tags: finalTags });
         updatedProjects.push(updated);
       }
 
@@ -243,7 +256,8 @@ export function ShelfPage() {
       setSelectedIds(new Set());
       setBatchMode(false);
       setShowBatchCategoryModal(false);
-      showToast("success", "更新成功", `已更新 ${selectedIds.size} 个项目的分类`);
+      const modeText = mode === "append" ? "追加" : "替换";
+      showToast("success", "更新成功", `已${modeText} ${selectedIds.size} 个项目的分类`);
     } catch (error) {
       console.error("Failed to update categories:", error);
       showToast("error", "更新失败", String(error));
@@ -542,6 +556,35 @@ export function ShelfPage() {
             </div>
 
             <div className="modal-body">
+              {/* 模式选择 */}
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <label className="text-sm font-medium text-gray-700 mb-2 block">操作模式</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="batchMode"
+                      checked={batchCategoryMode === "append"}
+                      onChange={() => setBatchCategoryMode("append")}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-sm text-gray-700">追加分类</span>
+                    <span className="text-xs text-gray-400">（保留原有分类）</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="batchMode"
+                      checked={batchCategoryMode === "replace"}
+                      onChange={() => setBatchCategoryMode("replace")}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-sm text-gray-700">替换分类</span>
+                    <span className="text-xs text-gray-400">（清空原有分类）</span>
+                  </label>
+                </div>
+              </div>
+
               <CategorySelector
                 selectedCategories={batchCategories}
                 onChange={setBatchCategories}
@@ -560,8 +603,9 @@ export function ShelfPage() {
                 取消
               </button>
               <button
-                onClick={() => handleBatchUpdateCategory(batchCategories)}
-                className="modal-btn modal-btn-primary"
+                onClick={() => handleBatchUpdateCategory(batchCategories, batchCategoryMode)}
+                disabled={batchCategories.length === 0}
+                className="modal-btn modal-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 确认修改
               </button>

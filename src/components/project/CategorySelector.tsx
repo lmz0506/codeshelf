@@ -88,27 +88,28 @@ export function CategorySelector({
         </div>
       )}
 
-      {/* Category Pills - 使用与HTML完全一致的类名 */}
+      {/* Category Pills */}
       <div className="flex flex-wrap gap-2" id="categoryContainer">
         {categories.map((category) => {
           const isSelected = selectedCategories.includes(category);
           return (
-            <label key={category} className="cursor-pointer category-pill">
-              <input
-                type="checkbox"
-                className="category-checkbox hidden"
-                checked={isSelected}
-                onChange={() => toggleCategory(category)}
-                value={category}
-              />
-              <div className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-full text-sm font-medium text-gray-600 hover:border-gray-300 select-none pr-8">
-                {category}
-              </div>
-            </label>
+            <button
+              key={category}
+              type="button"
+              onClick={() => toggleCategory(category)}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all select-none ${
+                isSelected
+                  ? "bg-blue-500 text-white border-2 border-blue-500"
+                  : "bg-gray-50 text-gray-600 border-2 border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              {category}
+              {isSelected && " ✓"}
+            </button>
           );
         })}
         {categories.length === 0 && !showNewInput && (
-          <div className="text-center py-4 text-gray-400 text-sm">
+          <div className="text-center py-4 text-gray-400 text-sm w-full">
             还没有分类，点击"新建分类"开始
           </div>
         )}

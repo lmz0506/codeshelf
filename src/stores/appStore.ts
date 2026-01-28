@@ -46,10 +46,15 @@ interface AppState {
   scanDepth: number;
   setScanDepth: (depth: number) => void;
 
-  // Categories
+  // Categories (项目分类)
   categories: string[];
   addCategory: (category: string) => void;
   removeCategory: (category: string) => void;
+
+  // Labels (技术栈标签)
+  labels: string[];
+  addLabel: (label: string) => void;
+  removeLabel: (label: string) => void;
 
   // Editor Settings
   editors: EditorConfig[];
@@ -103,7 +108,7 @@ export const useAppStore = create<AppState>()(
       scanDepth: 3,
       setScanDepth: (scanDepth) => set({ scanDepth }),
 
-      // Categories
+      // Categories (项目分类)
       categories: [],
       addCategory: (category) =>
         set((state) => ({
@@ -118,6 +123,24 @@ export const useAppStore = create<AppState>()(
           projects: state.projects.map((p) => ({
             ...p,
             tags: p.tags.filter((t) => t !== category),
+          })),
+        })),
+
+      // Labels (技术栈标签)
+      labels: ["Java", "Python", "JavaScript", "TypeScript", "React", "Vue", "Node.js", "Go", "Rust", "Spring Boot"],
+      addLabel: (label) =>
+        set((state) => ({
+          labels: state.labels.includes(label)
+            ? state.labels
+            : [...state.labels, label],
+        })),
+      removeLabel: (label) =>
+        set((state) => ({
+          labels: state.labels.filter((l) => l !== label),
+          // Also remove from projects
+          projects: state.projects.map((p) => ({
+            ...p,
+            labels: p.labels?.filter((l) => l !== label),
           })),
         })),
 
@@ -148,9 +171,20 @@ export const useAppStore = create<AppState>()(
         theme: state.theme,
         scanDepth: state.scanDepth,
         categories: state.categories,
+        labels: state.labels,
         editors: state.editors,
         terminalConfig: state.terminalConfig,
       }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<AppState>;
+        // 如果 localStorage 中没有 labels 或为空数组，使用默认值
+        const defaultLabels = ["Java", "Python", "JavaScript", "TypeScript", "React", "Vue", "Node.js", "Go", "Rust", "Spring Boot"];
+        return {
+          ...currentState,
+          ...persisted,
+          labels: persisted.labels && persisted.labels.length > 0 ? persisted.labels : defaultLabels,
+        };
+      },
     }
   )
 );

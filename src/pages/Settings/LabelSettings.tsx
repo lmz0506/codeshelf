@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, X, Tag, Edit2, Trash2 } from "lucide-react";
+import { Plus, X, Tag } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
 
@@ -21,36 +21,35 @@ const PRESET_LABELS = [
   { name: "Spring Boot", color: "bg-green-100 text-green-700" },
   { name: "Docker", color: "bg-blue-100 text-blue-700" },
   { name: "Kubernetes", color: "bg-blue-100 text-blue-700" },
+  { name: "小程序", color: "bg-green-100 text-green-700" },
 ];
 
 export function LabelSettings({ onClose }: LabelSettingsProps) {
-  const { categories, addCategory, removeCategory } = useAppStore();
+  const { labels, addLabel, removeLabel } = useAppStore();
   const [newLabel, setNewLabel] = useState("");
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editValue, setEditValue] = useState("");
 
   function handleAddLabel() {
     if (!newLabel.trim()) return;
-    if (categories.includes(newLabel.trim())) {
+    if (labels.includes(newLabel.trim())) {
       showToast("warning", "标签已存在", `"${newLabel.trim()}" 已在列表中`);
       return;
     }
-    addCategory(newLabel.trim());
+    addLabel(newLabel.trim());
     setNewLabel("");
     showToast("success", "添加成功", `已添加标签 "${newLabel.trim()}"`);
   }
 
   function handleRemoveLabel(label: string) {
-    removeCategory(label);
+    removeLabel(label);
     showToast("success", "删除成功", `已删除标签 "${label}"`);
   }
 
   function handleAddPreset(presetName: string) {
-    if (categories.includes(presetName)) {
+    if (labels.includes(presetName)) {
       showToast("warning", "标签已存在", `"${presetName}" 已在列表中`);
       return;
     }
-    addCategory(presetName);
+    addLabel(presetName);
     showToast("success", "添加成功", `已添加标签 "${presetName}"`);
   }
 
@@ -59,9 +58,9 @@ export function LabelSettings({ onClose }: LabelSettingsProps) {
       {/* Header */}
       <div className="flex items-center justify-between pb-3 border-b border-gray-200">
         <div>
-          <h4 className="text-sm font-semibold text-gray-900">管理分类标签</h4>
+          <h4 className="text-sm font-semibold text-gray-900">管理技术栈标签</h4>
           <p className="text-xs text-gray-500 mt-0.5">
-            创建和管理项目分类标签，用于组织项目
+            管理项目的技术栈标签，用于标识项目使用的技术
           </p>
         </div>
         {onClose && (
@@ -104,11 +103,11 @@ export function LabelSettings({ onClose }: LabelSettingsProps) {
       {/* Current Labels */}
       <div className="space-y-2">
         <label className="text-sm font-medium text-gray-700">
-          当前标签 ({categories.length})
+          当前标签 ({labels.length})
         </label>
-        {categories.length > 0 ? (
+        {labels.length > 0 ? (
           <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg min-h-[60px]">
-            {categories.map((label, index) => (
+            {labels.map((label) => (
               <div
                 key={label}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm font-medium text-gray-700 group hover:border-blue-300 transition-colors"
@@ -129,7 +128,7 @@ export function LabelSettings({ onClose }: LabelSettingsProps) {
           <div className="p-6 bg-gray-50 rounded-lg text-center">
             <Tag size={32} className="mx-auto mb-2 text-gray-300" />
             <p className="text-sm text-gray-500">暂无标签</p>
-            <p className="text-xs text-gray-400 mt-1">添加标签来组织您的项目</p>
+            <p className="text-xs text-gray-400 mt-1">添加标签来标识项目技术栈</p>
           </div>
         )}
       </div>
@@ -139,7 +138,7 @@ export function LabelSettings({ onClose }: LabelSettingsProps) {
         <label className="text-sm font-medium text-gray-700">快速添加预设标签</label>
         <div className="flex flex-wrap gap-2">
           {PRESET_LABELS.map((preset) => {
-            const isAdded = categories.includes(preset.name);
+            const isAdded = labels.includes(preset.name);
             return (
               <button
                 key={preset.name}
@@ -162,7 +161,7 @@ export function LabelSettings({ onClose }: LabelSettingsProps) {
       {/* Tips */}
       <div className="p-3 bg-blue-50 rounded-lg">
         <p className="text-xs text-blue-700">
-          <strong>提示：</strong>标签可用于项目的分类管理。在添加或编辑项目时，可以为项目选择标签进行分类组织。
+          <strong>提示：</strong>技术栈标签用于标识项目使用的技术框架。在添加或编辑项目时新增的标签会自动同步到这里。
         </p>
       </div>
     </div>
