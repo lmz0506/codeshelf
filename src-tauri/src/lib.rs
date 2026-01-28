@@ -1,6 +1,12 @@
 mod commands;
 
 use commands::{git, project, stats, system};
+use tauri::{
+    Manager,
+    tray::TrayIconBuilder,
+    menu::{Menu, MenuItem},
+    image::Image,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,10 +24,74 @@ pub fn run() {
                 )?;
             }
 
-            // Log window creation
-            println!("Tauri app setup completed");
+            // 创建托盘右键菜单
+            let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "退出程序", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &quit])?;
+
+            // 加载托盘图标
+            let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))
+                .expect("Failed to load tray icon");
+
+            // 创建系统托盘
+            let _tray = TrayIconBuilder::new()
+                .icon(icon)
+                .tooltip("CodeShelf - 代码书架")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    let app = tray.app_handle();
+
+                    match event {
+                        tauri::tray::TrayIconEvent::Click { button, button_state, .. } => {
+                            if button == tauri::tray::MouseButton::Left
+                                && button_state == tauri::tray::MouseButtonState::Up {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        tauri::tray::TrayIconEvent::DoubleClick { button, .. } => {
+                            if button == tauri::tray::MouseButton::Left {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
+
+            println!("Tauri app setup completed with tray icon");
 
             Ok(())
+        })
+        // 拦截窗口关闭事件：隐藏到托盘而不是退出
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // Git commands
