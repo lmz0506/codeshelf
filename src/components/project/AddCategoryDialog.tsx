@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useAppStore } from "@/stores/appStore";
+import { AlertTriangle } from "lucide-react";
 
 interface AddCategoryDialogProps {
   onClose: () => void;
@@ -12,6 +13,7 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const categoryColors = [
@@ -67,12 +69,22 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
   }
 
   function handleDelete(category: string) {
-    if (confirm(`确定删除此分类吗？相关项目将变为未分类`)) {
-      removeCategory(category);
+    setDeletingCategory(category);
+  }
+
+  function confirmDelete() {
+    if (deletingCategory) {
+      removeCategory(deletingCategory);
+      setDeletingCategory(null);
     }
   }
 
+  function cancelDelete() {
+    setDeletingCategory(null);
+  }
+
   return (
+    <>
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="category-dialog bg-white/[0.98] border border-slate-200/80 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
 
@@ -236,5 +248,42 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
         }
       `}</style>
     </div>
+
+    {/* 删除确认对话框 */}
+    {deletingCategory && (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
+          <div className="px-6 py-5 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">确认删除分类</h3>
+            </div>
+          </div>
+          <div className="px-6 py-4">
+            <p className="text-gray-600">
+              确定要删除分类 <span className="font-semibold text-gray-900">"{deletingCategory}"</span> 吗？
+            </p>
+            <p className="text-sm text-gray-500 mt-2">相关项目将变为未分类状态</p>
+          </div>
+          <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-100">
+            <button
+              onClick={cancelDelete}
+              className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-white transition-colors font-medium text-sm"
+            >
+              取消
+            </button>
+            <button
+              onClick={confirmDelete}
+              className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors font-medium text-sm"
+            >
+              确认删除
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
