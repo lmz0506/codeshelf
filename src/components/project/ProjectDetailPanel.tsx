@@ -10,7 +10,7 @@ import { AddRemoteModal } from "./AddRemoteModal";
 import { showToast } from "@/components/ui";
 import type { Project, GitStatus, CommitInfo, RemoteInfo } from "@/types";
 import { getGitStatus, getCommitHistory, getRemotes, gitPull, gitPush } from "@/services/git";
-import { openInEditor, openInTerminal, updateProject } from "@/services/db";
+import { openInEditor, openInExplorer, openInTerminal, updateProject } from "@/services/db";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 
@@ -370,6 +370,20 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
                 >
                   <Code size={14} />
                   <span>在编辑器中打开</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      await openInExplorer(project.path);
+                    } catch (error) {
+                      console.error("Failed to open explorer:", error);
+                      showToast("error", "打开文件夹失败", String(error));
+                    }
+                  }}
+                  className="quick-action-btn"
+                >
+                  <FolderOpen size={14} />
+                  <span>打开文件夹</span>
                 </button>
                 <button
                   onClick={async () => {

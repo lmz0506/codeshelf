@@ -126,6 +126,7 @@ pub fn run() {
             stats::get_dashboard_stats,
             stats::refresh_project_stats,
             // System commands
+            system::open_in_explorer,
             system::open_in_editor,
             system::open_in_terminal,
             system::open_url,

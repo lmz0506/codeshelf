@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { Project, GitStatus } from "@/types";
 import { getGitStatus, getRemotes } from "@/services/git";
-import { openInTerminal, toggleFavorite, removeProject, deleteProjectDirectory } from "@/services/db";
+import { openInTerminal, openInExplorer, toggleFavorite, removeProject, deleteProjectDirectory } from "@/services/db";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { useAppStore } from "@/stores/appStore";
 
@@ -71,6 +71,16 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
     } catch (error) {
       console.error("Failed to open terminal:", error);
       alert("打开终端失败：" + error);
+    }
+  }
+
+  async function handleOpenExplorer(e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      await openInExplorer(project.path);
+    } catch (error) {
+      console.error("Failed to open explorer:", error);
+      alert("打开文件夹失败：" + error);
     }
   }
 
@@ -163,6 +173,13 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
           </span>
 
           <div className="re-card-actions">
+            <button
+              className="re-icon-btn"
+              title="打开文件夹"
+              onClick={handleOpenExplorer}
+            >
+              📁
+            </button>
             <button
               className="re-icon-btn"
               title="终端"

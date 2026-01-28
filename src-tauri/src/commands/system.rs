@@ -8,6 +8,42 @@ use std::os::windows::process::CommandExt;
 const CREATE_NEW_CONSOLE: u32 = 0x00000010;
 
 #[tauri::command]
+pub async fn open_in_explorer(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open explorer: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Try common file managers
+        let result = Command::new("xdg-open")
+            .arg(&path)
+            .spawn();
+
+        if result.is_err() {
+            Command::new("nautilus")
+                .arg(&path)
+                .spawn()
+                .map_err(|e| format!("Failed to open file manager: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn open_in_editor(path: String, editor_path: Option<String>) -> Result<(), String> {
     let editor = editor_path.unwrap_or_else(|| {
         // Default to VS Code if no editor specified

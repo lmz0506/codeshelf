@@ -29,6 +29,10 @@ export async function openInEditor(path: string, editorPath?: string): Promise<v
   return invoke("open_in_editor", { path, editorPath });
 }
 
+export async function openInExplorer(path: string): Promise<void> {
+  return invoke("open_in_explorer", { path });
+}
+
 export async function openInTerminal(
   path: string,
   terminalType?: string,
