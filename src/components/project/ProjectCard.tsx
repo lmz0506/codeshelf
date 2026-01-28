@@ -128,15 +128,21 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
         </div>
 
         {project.labels && project.labels.length > 0 && (
-          <div className="flex flex-wrap gap-1 px-4 pb-2">
-            {project.labels.map((label) => (
+          <div className="flex flex-wrap gap-1 px-4 pb-2 max-h-[52px] overflow-hidden">
+            {project.labels.slice(0, 4).map((label) => (
               <span
                 key={label}
-                className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs font-medium"
+                className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs font-medium truncate max-w-[80px]"
+                title={label}
               >
                 {label}
               </span>
             ))}
+            {project.labels.length > 4 && (
+              <span className="inline-flex items-center px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-xs font-medium">
+                +{project.labels.length - 4}
+              </span>
+            )}
           </div>
         )}
 

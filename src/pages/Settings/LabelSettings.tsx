@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, X, Tag } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
 
@@ -7,21 +7,38 @@ interface LabelSettingsProps {
   onClose?: () => void;
 }
 
+// 获取标签图标配置
+const LABEL_ICONS: Record<string, { bg: string; text: string; round?: boolean }> = {
+  "Java": { bg: "bg-orange-600", text: "J" },
+  "Vue": { bg: "bg-green-500", text: "V", round: true },
+  "React": { bg: "bg-blue-400", text: "⚛", round: true },
+  "Angular": { bg: "bg-red-500", text: "A", round: true },
+  "小程序": { bg: "bg-green-600", text: "微" },
+  "Node.js": { bg: "bg-green-500", text: "N" },
+  "Python": { bg: "bg-blue-500", text: "P", round: true },
+  "Go": { bg: "bg-cyan-500", text: "G", round: true },
+  "Rust": { bg: "bg-orange-700", text: "R", round: true },
+  "TypeScript": { bg: "bg-blue-600", text: "TS" },
+  "JavaScript": { bg: "bg-yellow-400", text: "JS" },
+  "PHP": { bg: "bg-indigo-500", text: "P" },
+  "Spring Boot": { bg: "bg-green-600", text: "S" },
+  "Docker": { bg: "bg-blue-500", text: "D" },
+  "Kubernetes": { bg: "bg-blue-600", text: "K8" },
+};
+
+function getLabelIcon(label: string) {
+  const config = LABEL_ICONS[label] || { bg: "bg-gray-500", text: label.slice(0, 2) };
+  return (
+    <div className={`w-5 h-5 ${config.round ? 'rounded-full' : 'rounded'} ${config.bg} flex items-center justify-center flex-shrink-0`}>
+      <span className="text-white text-xs font-medium">{config.text}</span>
+    </div>
+  );
+}
+
 // Predefined labels for quick selection
 const PRESET_LABELS = [
-  { name: "Java", color: "bg-orange-100 text-orange-700" },
-  { name: "Python", color: "bg-blue-100 text-blue-700" },
-  { name: "JavaScript", color: "bg-yellow-100 text-yellow-700" },
-  { name: "TypeScript", color: "bg-blue-100 text-blue-700" },
-  { name: "React", color: "bg-cyan-100 text-cyan-700" },
-  { name: "Vue", color: "bg-green-100 text-green-700" },
-  { name: "Node.js", color: "bg-green-100 text-green-700" },
-  { name: "Go", color: "bg-cyan-100 text-cyan-700" },
-  { name: "Rust", color: "bg-orange-100 text-orange-700" },
-  { name: "Spring Boot", color: "bg-green-100 text-green-700" },
-  { name: "Docker", color: "bg-blue-100 text-blue-700" },
-  { name: "Kubernetes", color: "bg-blue-100 text-blue-700" },
-  { name: "小程序", color: "bg-green-100 text-green-700" },
+  "Java", "Python", "JavaScript", "TypeScript", "React", "Vue",
+  "Node.js", "Go", "Rust", "Spring Boot", "Docker", "Kubernetes", "小程序", "Angular", "PHP"
 ];
 
 export function LabelSettings({ onClose }: LabelSettingsProps) {
@@ -58,7 +75,7 @@ export function LabelSettings({ onClose }: LabelSettingsProps) {
       {/* Header */}
       <div className="flex items-center justify-between pb-3 border-b border-gray-200">
         <div>
-          <h4 className="text-sm font-semibold text-gray-900">管理技术栈标签</h4>
+          <h4 className="text-sm font-semibold text-gray-900">标签管理</h4>
           <p className="text-xs text-gray-500 mt-0.5">
             管理项目的技术栈标签，用于标识项目使用的技术
           </p>
@@ -110,9 +127,9 @@ export function LabelSettings({ onClose }: LabelSettingsProps) {
             {labels.map((label) => (
               <div
                 key={label}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm font-medium text-gray-700 group hover:border-blue-300 transition-colors"
+                className="inline-flex items-center gap-1.5 px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 group hover:border-blue-300 transition-colors"
               >
-                <Tag size={14} className="text-gray-400" />
+                {getLabelIcon(label)}
                 <span>{label}</span>
                 <button
                   onClick={() => handleRemoveLabel(label)}
@@ -126,7 +143,9 @@ export function LabelSettings({ onClose }: LabelSettingsProps) {
           </div>
         ) : (
           <div className="p-6 bg-gray-50 rounded-lg text-center">
-            <Tag size={32} className="mx-auto mb-2 text-gray-300" />
+            <div className="w-12 h-12 mx-auto mb-2 bg-gray-200 rounded-lg flex items-center justify-center">
+              <span className="text-gray-400 text-lg">🏷️</span>
+            </div>
             <p className="text-sm text-gray-500">暂无标签</p>
             <p className="text-xs text-gray-400 mt-1">添加标签来标识项目技术栈</p>
           </div>
@@ -138,20 +157,21 @@ export function LabelSettings({ onClose }: LabelSettingsProps) {
         <label className="text-sm font-medium text-gray-700">快速添加预设标签</label>
         <div className="flex flex-wrap gap-2">
           {PRESET_LABELS.map((preset) => {
-            const isAdded = labels.includes(preset.name);
+            const isAdded = labels.includes(preset);
             return (
               <button
-                key={preset.name}
-                onClick={() => handleAddPreset(preset.name)}
+                key={preset}
+                onClick={() => handleAddPreset(preset)}
                 disabled={isAdded}
-                className={`px-3 py-1.5 text-sm font-medium rounded-full transition-all ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-lg transition-all ${
                   isAdded
                     ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : `${preset.color} hover:ring-2 hover:ring-offset-1 hover:ring-blue-400`
+                    : "bg-white border border-gray-200 text-gray-700 hover:border-blue-400 hover:bg-blue-50"
                 }`}
               >
-                {preset.name}
-                {isAdded && " ✓"}
+                {getLabelIcon(preset)}
+                <span>{preset}</span>
+                {isAdded && <span className="text-green-500">✓</span>}
               </button>
             );
           })}
@@ -161,7 +181,7 @@ export function LabelSettings({ onClose }: LabelSettingsProps) {
       {/* Tips */}
       <div className="p-3 bg-blue-50 rounded-lg">
         <p className="text-xs text-blue-700">
-          <strong>提示：</strong>技术栈标签用于标识项目使用的技术框架。在添加或编辑项目时新增的标签会自动同步到这里。
+          <strong>提示：</strong>这里管理的标签会在添加项目和编辑项目时作为可选标签显示。在那里新增的标签也会自动同步到这里。
         </p>
       </div>
     </div>

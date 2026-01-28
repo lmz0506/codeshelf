@@ -11,7 +11,7 @@ import { LabelSettings } from "./LabelSettings";
 type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | null;
 
 export function SettingsPage() {
-  const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, categories } = useAppStore();
+  const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, labels } = useAppStore();
   const [activeSection, setActiveSection] = useState<SettingsSection>(null);
 
   // 获取默认编辑器名称
@@ -73,10 +73,10 @@ export function SettingsPage() {
     },
     {
       id: "labels" as const,
-      title: "分类标签",
-      description: "管理项目分类标签",
+      title: "标签管理",
+      description: "管理项目技术栈标签",
       icon: Tag,
-      value: `${categories.length} 个标签`,
+      value: `${labels.length} 个标签`,
       component: LabelSettings,
     },
   ];
