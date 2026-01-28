@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
-import { Minus, X, Monitor, Code, Terminal, Search, ChevronRight, Tag, Download } from "lucide-react";
+import { Minus, X, Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { EditorSettings } from "./EditorSettings";
 import { TerminalSettings } from "./TerminalSettings";
@@ -8,8 +8,9 @@ import { ScanSettings } from "./ScanSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { LabelSettings } from "./LabelSettings";
 import { UpdateSettings } from "./UpdateSettings";
+import { AboutSettings } from "./AboutSettings";
 
-type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "update" | null;
+type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "update" | "about" | null;
 
 export function SettingsPage() {
   const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, labels } = useAppStore();
@@ -87,6 +88,14 @@ export function SettingsPage() {
       icon: Download,
       value: "v0.1.0",
       component: UpdateSettings,
+    },
+    {
+      id: "about" as const,
+      title: "关于",
+      description: "应用信息与系统依赖",
+      icon: Info,
+      value: "CodeShelf",
+      component: AboutSettings,
     },
   ];
 

@@ -576,3 +576,51 @@ pub async fn read_readme(path: String) -> Result<String, String> {
 
     Err("README file not found".to_string())
 }
+
+#[tauri::command]
+pub async fn check_git_version() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    let output = Command::new("git")
+        .arg("--version")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("Git not found: {}", e))?;
+
+    #[cfg(not(target_os = "windows"))]
+    let output = Command::new("git")
+        .arg("--version")
+        .output()
+        .map_err(|e| format!("Git not found: {}", e))?;
+
+    if output.status.success() {
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // Extract version number from "git version 2.x.x"
+        let version = version.replace("git version ", "");
+        Ok(version)
+    } else {
+        Err("Git not installed".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn check_node_version() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    let output = Command::new("node")
+        .arg("--version")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("Node.js not found: {}", e))?;
+
+    #[cfg(not(target_os = "windows"))]
+    let output = Command::new("node")
+        .arg("--version")
+        .output()
+        .map_err(|e| format!("Node.js not found: {}", e))?;
+
+    if output.status.success() {
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(version)
+    } else {
+        Err("Node.js not installed".to_string())
+    }
+}
