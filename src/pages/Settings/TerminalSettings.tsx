@@ -169,12 +169,6 @@ export function TerminalSettings({ onClose }: TerminalSettingsProps) {
     },
   ];
 
-  function getTestStatusColor(type: TerminalType): string {
-    const result = testResults[type];
-    if (!result) return "";
-    return result.available ? "text-green-500" : "text-red-500";
-  }
-
   function getTestStatusIcon(type: TerminalType) {
     const result = testResults[type];
     if (!result) return null;

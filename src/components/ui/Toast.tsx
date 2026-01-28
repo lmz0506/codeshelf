@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { CheckCircle, XCircle, AlertCircle, X, Info } from "lucide-react";
 
 export type ToastType = "success" | "error" | "warning" | "info";

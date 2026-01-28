@@ -147,7 +147,6 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
       addCategoryToStore(name);
     }
     // 添加到本地显示状态（带样式）
-    const schemeIndex = Object.keys(categories).length % colorSchemes.length;
     setCategories({
       ...categories,
       [name]: {

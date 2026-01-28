@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { CommitHeatmap } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
-import { getDashboardStats, refreshDashboardStats, type RecentCommit, type CachedDashboardData } from "@/services/stats";
+import { getDashboardStats, refreshDashboardStats, type RecentCommit } from "@/services/stats";
 import type { DashboardStats, DailyActivity } from "@/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
