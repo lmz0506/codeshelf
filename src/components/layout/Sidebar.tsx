@@ -24,7 +24,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
       className={`re-nav ${sidebarCollapsed ? "collapsed" : ""}`}
     >
       <div className="re-logo select-none">
-        📚 CodeShelf
+        <BookOpen size={20} /> CodeShelf
       </div>
 
       <nav className="re-menu">
