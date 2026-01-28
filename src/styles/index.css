@@ -1440,8 +1440,21 @@ p {
   }
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .animate-in {
   animation-fill-mode: both;
+}
+
+.fade-in {
+  animation: fadeIn 0.15s ease-out;
+}
+
+.slide-in-from-top-1 {
+  animation: slideInFromTop 0.15s ease-out;
 }
 
 .slide-in-from-top-2 {
