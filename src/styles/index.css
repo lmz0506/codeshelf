@@ -470,16 +470,19 @@ body {
 }
 
 .project-detail-header {
-  height: 4rem;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 4rem;
   background-color: white;
   border-bottom: 1px solid #e5e7eb;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1.25rem;
+  padding: 0.75rem 1rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  flex-shrink: 0;
-  z-index: 20;
+  z-index: 30;
 }
 
 .project-icon {
@@ -606,7 +609,7 @@ body {
 .project-detail-sidebar {
   position: fixed;
   left: 0;
-  top: 4rem;
+  top: 0;
   bottom: 0;
   width: 18rem;
   background-color: white;
@@ -615,6 +618,7 @@ body {
   flex-direction: column;
   overflow-y: auto;
   z-index: 10;
+  padding-top: 4.5rem;
 }
 
 .project-detail-main {
@@ -774,6 +778,20 @@ body {
   font-size: 0.5625rem;
   font-weight: 500;
   border-radius: 9999px;
+}
+
+.remote-badge-secondary {
+  padding: 0.0625rem 0.375rem;
+  background-color: #f3f4f6;
+  color: #6b7280;
+  font-size: 0.5625rem;
+  font-weight: 500;
+  border-radius: 9999px;
+}
+
+.remote-card-secondary {
+  background: #f9fafb;
+  border-color: #e5e7eb;
 }
 
 .remote-type {

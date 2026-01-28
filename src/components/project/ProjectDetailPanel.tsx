@@ -175,7 +175,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
       </header>
 
       {/* 主体内容 */}
-      <div className="flex" style={{ height: 'calc(100vh - 4rem)' }}>
+      <div className="flex flex-1 pt-[4.5rem]">
         {/* Sidebar - 完全按照 example-projectPanel.html */}
         <aside className="project-detail-sidebar">
           {/* 分支状态卡片 */}
@@ -217,19 +217,23 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
 
             {remotes.length > 0 ? (
               <div className="space-y-md">
-                {remotes.map((remote) => (
+                {remotes.map((remote, index) => (
                   <div
                     key={remote.name}
-                    className="remote-card"
+                    className={`remote-card ${index > 0 ? 'remote-card-secondary' : ''}`}
                   >
                     <div className="flex items-center gap-sm mb-xs relative z-10">
                       <div className="remote-icon">
-                        <GitBranch size={12} className="text-red-500" />
+                        <GitBranch size={12} className={index === 0 ? "text-blue-500" : "text-gray-400"} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="remote-name">
                           {remote.name}
-                          <span className="remote-badge">当前</span>
+                          {index === 0 ? (
+                            <span className="remote-badge">当前</span>
+                          ) : (
+                            <span className="remote-badge-secondary">备用</span>
+                          )}
                         </div>
                         <div className="remote-type">{getRemoteType(remote.url)}</div>
                       </div>
