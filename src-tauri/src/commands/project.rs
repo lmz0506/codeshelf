@@ -1,4 +1,8 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Project {
@@ -29,11 +33,50 @@ pub struct UpdateProjectInput {
     pub labels: Option<Vec<String>>,
 }
 
-// In-memory store for now, will be replaced with SQLite
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
+// 项目数据存储
+static PROJECTS: Lazy<Mutex<Vec<Project>>> = Lazy::new(|| {
+    // 启动时从文件加载
+    let projects = load_projects_from_file().unwrap_or_default();
+    Mutex::new(projects)
+});
 
-static PROJECTS: Lazy<Mutex<Vec<Project>>> = Lazy::new(|| Mutex::new(Vec::new()));
+// 获取数据文件路径
+fn get_data_file_path() -> PathBuf {
+    let mut path = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push("codeshelf");
+    // 确保目录存在
+    let _ = fs::create_dir_all(&path);
+    path.push("projects.json");
+    path
+}
+
+// 从文件加载项目
+fn load_projects_from_file() -> Result<Vec<Project>, String> {
+    let path = get_data_file_path();
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read projects file: {}", e))?;
+
+    let projects: Vec<Project> = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse projects file: {}", e))?;
+
+    Ok(projects)
+}
+
+// 保存项目到文件
+fn save_projects_to_file(projects: &[Project]) -> Result<(), String> {
+    let path = get_data_file_path();
+    let content = serde_json::to_string_pretty(projects)
+        .map_err(|e| format!("Failed to serialize projects: {}", e))?;
+
+    fs::write(&path, content)
+        .map_err(|e| format!("Failed to write projects file: {}", e))?;
+
+    Ok(())
+}
 
 fn generate_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -69,6 +112,10 @@ pub async fn add_project(input: CreateProjectInput) -> Result<Project, String> {
     }
 
     projects.push(project.clone());
+
+    // 保存到文件
+    save_projects_to_file(&projects)?;
+
     Ok(project)
 }
 
@@ -78,6 +125,8 @@ pub async fn remove_project(id: String) -> Result<(), String> {
 
     if let Some(pos) = projects.iter().position(|p| p.id == id) {
         projects.remove(pos);
+        // 保存到文件
+        save_projects_to_file(&projects)?;
         Ok(())
     } else {
         Err("Project not found".to_string())
@@ -97,6 +146,10 @@ pub async fn delete_project_directory(id: String) -> Result<(), String> {
 
         // Remove from projects list
         projects.remove(pos);
+
+        // 保存到文件
+        save_projects_to_file(&projects)?;
+
         Ok(())
     } else {
         Err("Project not found".to_string())
@@ -124,7 +177,12 @@ pub async fn update_project(input: UpdateProjectInput) -> Result<Project, String
             project.labels = labels;
         }
         project.updated_at = get_current_time();
-        Ok(project.clone())
+        let updated = project.clone();
+
+        // 保存到文件
+        save_projects_to_file(&projects)?;
+
+        Ok(updated)
     } else {
         Err("Project not found".to_string())
     }
@@ -137,7 +195,12 @@ pub async fn toggle_favorite(id: String) -> Result<Project, String> {
     if let Some(project) = projects.iter_mut().find(|p| p.id == id) {
         project.is_favorite = !project.is_favorite;
         project.updated_at = get_current_time();
-        Ok(project.clone())
+        let updated = project.clone();
+
+        // 保存到文件
+        save_projects_to_file(&projects)?;
+
+        Ok(updated)
     } else {
         Err("Project not found".to_string())
     }
