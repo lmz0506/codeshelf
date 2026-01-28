@@ -129,6 +129,17 @@ export function DashboardPage() {
         </div>
 
         <div className="re-actions flex items-center">
+          {/* Refresh Button */}
+          <button
+            onClick={handleRefreshStats}
+            disabled={refreshing || loading}
+            className={`re-btn flex items-center gap-2 ${refreshing ? 'opacity-70' : ''}`}
+            title="刷新统计数据"
+          >
+            <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+            <span>{refreshing ? '刷新中...' : '刷新'}</span>
+          </button>
+
           {/* Integrated Window Controls */}
           <div className="flex items-center ml-4 border-l border-gray-200 pl-3 gap-1 h-6">
             <button
