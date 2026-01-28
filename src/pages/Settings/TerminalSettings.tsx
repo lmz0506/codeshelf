@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { FolderOpen, AlertCircle } from "lucide-react";
+import { FolderOpen, AlertCircle, Check, Monitor, Command, Apple, Settings } from "lucide-react";
 import { useAppStore, TerminalConfig } from "@/stores/appStore";
 import { open } from "@tauri-apps/plugin-dialog";
 
-export function TerminalSettings() {
+interface TerminalSettingsProps {
+  onClose?: () => void;
+}
+
+export function TerminalSettings({ onClose }: TerminalSettingsProps) {
   const { terminalConfig, setTerminalConfig } = useAppStore();
   const [customPath, setCustomPath] = useState(terminalConfig.customPath || "");
 
@@ -33,152 +37,133 @@ export function TerminalSettings() {
     }
   }
 
+  const terminalOptions = [
+    {
+      group: "Windows",
+      options: [
+        { value: "default" as const, label: "系统默认", description: "Windows Terminal / PowerShell", icon: Monitor },
+        { value: "powershell" as const, label: "PowerShell", description: "Windows PowerShell", icon: Command },
+        { value: "cmd" as const, label: "CMD", description: "命令提示符", icon: Monitor },
+      ],
+    },
+    {
+      group: "macOS",
+      options: [
+        { value: "terminal" as const, label: "Terminal", description: "系统自带终端", icon: Apple },
+        { value: "iterm" as const, label: "iTerm2", description: "需已安装 iTerm2", icon: Command },
+      ],
+    },
+    {
+      group: "自定义",
+      options: [
+        { value: "custom" as const, label: "自定义", description: "指定终端程序路径", icon: Settings },
+      ],
+    },
+  ];
+
   return (
-    <section className="re-card">
-      <h2 className="text-[17px] font-semibold mb-6">终端设置</h2>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
+        <h4 className="text-sm font-semibold text-[var(--text)]">选择终端类型</h4>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="text-xs text-[var(--text-light)] hover:text-[var(--primary)] transition-colors"
+          >
+            收起
+          </button>
+        )}
+      </div>
 
       {/* 说明文档 */}
-      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="flex items-start gap-3">
-          <AlertCircle size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-blue-900">
-            <p className="font-semibold mb-2">配置说明</p>
-            <ul className="space-y-1 text-xs">
-              <li>• <strong>Windows 默认:</strong> 优先使用 Windows Terminal，如不可用则使用 PowerShell</li>
-              <li>• <strong>Windows PowerShell:</strong> 使用 PowerShell 终端</li>
-              <li>• <strong>Windows CMD:</strong> 使用传统命令提示符</li>
-              <li>• <strong>macOS 默认:</strong> 使用系统自带的 Terminal.app</li>
-              <li>• <strong>macOS iTerm:</strong> 使用 iTerm2 终端（需已安装）</li>
-              <li>• <strong>自定义:</strong> 指定自定义终端程序的路径</li>
-            </ul>
+      <div className="p-3 bg-blue-50/50 border border-blue-200/50 rounded-lg">
+        <div className="flex items-start gap-2">
+          <AlertCircle size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-blue-900">
+            选择您偏好的终端程序，用于在项目目录中打开命令行。
           </div>
         </div>
       </div>
 
       {/* 终端类型选择 */}
-      <div className="space-y-3">
-        <label className="block text-sm font-medium text-gray-700 mb-3">
-          选择终端类型
-        </label>
-
-        {/* Windows 选项 */}
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Windows</p>
-          <TerminalOption
-            value="default"
-            label="默认 (Windows Terminal / PowerShell)"
-            description="自动选择最佳终端"
-            currentValue={terminalConfig.type}
-            onChange={handleTypeChange}
-          />
-          <TerminalOption
-            value="powershell"
-            label="PowerShell"
-            description="Windows PowerShell 终端"
-            currentValue={terminalConfig.type}
-            onChange={handleTypeChange}
-          />
-          <TerminalOption
-            value="cmd"
-            label="CMD"
-            description="传统命令提示符"
-            currentValue={terminalConfig.type}
-            onChange={handleTypeChange}
-          />
-        </div>
-
-        {/* macOS 选项 */}
-        <div className="space-y-2 pt-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">macOS</p>
-          <TerminalOption
-            value="terminal"
-            label="Terminal"
-            description="系统自带终端"
-            currentValue={terminalConfig.type}
-            onChange={handleTypeChange}
-          />
-          <TerminalOption
-            value="iterm"
-            label="iTerm2"
-            description="需要已安装 iTerm2"
-            currentValue={terminalConfig.type}
-            onChange={handleTypeChange}
-          />
-        </div>
-
-        {/* 自定义选项 */}
-        <div className="space-y-2 pt-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">自定义</p>
-          <TerminalOption
-            value="custom"
-            label="自定义终端"
-            description="使用自定义终端程序"
-            currentValue={terminalConfig.type}
-            onChange={handleTypeChange}
-          />
-        </div>
-
-        {/* 自定义路径输入 */}
-        {terminalConfig.type === "custom" && (
-          <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
-            <label className="block text-sm font-medium text-gray-700">
-              终端可执行文件路径
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={customPath}
-                onChange={(e) => setCustomPath(e.target.value)}
-                placeholder="选择或输入终端可执行文件路径"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-              />
-              <button
-                onClick={handleBrowsePath}
-                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-              >
-                <FolderOpen size={16} />
-                浏览
-              </button>
+      <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
+        {terminalOptions.map((group) => (
+          <div key={group.group} className="space-y-2">
+            <p className="text-xs font-semibold text-[var(--text-light)] uppercase tracking-wider">
+              {group.group}
+            </p>
+            <div className="space-y-2">
+              {group.options.map((option) => {
+                const isSelected = option.value === terminalConfig.type;
+                const Icon = option.icon;
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => handleTypeChange(option.value)}
+                    className={`w-full flex items-center gap-3 p-3 border rounded-lg transition-all text-left ${
+                      isSelected
+                        ? "border-[var(--primary)] bg-[var(--primary-light)]"
+                        : "border-[var(--border)] hover:border-[var(--primary)]/50 hover:bg-[var(--bg-light)]"
+                    }`}
+                  >
+                    <div
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        isSelected ? "bg-[var(--primary)] text-white" : "bg-[var(--bg-light)] text-[var(--text-light)]"
+                      }`}
+                    >
+                      <Icon size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div
+                        className={`text-sm font-medium ${
+                          isSelected ? "text-[var(--primary)]" : "text-[var(--text)]"
+                        }`}
+                      >
+                        {option.label}
+                      </div>
+                      <div className="text-xs text-[var(--text-light)] truncate">{option.description}</div>
+                    </div>
+                    {isSelected && <Check size={16} className="text-[var(--primary)] flex-shrink-0" />}
+                  </button>
+                );
+              })}
             </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 自定义路径输入 */}
+      {terminalConfig.type === "custom" && (
+        <div className="p-4 bg-[var(--bg-light)] border border-[var(--border)] rounded-lg space-y-3">
+          <label className="block text-xs font-medium text-[var(--text)]">
+            自定义终端路径
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={customPath}
+              onChange={(e) => setCustomPath(e.target.value)}
+              placeholder="选择或输入终端可执行文件路径"
+              className="flex-1 px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-lg text-sm font-mono text-[var(--text)] placeholder-[var(--text-light)] focus:outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)]"
+            />
             <button
-              onClick={handleSaveCustomPath}
-              disabled={!customPath.trim()}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+              onClick={handleBrowsePath}
+              className="px-3 py-2 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg text-sm hover:bg-[var(--border)] transition-colors flex items-center gap-1.5"
             >
-              保存路径
+              <FolderOpen size={14} />
+              浏览
             </button>
           </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-interface TerminalOptionProps {
-  value: TerminalConfig["type"];
-  label: string;
-  description: string;
-  currentValue: TerminalConfig["type"];
-  onChange: (value: TerminalConfig["type"]) => void;
-}
-
-function TerminalOption({ value, label, description, currentValue, onChange }: TerminalOptionProps) {
-  const isSelected = value === currentValue;
-
-  return (
-    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 cursor-pointer transition-colors">
-      <input
-        type="radio"
-        name="terminal"
-        value={value}
-        checked={isSelected}
-        onChange={() => onChange(value)}
-        className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-      />
-      <div className="flex-1">
-        <div className="text-sm font-semibold text-gray-900">{label}</div>
-        <div className="text-xs text-gray-500 mt-0.5">{description}</div>
-      </div>
-    </label>
+          <button
+            onClick={handleSaveCustomPath}
+            disabled={!customPath.trim()}
+            className="w-full py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+          >
+            <Check size={14} />
+            保存路径
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

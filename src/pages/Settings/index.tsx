@@ -1,12 +1,80 @@
-import { Input } from "@/components/ui";
-import { useAppStore, Theme } from "@/stores/appStore";
-import { Sun, Moon, Minus, X } from "lucide-react";
+import { useState } from "react";
+import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
+import { Minus, X, Monitor, Code, Terminal, Search, ChevronRight } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { EditorSettings } from "./EditorSettings";
 import { TerminalSettings } from "./TerminalSettings";
+import { ScanSettings } from "./ScanSettings";
+import { AppearanceSettings } from "./AppearanceSettings";
+
+type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | null;
 
 export function SettingsPage() {
-  const { theme, setTheme, sidebarCollapsed, setSidebarCollapsed, scanDepth, setScanDepth } = useAppStore();
+  const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth } = useAppStore();
+  const [activeSection, setActiveSection] = useState<SettingsSection>(null);
+
+  // 获取默认编辑器名称
+  const getDefaultEditorName = () => {
+    if (editors.length === 0) return "未配置（使用系统默认）";
+    return editors[0].name;
+  };
+
+  // 获取终端类型显示名称
+  const getTerminalTypeName = (type: TerminalConfig["type"]) => {
+    const names: Record<string, string> = {
+      default: "系统默认",
+      powershell: "PowerShell",
+      cmd: "CMD",
+      terminal: "Terminal.app",
+      iterm: "iTerm2",
+      custom: "自定义终端",
+    };
+    return names[type] || type;
+  };
+
+  // 获取主题显示名称
+  const getThemeName = (t: Theme) => {
+    return t === "light" ? "浅色模式" : "深色模式";
+  };
+
+  const settingsCards = [
+    {
+      id: "appearance" as const,
+      title: "外观",
+      description: "主题、界面样式",
+      icon: Monitor,
+      value: getThemeName(theme),
+      component: AppearanceSettings,
+    },
+    {
+      id: "editor" as const,
+      title: "编辑器",
+      description: "配置代码编辑器",
+      icon: Code,
+      value: getDefaultEditorName(),
+      component: EditorSettings,
+    },
+    {
+      id: "terminal" as const,
+      title: "终端",
+      description: "配置命令行终端",
+      icon: Terminal,
+      value: getTerminalTypeName(terminalConfig.type),
+      component: TerminalSettings,
+    },
+    {
+      id: "scan" as const,
+      title: "扫描设置",
+      description: "项目扫描深度配置",
+      icon: Search,
+      value: `${scanDepth} 层`,
+      component: ScanSettings,
+    },
+  ];
+
+  const handleCardClick = (section: SettingsSection) => {
+    setActiveSection(activeSection === section ? null : section);
+  };
 
   return (
     <div className="flex flex-col min-h-full">
@@ -43,90 +111,78 @@ export function SettingsPage() {
         </div>
       </header>
 
-      <div className="p-5 mt-5 flex flex-col gap-6">
-        {/* Theme Settings */}
-        <section className="re-card">
-          <h2 className="text-[17px] font-semibold mb-6">外观</h2>
-          <div className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-[var(--text-light)] mb-4">
-                主题模式
-              </label>
-              <div className="flex gap-4">
-                <ThemeOption
-                  icon={Sun}
-                  label="浅色"
-                  value="light"
-                  currentValue={theme}
-                  onChange={setTheme}
-                />
-                <ThemeOption
-                  icon={Moon}
-                  label="深色"
-                  value="dark"
-                  currentValue={theme}
-                  onChange={setTheme}
-                />
+      <div className="p-5 mt-5">
+        {/* Settings Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {settingsCards.map((card) => {
+            const Icon = card.icon;
+            const isActive = activeSection === card.id;
+            const Component = card.component;
+
+            return (
+              <div key={card.id} className="flex flex-col gap-3">
+                {/* Card Button */}
+                <button
+                  onClick={() => handleCardClick(card.id)}
+                  className={`re-card p-5 text-left transition-all duration-200 hover:shadow-md ${
+                    isActive
+                      ? "ring-2 ring-[var(--primary)] bg-[var(--primary-light)]"
+                      : "hover:border-[var(--primary)]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${
+                          isActive
+                            ? "bg-[var(--primary)] text-white"
+                            : "bg-[var(--bg-light)] text-[var(--primary)]"
+                        }`}
+                      >
+                        <Icon className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-semibold text-[var(--text)]">
+                          {card.title}
+                        </h3>
+                        <p className="text-sm text-[var(--text-light)] mt-0.5">
+                          {card.description}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`text-sm font-medium px-3 py-1 rounded-full ${
+                          isActive
+                            ? "bg-[var(--primary)] text-white"
+                            : "bg-[var(--bg-light)] text-[var(--text-light)]"
+                        }`}
+                      >
+                        {card.value}
+                      </span>
+                      <ChevronRight
+                        className={`w-5 h-5 text-[var(--text-light)] transition-transform duration-200 ${
+                          isActive ? "rotate-90" : ""
+                        }`}
+                      />
+                    </div>
+                  </div>
+                </button>
+
+                {/* Expanded Settings Panel */}
+                {isActive && (
+                  <div className="re-card p-5 animate-in slide-in-from-top-2 duration-200">
+                    <Component onClose={() => setActiveSection(null)} />
+                  </div>
+                )}
               </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Editor Settings */}
-        <EditorSettings />
-
-        {/* Terminal Settings */}
-        <TerminalSettings />
-
-        {/* Scan Settings */}
-        <section className="re-card">
-          <h2 className="text-[17px] font-semibold mb-6">扫描设置</h2>
-          <div className="space-y-5">
-            <Input
-              label="扫描深度"
-              type="number"
-              placeholder="3"
-              value={scanDepth.toString()}
-              onChange={(e) => {
-                const value = parseInt(e.target.value);
-                if (value >= 1 && value <= 10) {
-                  setScanDepth(value);
-                }
-              }}
-              min={1}
-              max={10}
-            />
-            <p className="text-sm text-[var(--text-light)] leading-relaxed">
-              扫描目录时的最大递归深度（1-10层）
-            </p>
-          </div>
-        </section>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
 
-interface ThemeOptionProps {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: Theme;
-  currentValue: Theme;
-  onChange: (value: Theme) => void;
-}
-
-function ThemeOption({ icon: Icon, label, value, currentValue, onChange }: ThemeOptionProps) {
-  const isSelected = value === currentValue;
-
-  return (
-    <button
-      onClick={() => onChange(value)}
-      className={`flex items-center gap-3 px-6 py-3.5 rounded-lg border transition-all ${isSelected
-        ? "border-[var(--primary)] bg-[var(--primary-light)] text-[var(--primary)]"
-        : "border-[var(--border)] hover:border-[var(--primary)] text-[var(--text-light)] hover:bg-[var(--primary-light)] hover:text-[var(--primary)]"
-        }`}
-    >
-      <Icon className="w-5 h-5" />
-      <span className="font-medium">{label}</span>
-    </button>
-  );
-}
+// Re-export for backward compatibility
+export { EditorSettings, TerminalSettings };

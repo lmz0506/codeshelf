@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { Plus, Trash2, FolderOpen, AlertCircle } from "lucide-react";
+import { Plus, Trash2, FolderOpen, AlertCircle, Check, X } from "lucide-react";
 import { useAppStore, EditorConfig } from "@/stores/appStore";
 import { open } from "@tauri-apps/plugin-dialog";
 
-export function EditorSettings() {
+interface EditorSettingsProps {
+  onClose?: () => void;
+}
+
+export function EditorSettings({ onClose }: EditorSettingsProps) {
   const { editors, addEditor, removeEditor } = useAppStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEditor, setNewEditor] = useState({ name: "", path: "" });
@@ -42,55 +46,64 @@ export function EditorSettings() {
   }
 
   return (
-    <section className="re-card">
-      <h2 className="text-[17px] font-semibold mb-6">编辑器设置</h2>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
+        <h4 className="text-sm font-semibold text-[var(--text)]">编辑器配置</h4>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="text-xs text-[var(--text-light)] hover:text-[var(--primary)] transition-colors"
+          >
+            收起
+          </button>
+        )}
+      </div>
 
       {/* 说明文档 */}
-      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="flex items-start gap-3">
-          <AlertCircle size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-blue-900">
-            <p className="font-semibold mb-2">配置说明</p>
-            <ul className="space-y-1 text-xs">
-              <li>• <strong>Windows:</strong> 选择编辑器的 .exe 文件（如 C:\Program Files\Microsoft VS Code\Code.exe）</li>
-              <li>• <strong>macOS:</strong> 选择应用程序包内的可执行文件（如 /Applications/Visual Studio Code.app/Contents/Resources/app/bin/code）</li>
-              <li>• 可以添加多个编辑器，打开项目时将使用第一个配置的编辑器</li>
-              <li>• 如果未配置编辑器，将尝试使用系统默认的 VS Code</li>
-            </ul>
+      <div className="p-3 bg-blue-50/50 border border-blue-200/50 rounded-lg">
+        <div className="flex items-start gap-2">
+          <AlertCircle size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-blue-900 space-y-1">
+            <p className="font-medium">配置说明</p>
+            <p>• Windows: 选择编辑器的 .exe 文件</p>
+            <p>• macOS: 选择应用程序包内的可执行文件</p>
+            <p>• 第一个配置的编辑器将被设为默认</p>
           </div>
         </div>
       </div>
 
       {/* 编辑器列表 */}
-      <div className="space-y-3 mb-4">
+      <div className="space-y-2">
         {editors.length === 0 ? (
-          <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
+          <div className="text-center py-6 text-[var(--text-light)] border-2 border-dashed border-[var(--border)] rounded-xl bg-[var(--bg-light)]">
             <div className="text-sm font-medium">暂无配置的编辑器</div>
-            <div className="text-xs mt-1">点击下方按钮添加编辑器</div>
+            <div className="text-xs mt-1">点击下方按钮添加</div>
           </div>
         ) : (
           editors.map((editor, index) => (
             <div
               key={editor.id}
-              className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors"
+              className="flex items-center justify-between p-3 border border-[var(--border)] rounded-lg hover:border-[var(--primary)]/50 transition-colors bg-[var(--card)]"
             >
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-semibold text-gray-900">{editor.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-[var(--text)] text-sm">{editor.name}</span>
                   {index === 0 && (
-                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                    <span className="px-2 py-0.5 bg-[var(--primary)]/10 text-[var(--primary)] text-xs rounded-full font-medium">
                       默认
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-gray-500 font-mono truncate">{editor.path}</div>
+                <div className="text-xs text-[var(--text-light)] font-mono truncate mt-0.5">
+                  {editor.path}
+                </div>
               </div>
               <button
                 onClick={() => removeEditor(editor.id)}
-                className="ml-4 p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                className="ml-3 p-1.5 text-red-500 hover:bg-red-50 rounded-md transition-colors"
                 title="删除"
               >
-                <Trash2 size={16} />
+                <Trash2 size={14} />
               </button>
             </div>
           ))
@@ -99,9 +112,9 @@ export function EditorSettings() {
 
       {/* 添加编辑器表单 */}
       {showAddForm ? (
-        <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
+        <div className="p-4 bg-[var(--bg-light)] border border-[var(--border)] rounded-lg space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-medium text-[var(--text)] mb-1.5">
               编辑器名称
             </label>
             <input
@@ -109,11 +122,11 @@ export function EditorSettings() {
               value={newEditor.name}
               onChange={(e) => setNewEditor({ ...newEditor, name: e.target.value })}
               placeholder="例如：VS Code、IntelliJ IDEA"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-lg text-sm text-[var(--text)] placeholder-[var(--text-light)] focus:outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)]"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-medium text-[var(--text)] mb-1.5">
               可执行文件路径
             </label>
             <div className="flex gap-2">
@@ -122,22 +135,23 @@ export function EditorSettings() {
                 value={newEditor.path}
                 onChange={(e) => setNewEditor({ ...newEditor, path: e.target.value })}
                 placeholder="选择或输入编辑器可执行文件路径"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                className="flex-1 px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-lg text-sm font-mono text-[var(--text)] placeholder-[var(--text-light)] focus:outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)]"
               />
               <button
                 onClick={handleBrowsePath}
-                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                className="px-3 py-2 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg text-sm hover:bg-[var(--bg-light)] transition-colors flex items-center gap-1.5"
               >
-                <FolderOpen size={16} />
+                <FolderOpen size={14} />
                 浏览
               </button>
             </div>
           </div>
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-2 pt-1">
             <button
               onClick={handleAddEditor}
-              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+              className="flex-1 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5"
             >
+              <Check size={14} />
               确认添加
             </button>
             <button
@@ -145,8 +159,9 @@ export function EditorSettings() {
                 setShowAddForm(false);
                 setNewEditor({ name: "", path: "" });
               }}
-              className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm font-medium transition-colors"
+              className="px-4 py-2 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg text-sm font-medium hover:bg-[var(--bg-light)] transition-colors flex items-center gap-1.5"
             >
+              <X size={14} />
               取消
             </button>
           </div>
@@ -154,12 +169,12 @@ export function EditorSettings() {
       ) : (
         <button
           onClick={() => setShowAddForm(true)}
-          className="w-full py-2.5 border-2 border-dashed border-gray-300 hover:border-blue-500 text-gray-600 hover:text-blue-600 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          className="w-full py-2.5 border-2 border-dashed border-[var(--border)] hover:border-[var(--primary)] text-[var(--text-light)] hover:text-[var(--primary)] rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
         >
           <Plus size={16} />
           添加编辑器
         </button>
       )}
-    </section>
+    </div>
   );
 }

@@ -1428,6 +1428,30 @@ p {
 .delay-400 { animation-delay: 0.4s; }
 .delay-500 { animation-delay: 0.5s; }
 
+/* ====== 设置面板展开动画 ====== */
+@keyframes slideInFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation-fill-mode: both;
+}
+
+.slide-in-from-top-2 {
+  animation: slideInFromTop 0.2s ease-out;
+}
+
+.duration-200 {
+  animation-duration: 200ms;
+}
+
 /* ====== 加载动画 ====== */
 .loading-spinner {
   display: inline-block;
