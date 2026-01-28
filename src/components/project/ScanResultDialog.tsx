@@ -273,12 +273,12 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
           </button>
         </header>
 
-        {/* 主内容 - 可滚动区域 */}
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch" style={{ minHeight: "calc(90vh - 220px)" }}>
+        {/* 主内容 - 固定高度，内部滚动 */}
+        <div className="flex-1 overflow-hidden p-4 flex">
+          <div className="flex gap-4 w-full">
             {/* 左侧：项目列表 */}
-            <div className="lg:col-span-8 flex flex-col">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col flex-1">
+            <div className="flex-[2] flex flex-col min-h-0 min-w-0">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
                 {/* 工具栏 */}
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-3">
@@ -314,7 +314,7 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
                 </div>
 
                 {/* 列表 */}
-                <div className="flex-1 overflow-y-auto scan-scrollbar divide-y divide-gray-50">
+                <div className="flex-1 min-h-0 overflow-y-auto scan-scrollbar divide-y divide-gray-50">
                   {filteredRepos.map(repo => {
                     const isSelected = selectedPaths.has(repo.path);
                     const hasCategory = !!assignedCategories[repo.path];
@@ -363,7 +363,7 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
             </div>
 
             {/* 右侧：操作面板 */}
-            <div className="lg:col-span-4 flex flex-col space-y-4">
+            <div className="flex-1 flex flex-col space-y-4 overflow-y-auto scan-scrollbar min-w-[280px]">
               {/* 1. 选中状态 */}
               <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl shadow-lg shadow-blue-500/30 p-5 text-white relative overflow-hidden">
                 <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
@@ -508,51 +508,48 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
                   {canApply && selectedCategory ? `应用到「${categories[selectedCategory].name}」` : "应用归类"}
                 </button>
               </div>
-
-              {/* 4. 操作记录 */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">本次操作记录</h3>
-                  <span className="text-xs text-gray-400">{history.length} 次操作</span>
-                </div>
-                <div className="flex flex-wrap gap-2 content-start flex-1 overflow-y-auto scan-scrollbar">
-                  {history.length === 0 ? (
-                    <div className="text-xs text-gray-400 italic py-2">暂无归类操作</div>
-                  ) : (
-                    history.map((item, idx) => {
-                      const cat = categories[item.category];
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => undoHistory(idx)}
-                          className={`scan-history-tag inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer hover:opacity-80 ${cat?.bg || "bg-gray-100"} ${cat?.text || "text-gray-700"} border ${cat?.border || "border-gray-200"}`}
-                          title="点击撤销"
-                        >
-                          <span>{cat?.icon || "📦"}</span>
-                          <span>{item.name}</span>
-                          <span className="opacity-60">×{item.count}</span>
-                          <i className="fa-solid fa-xmark ml-1 opacity-60 text-xs"></i>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
             </div>
           </div>
         </div>
 
         {/* 底部固定操作栏 */}
-        <footer className="bg-white border-t border-gray-200 px-6 py-4 shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4 text-sm text-gray-500">
+        <footer className="bg-white border-t border-gray-200 px-6 py-3 shrink-0">
+          <div className="flex items-center justify-between gap-4">
+            {/* 左侧：统计信息 */}
+            <div className="flex items-center gap-4 text-sm text-gray-500 shrink-0">
               <span>已归类: <strong className="text-gray-900">{assignedCount}</strong> 个</span>
               <span>待导入: <strong className="text-blue-600">{assignedCount}</strong> 个</span>
             </div>
-            <div className="flex items-center gap-3">
+
+            {/* 中间：操作记录 */}
+            <div className="flex-1 flex items-center gap-2 min-w-0 overflow-x-auto scan-scrollbar-x py-1">
+              {history.length === 0 ? (
+                <span className="text-xs text-gray-400 italic">暂无归类操作</span>
+              ) : (
+                history.map((item, idx) => {
+                  const cat = categories[item.category];
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => undoHistory(idx)}
+                      className={`scan-history-tag inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium cursor-pointer hover:opacity-80 whitespace-nowrap ${cat?.bg || "bg-gray-100"} ${cat?.text || "text-gray-700"} border ${cat?.border || "border-gray-200"}`}
+                      title="点击撤销"
+                    >
+                      <span>{cat?.icon || "📦"}</span>
+                      <span>{item.name}</span>
+                      <span className="opacity-60">×{item.count}</span>
+                      <i className="fa-solid fa-xmark ml-1 opacity-60 text-[10px]"></i>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* 右侧：按钮 */}
+            <div className="flex items-center gap-3 shrink-0">
               <button
                 onClick={resetAll}
-                className="px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm flex items-center gap-2"
+                className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm flex items-center gap-2"
                 title="重置"
               >
                 <i className="fa-solid fa-rotate-left"></i>
@@ -560,7 +557,7 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
               </button>
               <button
                 onClick={onCancel}
-                className="px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm"
+                className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm"
               >
                 取消
               </button>
@@ -658,6 +655,16 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
           background: transparent;
         }
         .scan-scrollbar::-webkit-scrollbar-thumb {
+          background-color: #cbd5e1;
+          border-radius: 20px;
+        }
+        .scan-scrollbar-x::-webkit-scrollbar {
+          height: 4px;
+        }
+        .scan-scrollbar-x::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .scan-scrollbar-x::-webkit-scrollbar-thumb {
           background-color: #cbd5e1;
           border-radius: 20px;
         }
