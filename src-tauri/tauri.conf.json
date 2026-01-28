@@ -41,7 +41,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "YOUR_PUBLIC_KEY_HERE",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIyQjBGQUJEQkExQzk1OEMKUldTTWxSeTZ2ZnF3SW5Ta1krV3JFQUZ5V2VVUmVqMXlMTlQ2MFBWSVYxaDRTUFFGQlgzT0VaaEkK",
       "endpoints": [
         "https://github.com/en-o/codeshelf/releases/latest/download/latest.json"
       ]
