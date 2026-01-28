@@ -331,7 +331,7 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
                             type="checkbox"
                             className="scan-checkbox"
                             checked={isSelected}
-                            onChange={() => {}}
+                            onChange={() => toggleSelection(repo.path)}
                             onClick={e => e.stopPropagation()}
                           />
                         </div>
@@ -448,7 +448,7 @@ export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialo
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 gap-2">
+                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto scan-scrollbar pr-1">
                   {Object.entries(categories).map(([id, cat]) => (
                     <div
                       key={id}
