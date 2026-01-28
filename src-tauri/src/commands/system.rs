@@ -7,6 +7,10 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NEW_CONSOLE: u32 = 0x00000010;
 
+// Windows: CREATE_NO_WINDOW flag to hide console window for background commands
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[tauri::command]
 pub async fn open_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
@@ -279,6 +283,13 @@ pub struct TerminalTestResult {
 pub async fn test_terminal(terminal_type: String, custom_path: Option<String>) -> Result<TerminalTestResult, String> {
     // If custom path provided, test it directly
     if let Some(ref path) = custom_path {
+        #[cfg(target_os = "windows")]
+        let result = Command::new(path)
+            .arg("--version")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        #[cfg(not(target_os = "windows"))]
         let result = Command::new(path)
             .arg("--version")
             .output();
@@ -332,6 +343,14 @@ fn test_powershell() -> Result<TerminalTestResult, String> {
     };
 
     for path in &paths_to_try {
+        #[cfg(target_os = "windows")]
+        let result = Command::new(path)
+            .arg("-Command")
+            .arg("echo test")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        #[cfg(not(target_os = "windows"))]
         let result = Command::new(path)
             .arg("-Command")
             .arg("echo test")
@@ -373,6 +392,14 @@ fn test_cmd() -> Result<TerminalTestResult, String> {
     };
 
     for path in &paths_to_try {
+        #[cfg(target_os = "windows")]
+        let result = Command::new(path)
+            .arg("/c")
+            .arg("echo test")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        #[cfg(not(target_os = "windows"))]
         let result = Command::new(path)
             .arg("/c")
             .arg("echo test")
@@ -464,6 +491,7 @@ fn test_default_terminal() -> Result<TerminalTestResult, String> {
         // Try Windows Terminal first
         let wt_result = Command::new("wt")
             .arg("--version")
+            .creation_flags(CREATE_NO_WINDOW)
             .output();
 
         if wt_result.is_ok() {

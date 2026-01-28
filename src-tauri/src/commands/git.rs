@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+// Windows: CREATE_NO_WINDOW flag to hide console window
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GitStatus {
     pub branch: String,
@@ -45,6 +52,15 @@ pub struct GitRepo {
 }
 
 fn run_git_command(path: &str, args: &[&str]) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    let output = Command::new("git")
+        .args(["-C", path])
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(not(target_os = "windows"))]
     let output = Command::new("git")
         .args(["-C", path])
         .args(args)
