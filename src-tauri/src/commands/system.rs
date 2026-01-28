@@ -109,38 +109,72 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
 
     #[cfg(target_os = "linux")]
     {
-        if term_type == "custom" {
-            if let Some(custom) = custom_path {
-                Command::new(&custom)
-                    .current_dir(&path)
-                    .spawn()
-                    .map_err(|e| format!("Failed to open custom terminal '{}': {}", custom, e))?;
-            } else {
-                return Err("Custom terminal path not provided".to_string());
-            }
-        } else {
-            // Try common terminal emulators
-            let terminals = ["gnome-terminal", "konsole", "xterm", "xfce4-terminal"];
-            let mut opened = false;
-
-            for term in terminals {
-                let result = match term {
-                    "gnome-terminal" => Command::new(term)
-                        .args(["--working-directory", &path])
-                        .spawn(),
-                    _ => Command::new(term)
+        match term_type.as_str() {
+            "custom" => {
+                if let Some(custom) = custom_path {
+                    Command::new(&custom)
                         .current_dir(&path)
-                        .spawn(),
-                };
-
-                if result.is_ok() {
-                    opened = true;
-                    break;
+                        .spawn()
+                        .map_err(|e| format!("Failed to open custom terminal '{}': {}", custom, e))?;
+                } else {
+                    return Err("Custom terminal path not provided".to_string());
                 }
             }
+            "powershell" => {
+                // WSL: try powershell.exe
+                let result = Command::new("powershell.exe")
+                    .args(["-NoExit", "-Command", &format!("cd '{}'", path)])
+                    .spawn();
+                if result.is_err() {
+                    // Fallback: native powershell
+                    Command::new("powershell")
+                        .args(["-NoExit", "-Command", &format!("cd '{}'", path)])
+                        .spawn()
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+            "cmd" => {
+                // WSL: try cmd.exe
+                let result = Command::new("cmd.exe")
+                    .args(["/k", &format!("cd /d {}", path)])
+                    .spawn();
+                if result.is_err() {
+                    Command::new("cmd")
+                        .args(["/k", &format!("cd /d {}", path)])
+                        .spawn()
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+            _ => {
+                // Default: try Windows Terminal (WSL), then common Linux terminals
+                let wt_result = Command::new("wt.exe")
+                    .args(["-d", &path])
+                    .spawn();
 
-            if !opened {
-                return Err("No supported terminal emulator found".to_string());
+                if wt_result.is_err() {
+                    let terminals = ["gnome-terminal", "konsole", "xterm", "xfce4-terminal"];
+                    let mut opened = false;
+
+                    for term in terminals {
+                        let result = match term {
+                            "gnome-terminal" => Command::new(term)
+                                .args(["--working-directory", &path])
+                                .spawn(),
+                            _ => Command::new(term)
+                                .current_dir(&path)
+                                .spawn(),
+                        };
+
+                        if result.is_ok() {
+                            opened = true;
+                            break;
+                        }
+                    }
+
+                    if !opened {
+                        return Err("No supported terminal emulator found".to_string());
+                    }
+                }
             }
         }
     }

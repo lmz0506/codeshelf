@@ -39,6 +39,11 @@ pub fn run() {
             git::sync_to_remote,
             git::checkout_branch,
             git::create_branch,
+            git::git_add,
+            git::git_commit,
+            git::git_add_and_commit,
+            git::is_git_repo,
+            git::git_init,
             // Project commands
             project::add_project,
             project::remove_project,

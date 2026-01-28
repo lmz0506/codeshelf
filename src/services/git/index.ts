@@ -96,3 +96,33 @@ export async function createBranch(
 ): Promise<string> {
   return invoke("create_branch", { path, branch, checkout });
 }
+
+export async function gitAdd(
+  path: string,
+  files: string[] = []
+): Promise<string> {
+  return invoke("git_add", { path, files });
+}
+
+export async function gitCommit(
+  path: string,
+  message: string
+): Promise<string> {
+  return invoke("git_commit", { path, message });
+}
+
+export async function gitAddAndCommit(
+  path: string,
+  files: string[],
+  message: string
+): Promise<string> {
+  return invoke("git_add_and_commit", { path, files, message });
+}
+
+export async function isGitRepo(path: string): Promise<boolean> {
+  return invoke("is_git_repo", { path });
+}
+
+export async function gitInit(path: string): Promise<string> {
+  return invoke("git_init", { path });
+}

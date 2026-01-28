@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { addProject } from "@/services/db";
+import { isGitRepo, gitInit } from "@/services/git";
 import { useAppStore } from "@/stores/appStore";
 import type { Project } from "@/types";
 
@@ -25,6 +26,10 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
   const [newCategoryName, setNewCategoryName] = useState("");
   const [customTechInput, setCustomTechInput] = useState(false);
   const [customTechName, setCustomTechName] = useState("");
+
+  // Git repository check
+  const [isGitRepository, setIsGitRepository] = useState<boolean | null>(null);
+  const [shouldInitGit, setShouldInitGit] = useState(false);
 
   const [techs, setTechs] = useState([
     { value: "Java", icon: "fa-brands fa-java", color: "text-orange-600", iconSize: "text-lg" },
@@ -63,6 +68,16 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
           setProjectName(name);
         }
         setError("");
+
+        // Check if it's a git repository
+        try {
+          const isRepo = await isGitRepo(path);
+          setIsGitRepository(isRepo);
+          setShouldInitGit(!isRepo); // Default to init if not a repo
+        } catch {
+          setIsGitRepository(false);
+          setShouldInitGit(true);
+        }
       }
     } catch (err) {
       setError("选择文件夹失败");
@@ -95,6 +110,16 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
         if (!localPath) {
           setError("请选择项目文件夹");
           return;
+        }
+
+        // Initialize git if user chose to
+        if (!isGitRepository && shouldInitGit) {
+          try {
+            await gitInit(localPath);
+          } catch (err) {
+            setError("Git 初始化失败: " + err);
+            return;
+          }
         }
 
         const name = projectName.trim() || localPath.split(/[\\/]/).pop() || "Unknown";
@@ -259,27 +284,55 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
               </div>
 
               {mode === "local" ? (
-                <div className="flex gap-3">
-                  <div className="flex-1 relative">
-                    <input
-                      type="text"
-                      value={localPath}
-                      readOnly
-                      placeholder="点击选择项目文件夹..."
-                      onClick={handleSelectLocalPath}
-                      className="w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm add-project-input transition-all placeholder-gray-400 cursor-pointer"
-                    />
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                      <i className="fa-regular fa-folder text-lg"></i>
+                <div className="space-y-3">
+                  <div className="flex gap-3">
+                    <div className="flex-1 relative">
+                      <input
+                        type="text"
+                        value={localPath}
+                        readOnly
+                        placeholder="点击选择项目文件夹..."
+                        onClick={handleSelectLocalPath}
+                        className="w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm add-project-input transition-all placeholder-gray-400 cursor-pointer"
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                        <i className="fa-regular fa-folder text-lg"></i>
+                      </div>
                     </div>
+                    <button
+                      onClick={handleSelectLocalPath}
+                      className="px-5 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center gap-2 shadow-sm"
+                    >
+                      <i className="fa-solid fa-folder-tree"></i>
+                      浏览
+                    </button>
                   </div>
-                  <button
-                    onClick={handleSelectLocalPath}
-                    className="px-5 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center gap-2 shadow-sm"
-                  >
-                    <i className="fa-solid fa-folder-tree"></i>
-                    浏览
-                  </button>
+
+                  {/* Git Repository Status */}
+                  {localPath && isGitRepository !== null && (
+                    <div className={`flex items-center gap-3 p-3 rounded-xl ${isGitRepository ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
+                      {isGitRepository ? (
+                        <>
+                          <i className="fa-brands fa-git-alt text-green-600"></i>
+                          <span className="text-sm text-green-700">已检测到 Git 仓库</span>
+                        </>
+                      ) : (
+                        <>
+                          <i className="fa-solid fa-exclamation-triangle text-amber-600"></i>
+                          <span className="text-sm text-amber-700 flex-1">此目录不是 Git 仓库</span>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={shouldInitGit}
+                              onChange={(e) => setShouldInitGit(e.target.checked)}
+                              className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm font-medium text-amber-800">初始化 Git 仓库</span>
+                          </label>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">

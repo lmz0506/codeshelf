@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { ProjectCard, ScanResultDialog, ProjectDetailPanel, AddProjectDialog, AddCategoryDialog } from "@/components/project";
-import { FloatingCategoryBall } from "@/components/ui/FloatingCategoryBall";
-import { Minus, X, MoreVertical, Plus } from "lucide-react";
+import { ProjectCard, ScanResultDialog, ProjectDetailPanel, AddProjectDialog, AddCategoryDialog, CategorySelector } from "@/components/project";
+import { FloatingCategoryBall, showToast } from "@/components/ui";
+import { Minus, X, MoreVertical, Plus, CheckSquare, Square, Trash2, Tag } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import type { Project, GitRepo, GitStatus } from "@/types";
-import { getProjects, addProject } from "@/services/db";
+import { getProjects, addProject, removeProject, updateProject } from "@/services/db";
 import { scanDirectory, getGitStatus } from "@/services/git";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Dropdown, FilterPopover } from "@/components/ui";
@@ -33,6 +33,12 @@ export function ShelfPage() {
   const categoryBarRef = useRef<HTMLDivElement>(null);
   // Git 状态缓存，用于筛选功能
   const [gitStatusMap, setGitStatusMap] = useState<Record<string, GitStatus>>({});
+
+  // 批量操作状态
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBatchCategoryModal, setShowBatchCategoryModal] = useState(false);
+  const [batchCategories, setBatchCategories] = useState<string[]>([]);
 
   useEffect(() => {
     loadProjects();
@@ -168,6 +174,84 @@ export function ShelfPage() {
     setProjects(projects.filter((p) => p.id !== projectId));
   }
 
+  // 批量操作函数
+  function toggleBatchMode() {
+    setBatchMode(!batchMode);
+    if (batchMode) {
+      setSelectedIds(new Set());
+    }
+  }
+
+  function toggleSelectProject(id: string) {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  }
+
+  function selectAllProjects() {
+    if (selectedIds.size === sortedProjects.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(sortedProjects.map(p => p.id)));
+    }
+  }
+
+  async function handleBatchRemove() {
+    if (selectedIds.size === 0) return;
+
+    const confirmMsg = `确定要从书架移除 ${selectedIds.size} 个项目吗？\n（项目文件不会被删除）`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      setLoading(true);
+      for (const id of selectedIds) {
+        await removeProject(id);
+      }
+      setProjects(projects.filter(p => !selectedIds.has(p.id)));
+      setSelectedIds(new Set());
+      setBatchMode(false);
+      showToast("success", "移除成功", `已从书架移除 ${selectedIds.size} 个项目`);
+    } catch (error) {
+      console.error("Failed to remove projects:", error);
+      showToast("error", "移除失败", String(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleBatchUpdateCategory(newCategories: string[]) {
+    if (selectedIds.size === 0) return;
+
+    try {
+      setLoading(true);
+      const updatedProjects: Project[] = [];
+
+      for (const id of selectedIds) {
+        const updated = await updateProject({ id, tags: newCategories });
+        updatedProjects.push(updated);
+      }
+
+      setProjects(projects.map(p => {
+        const updated = updatedProjects.find(u => u.id === p.id);
+        return updated || p;
+      }));
+
+      setSelectedIds(new Set());
+      setBatchMode(false);
+      setShowBatchCategoryModal(false);
+      showToast("success", "更新成功", `已更新 ${selectedIds.size} 个项目的分类`);
+    } catch (error) {
+      console.error("Failed to update categories:", error);
+      showToast("error", "更新失败", String(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // Filter projects
   const filteredProjects = projects.filter((p) => {
     const matchesSearch =
@@ -234,6 +318,16 @@ export function ShelfPage() {
             onModifiedChange={setOnlyModified}
           />
 
+          {/* Batch Mode Toggle */}
+          <button
+            className={`re-btn flex items-center gap-2 ${batchMode ? 're-btn-active' : ''}`}
+            onClick={toggleBatchMode}
+            title={batchMode ? "退出批量操作" : "批量操作"}
+          >
+            <CheckSquare size={16} />
+            <span>{batchMode ? "退出批量" : "批量"}</span>
+          </button>
+
           {/* More Menu */}
           <Dropdown
             trigger={
@@ -298,6 +392,46 @@ export function ShelfPage() {
         </div>
       </div>
 
+      {/* Batch Action Bar */}
+      {batchMode && (
+        <div className="re-batch-bar">
+          <div className="flex items-center gap-4">
+            <button
+              className="re-batch-select-all"
+              onClick={selectAllProjects}
+            >
+              {selectedIds.size === sortedProjects.length ? (
+                <CheckSquare size={16} className="text-blue-600" />
+              ) : (
+                <Square size={16} />
+              )}
+              <span>{selectedIds.size === sortedProjects.length ? "取消全选" : "全选"}</span>
+            </button>
+            <span className="text-sm text-gray-500">
+              已选择 <strong className="text-blue-600">{selectedIds.size}</strong> 个项目
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="re-btn re-btn-secondary flex items-center gap-2"
+              onClick={() => setShowBatchCategoryModal(true)}
+              disabled={selectedIds.size === 0}
+            >
+              <Tag size={14} />
+              <span>修改分类</span>
+            </button>
+            <button
+              className="re-btn re-btn-danger flex items-center gap-2"
+              onClick={handleBatchRemove}
+              disabled={selectedIds.size === 0}
+            >
+              <Trash2 size={14} />
+              <span>移除书架</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 浮动分类球 */}
       {showFloatingBall && (
         <FloatingCategoryBall
@@ -323,13 +457,29 @@ export function ShelfPage() {
         ) : (
           <div className="re-shelf">
             {sortedProjects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                onUpdate={handleProjectUpdate}
-                onShowDetail={setSelectedProject}
-                onDelete={handleProjectDelete}
-              />
+              <div key={project.id} className="relative">
+                {batchMode && (
+                  <div
+                    className="re-batch-checkbox"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSelectProject(project.id);
+                    }}
+                  >
+                    {selectedIds.has(project.id) ? (
+                      <CheckSquare size={20} className="text-blue-600" />
+                    ) : (
+                      <Square size={20} className="text-gray-400" />
+                    )}
+                  </div>
+                )}
+                <ProjectCard
+                  project={project}
+                  onUpdate={handleProjectUpdate}
+                  onShowDetail={batchMode ? () => toggleSelectProject(project.id) : setSelectedProject}
+                  onDelete={handleProjectDelete}
+                />
+              </div>
             ))}
           </div>
         )}
@@ -369,6 +519,55 @@ export function ShelfPage() {
         <AddCategoryDialog
           onClose={() => setShowAddCategoryDialog(false)}
         />
+      )}
+
+      {/* Batch Category Modal */}
+      {showBatchCategoryModal && (
+        <div className="modal-overlay animate-fade-in">
+          <div className="modal-content animate-scale-in max-w-lg">
+            <div className="modal-header">
+              <div>
+                <h3 className="modal-title">批量修改分类</h3>
+                <p className="modal-subtitle">为选中的 {selectedIds.size} 个项目设置分类</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowBatchCategoryModal(false);
+                  setBatchCategories([]);
+                }}
+                className="modal-close-btn"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <CategorySelector
+                selectedCategories={batchCategories}
+                onChange={setBatchCategories}
+                multiple={true}
+              />
+            </div>
+
+            <div className="modal-footer">
+              <button
+                onClick={() => {
+                  setShowBatchCategoryModal(false);
+                  setBatchCategories([]);
+                }}
+                className="modal-btn modal-btn-secondary"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleBatchUpdateCategory(batchCategories)}
+                className="modal-btn modal-btn-primary"
+              >
+                确认修改
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

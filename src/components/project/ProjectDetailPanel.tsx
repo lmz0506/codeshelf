@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
-import { X, GitBranch, History, Code, Tag as TagIcon, RefreshCw, CloudUpload, FolderOpen, User, Clock, Edit2, FileText, Database, Loader2 } from "lucide-react";
+import { X, GitBranch, History, Code, Tag as TagIcon, RefreshCw, CloudUpload, FolderOpen, User, Clock, Edit2, FileText, Database, Loader2, GitCommit, Plus } from "lucide-react";
 import { CategorySelector } from "./CategorySelector";
 import { LabelSelector } from "./LabelSelector";
 import { SyncRemoteModal } from "./SyncRemoteModal";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { BranchSwitchModal } from "./BranchSwitchModal";
+import { GitCommitModal } from "./GitCommitModal";
+import { AddRemoteModal } from "./AddRemoteModal";
 import { showToast } from "@/components/ui";
 import type { Project, GitStatus, CommitInfo, RemoteInfo } from "@/types";
 import { getGitStatus, getCommitHistory, getRemotes, gitPull, gitPush } from "@/services/git";
@@ -29,6 +31,8 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
   const [showReadme, setShowReadme] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showBranchModal, setShowBranchModal] = useState(false);
+  const [showCommitModal, setShowCommitModal] = useState(false);
+  const [showAddRemoteModal, setShowAddRemoteModal] = useState(false);
   const [readmeContent, setReadmeContent] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>(project.tags);
   const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
@@ -147,12 +151,21 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
                     <span>{tag}</span>
                   </span>
                 ))}
+                {/* 技术栈标签 */}
+                {project.labels && project.labels.map((label) => (
+                  <span
+                    key={label}
+                    className="label-tag"
+                  >
+                    {label}
+                  </span>
+                ))}
                 <button
                   onClick={() => setShowCategoryModal(true)}
                   className="edit-category-btn"
                 >
                   <Edit2 size={10} className="opacity-70 group-hover:opacity-100" />
-                  <span>{project.tags.length > 0 ? "编辑分类" : "设置分类"}</span>
+                  <span>{project.tags.length > 0 || (project.labels && project.labels.length > 0) ? "编辑" : "设置分类"}</span>
                 </button>
               </div>
             </div>
@@ -167,6 +180,14 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
 
         {/* 操作按钮组 */}
         <div className="flex items-center gap-sm">
+          {/* 提交按钮 - 只在有未提交修改时高亮 */}
+          <button
+            onClick={() => setShowCommitModal(true)}
+            className={`action-btn ${gitStatus && !gitStatus.isClean ? 'action-btn-warning' : 'action-btn-secondary'}`}
+          >
+            <GitCommit size={14} />
+            <span>提交</span>
+          </button>
           <button
             onClick={handlePull}
             disabled={pulling || pushing}
@@ -276,7 +297,14 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
               </div>
             ) : (
               <div className="text-center py-xl text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
-                <div className="text-sm font-medium">暂无远程仓库</div>
+                <div className="text-sm font-medium mb-3">暂无远程仓库</div>
+                <button
+                  onClick={() => setShowAddRemoteModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                >
+                  <Plus size={14} />
+                  添加远程仓库
+                </button>
               </div>
             )}
 
@@ -490,6 +518,24 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
           currentBranch={gitStatus.branch}
           onClose={() => setShowBranchModal(false)}
           onBranchChange={loadProjectDetails}
+        />
+      )}
+
+      {/* Git Commit Modal */}
+      {showCommitModal && (
+        <GitCommitModal
+          projectPath={project.path}
+          onClose={() => setShowCommitModal(false)}
+          onSuccess={loadProjectDetails}
+        />
+      )}
+
+      {/* Add Remote Modal */}
+      {showAddRemoteModal && (
+        <AddRemoteModal
+          projectPath={project.path}
+          onClose={() => setShowAddRemoteModal(false)}
+          onSuccess={loadProjectDetails}
         />
       )}
     </div>

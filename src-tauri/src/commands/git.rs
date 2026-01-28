@@ -397,3 +397,48 @@ pub async fn create_branch(path: String, branch: String, checkout: bool) -> Resu
         run_git_command(&path, &["branch", &branch])
     }
 }
+
+#[tauri::command]
+pub async fn git_add(path: String, files: Vec<String>) -> Result<String, String> {
+    if files.is_empty() {
+        // Add all changes
+        run_git_command(&path, &["add", "-A"])
+    } else {
+        // Add specific files
+        let mut args = vec!["add"];
+        args.extend(files.iter().map(|s| s.as_str()));
+        run_git_command(&path, &args)
+    }
+}
+
+#[tauri::command]
+pub async fn git_commit(path: String, message: String) -> Result<String, String> {
+    if message.trim().is_empty() {
+        return Err("提交信息不能为空".to_string());
+    }
+    run_git_command(&path, &["commit", "-m", &message])
+}
+
+#[tauri::command]
+pub async fn git_add_and_commit(path: String, files: Vec<String>, message: String) -> Result<String, String> {
+    if message.trim().is_empty() {
+        return Err("提交信息不能为空".to_string());
+    }
+
+    // First add files
+    git_add(path.clone(), files).await?;
+
+    // Then commit
+    git_commit(path, message).await
+}
+
+#[tauri::command]
+pub async fn is_git_repo(path: String) -> Result<bool, String> {
+    let git_dir = std::path::Path::new(&path).join(".git");
+    Ok(git_dir.exists())
+}
+
+#[tauri::command]
+pub async fn git_init(path: String) -> Result<String, String> {
+    run_git_command(&path, &["init"])
+}

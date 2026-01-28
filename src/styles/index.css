@@ -310,6 +310,94 @@ body {
   color: white;
 }
 
+/* 批量操作栏 */
+.re-batch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  margin: 12px 24px 0 24px;
+  border-radius: 12px;
+  border: 1px solid #bfdbfe;
+}
+
+.re-batch-select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #93c5fd;
+  background: white;
+  cursor: pointer;
+  transition: 0.2s;
+  font-size: 14px;
+  color: #374151;
+  font-weight: 500;
+}
+
+.re-batch-select-all:hover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.re-batch-checkbox {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.re-batch-checkbox:hover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.re-btn-secondary {
+  background: white;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+}
+
+.re-btn-secondary:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #eff6ff;
+}
+
+.re-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.re-btn-danger {
+  background: white;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.re-btn-danger:hover {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+
+.re-btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .re-shelf {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -526,6 +614,18 @@ body {
   border-radius: 9999px;
 }
 
+.label-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  background-color: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #16a34a;
+}
+
 .edit-category-btn {
   display: inline-flex;
   align-items: center;
@@ -577,6 +677,17 @@ body {
 
 .action-btn-primary:hover {
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.action-btn-warning {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.action-btn-warning:hover {
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
   transform: translateY(-1px);
 }
 
