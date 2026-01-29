@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2, ExternalLink } from "lucide-react";
 import { checkForUpdates, downloadAndInstallUpdate, type UpdateInfo } from "@/services/updater";
 import { getVersion } from "@tauri-apps/api/app";
+import { open } from "@tauri-apps/plugin-shell";
 
 export function UpdateSettings() {
   const [checking, setChecking] = useState(false);
@@ -128,7 +129,14 @@ export function UpdateSettings() {
         <div className="flex items-start gap-2">
           <AlertCircle size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
           <div className="text-xs text-blue-900">
-            应用会自动检查 GitHub Releases 上的新版本。下载完成后将自动重启应用以完成更新。
+            <p>应用会自动检查 GitHub Releases 上的新版本。下载完成后将自动重启应用以完成更新。</p>
+            <button
+              onClick={() => open("https://github.com/en-o/codeshelf/releases")}
+              className="inline-flex items-center gap-1 mt-1 text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              <span>前往 GitHub 手动下载</span>
+              <ExternalLink size={12} />
+            </button>
           </div>
         </div>
       </div>

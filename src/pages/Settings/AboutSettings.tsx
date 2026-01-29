@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
-import { CheckCircle, XCircle, Loader2, ExternalLink, Github, Heart, FolderOpen, Copy, Check, Trash2 } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, ExternalLink, Github, Heart, FolderOpen, Copy, Check, Trash2, Download, AlertCircle } from "lucide-react";
 
 interface DependencyStatus {
   name: string;
@@ -177,6 +177,63 @@ export function AboutSettings(_props: AboutSettingsProps) {
             <span className="flex items-center gap-1 text-sm text-gray-500">
               Made with <Heart size={14} className="text-red-500" /> by en-o
             </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 项目仓库 */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">项目仓库</h3>
+
+        <div className="re-card p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => openUrl("https://github.com/en-o/codeshelf")}
+              className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left"
+            >
+              <Github size={18} className="text-gray-700" />
+              <div>
+                <div className="text-sm font-medium text-gray-900">源代码</div>
+                <div className="text-xs text-gray-500">查看项目源码</div>
+              </div>
+              <ExternalLink size={12} className="ml-auto text-gray-400" />
+            </button>
+
+            <button
+              onClick={() => openUrl("https://github.com/en-o/codeshelf/releases")}
+              className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-colors text-left"
+            >
+              <Download size={18} className="text-green-600" />
+              <div>
+                <div className="text-sm font-medium text-gray-900">版本发布</div>
+                <div className="text-xs text-gray-500">下载历史版本</div>
+              </div>
+              <ExternalLink size={12} className="ml-auto text-gray-400" />
+            </button>
+
+            <button
+              onClick={() => openUrl("https://github.com/en-o/codeshelf/issues")}
+              className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 hover:border-orange-300 hover:bg-orange-50 transition-colors text-left"
+            >
+              <AlertCircle size={18} className="text-orange-500" />
+              <div>
+                <div className="text-sm font-medium text-gray-900">问题反馈</div>
+                <div className="text-xs text-gray-500">报告 Bug 或建议</div>
+              </div>
+              <ExternalLink size={12} className="ml-auto text-gray-400" />
+            </button>
+
+            <button
+              onClick={() => openUrl("https://github.com/en-o/codeshelf/stargazers")}
+              className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 hover:border-yellow-300 hover:bg-yellow-50 transition-colors text-left"
+            >
+              <Heart size={18} className="text-yellow-500" />
+              <div>
+                <div className="text-sm font-medium text-gray-900">支持项目</div>
+                <div className="text-xs text-gray-500">给个 Star 鼓励一下</div>
+              </div>
+              <ExternalLink size={12} className="ml-auto text-gray-400" />
+            </button>
           </div>
         </div>
       </div>
