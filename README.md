@@ -201,7 +201,7 @@ pkg-config --modversion webkit2gtk-4.1
 
 ## 📄 许可证
 
-[MIT](LICENSE)
+[Apache License 2.0](LICENSE)
 
 ## 🙏 致谢
 
