@@ -23,16 +23,16 @@ echo "done: app-icon.ico (安装图标-白色方形)"
 SIZE=256
 BG_COLOR="#3B82F6"
 
-# 创建圆形背景 + 图标
+# 创建圆形背景 + 图标 (确保 8-bit 深度)
 convert -size ${SIZE}x${SIZE} xc:none \
     -fill "$BG_COLOR" -draw "circle 128,128 128,0" \
     \( icon.png -resize 180x180 -gravity center -extent ${SIZE}x${SIZE} \) \
     -gravity center -composite \
-    -alpha on icon-circle.png
+    -depth 8 -alpha on icon-circle.png
 echo "done: icon-circle.png (圆形图标)"
 
-# 生成圆形 ICO
-convert icon-circle.png -define icon:auto-resize=256,128,64,48,32,16 app-icon-circle.ico
+# 生成圆形 ICO (确保 8-bit)
+convert icon-circle.png -depth 8 -define icon:auto-resize=256,128,64,48,32,16 app-icon-circle.ico
 echo "done: app-icon-circle.ico (安装图标-圆形)"
 
 # === 绿色背景版本 ===
