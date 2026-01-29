@@ -37,21 +37,7 @@
       "icons/128x128@2x.png",
       "icons/app-icon-circle.ico",
       "icons/icon.png"
-    ],
-    "windows": {
-      "nsis": {
-        "installerIcon": "icons/app-icon-circle.ico",
-        "headerImage": null,
-        "sidebarImage": null,
-        "installMode": "currentUser",
-        "languages": [
-          "SimpChinese",
-          "English"
-        ],
-        "displayLanguageSelector": false,
-        "installerHooks": "nsis-hooks.nsi"
-      }
-    }
+    ]
   },
   "plugins": {
     "updater": {

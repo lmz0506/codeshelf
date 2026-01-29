@@ -8,8 +8,7 @@
         "installerIcon": "icons/app-icon-circle.ico",
         "installMode": "currentUser",
         "languages": ["SimpChinese", "English"],
-        "displayLanguageSelector": false,
-        "installerHooks": "nsis-hooks.nsi"
+        "displayLanguageSelector": false
       }
     }
   },
