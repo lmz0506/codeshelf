@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2, FolderOpen, AlertCircle, Check, X } from "lucide-react";
+import { Plus, Trash2, FolderOpen, AlertCircle, Check, X, Star } from "lucide-react";
 import { useAppStore, EditorConfig } from "@/stores/appStore";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -8,7 +8,7 @@ interface EditorSettingsProps {
 }
 
 export function EditorSettings({ onClose }: EditorSettingsProps) {
-  const { editors, addEditor, removeEditor } = useAppStore();
+  const { editors, addEditor, removeEditor, setDefaultEditor } = useAppStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEditor, setNewEditor] = useState({ name: "", path: "" });
 
@@ -67,7 +67,7 @@ export function EditorSettings({ onClose }: EditorSettingsProps) {
             <p className="font-medium">配置说明</p>
             <p>• Windows: 选择编辑器的 .exe 文件</p>
             <p>• macOS: 选择应用程序包内的可执行文件</p>
-            <p>• 第一个配置的编辑器将被设为默认</p>
+            <p>• 第一个配置的编辑器将被设为默认，点击 <Star size={12} className="inline text-yellow-500" /> 可更换默认</p>
           </div>
         </div>
       </div>
@@ -105,6 +105,15 @@ export function EditorSettings({ onClose }: EditorSettingsProps) {
               >
                 <Trash2 size={14} />
               </button>
+              {index !== 0 && (
+                <button
+                  onClick={() => setDefaultEditor(editor.id)}
+                  className="p-1.5 text-yellow-500 hover:bg-yellow-50 rounded-md transition-colors"
+                  title="设为默认"
+                >
+                  <Star size={14} />
+                </button>
+              )}
             </div>
           ))
         )}

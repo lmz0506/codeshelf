@@ -73,6 +73,7 @@ interface AppState {
   addEditor: (editor: EditorConfig) => void;
   removeEditor: (id: string) => void;
   updateEditor: (id: string, updates: Partial<EditorConfig>) => void;
+  setDefaultEditor: (id: string) => void;
 
   // Terminal Settings
   terminalConfig: TerminalConfig;
@@ -175,6 +176,13 @@ export const useAppStore = create<AppState>()(
             e.id === id ? { ...e, ...updates } : e
           ),
         })),
+      setDefaultEditor: (id) =>
+        set((state) => {
+          const editor = state.editors.find((e) => e.id === id);
+          if (!editor) return state;
+          const others = state.editors.filter((e) => e.id !== id);
+          return { editors: [editor, ...others] };
+        }),
 
       // Terminal Settings
       terminalConfig: { type: "default" },
