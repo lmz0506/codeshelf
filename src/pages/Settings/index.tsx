@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
 import { Minus, X, Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { EditorSettings } from "./EditorSettings";
 import { TerminalSettings } from "./TerminalSettings";
 import { ScanSettings } from "./ScanSettings";
@@ -15,6 +16,11 @@ type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" 
 export function SettingsPage() {
   const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, labels } = useAppStore();
   const [activeSection, setActiveSection] = useState<SettingsSection>(null);
+  const [appVersion, setAppVersion] = useState<string>("...");
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion("未知"));
+  }, []);
 
   // 获取默认编辑器名称
   const getDefaultEditorName = () => {
@@ -86,7 +92,7 @@ export function SettingsPage() {
       title: "应用更新",
       description: "检查并安装新版本",
       icon: Download,
-      value: "v0.1.0",
+      value: `v${appVersion}`,
       component: UpdateSettings,
     },
     {

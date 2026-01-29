@@ -1,6 +1,7 @@
 import { ReactNode, useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { useAppStore } from "@/stores/appStore";
+import { getVersion } from "@tauri-apps/api/app";
 
 interface MainLayoutProps {
   children: (currentPage: string) => ReactNode;
@@ -9,6 +10,11 @@ interface MainLayoutProps {
 export function MainLayout({ children }: MainLayoutProps) {
   const [currentPage, setCurrentPage] = useState("shelf");
   const { theme } = useAppStore();
+  const [appVersion, setAppVersion] = useState<string>("...");
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion("未知"));
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -33,7 +39,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         <footer className="re-footer">
           <p>
-            <span className="font-semibold text-gray-700">CodeShelf v0.1.0</span> | 代码书架 - 本地项目管理工具 | <span className="opacity-80">by tan</span> | 基于 Tauri + React + TypeScript
+            <span className="font-semibold text-gray-700">CodeShelf v{appVersion}</span> | 代码书架 - 本地项目管理工具 | <span className="opacity-80">by tan</span> | 基于 Tauri + React + TypeScript
           </p>
         </footer>
       </div>

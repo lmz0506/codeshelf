@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { checkForUpdates, downloadAndInstallUpdate, type UpdateInfo } from "@/services/updater";
+import { getVersion } from "@tauri-apps/api/app";
 
 export function UpdateSettings() {
   const [checking, setChecking] = useState(false);
@@ -8,6 +9,11 @@ export function UpdateSettings() {
   const [progress, setProgress] = useState(0);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentVersion, setCurrentVersion] = useState<string>("...");
+
+  useEffect(() => {
+    getVersion().then(setCurrentVersion).catch(() => setCurrentVersion("未知"));
+  }, []);
 
   async function handleCheckUpdate() {
     setChecking(true);
@@ -47,7 +53,7 @@ export function UpdateSettings() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-gray-900">当前版本</p>
-            <p className="text-xs text-gray-500 mt-1">v0.1.0</p>
+            <p className="text-xs text-gray-500 mt-1">v{currentVersion}</p>
           </div>
           <button
             onClick={handleCheckUpdate}
