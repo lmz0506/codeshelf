@@ -94,7 +94,23 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
       ]);
       setGitStatus(status);
       setRemotes(remoteList);
-      // 提交历史会在 currentRemote 设置后通过 useEffect 加载
+
+      // 直接加载提交历史（不依赖 useEffect）
+      if (currentRemote && status.branch) {
+        const refName = `${currentRemote}/${status.branch}`;
+        try {
+          const commitHistory = await getCommitHistory(project.path, 10, refName);
+          setCommits(commitHistory);
+        } catch {
+          // 如果远程分支不存在，回退到本地分支的提交历史
+          try {
+            const localCommits = await getCommitHistory(project.path, 10);
+            setCommits(localCommits);
+          } catch {
+            setCommits([]);
+          }
+        }
+      }
     } catch (error) {
       console.error("Failed to load project details:", error);
     } finally {
@@ -668,6 +684,8 @@ export function ProjectDetailPanel({ project, onClose, onUpdate }: ProjectDetail
       {showCommitModal && (
         <GitCommitModal
           projectPath={project.path}
+          currentRemote={currentRemote}
+          currentBranch={gitStatus?.branch}
           onClose={() => setShowCommitModal(false)}
           onSuccess={() => {
             loadProjectDetails();

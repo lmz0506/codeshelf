@@ -12,11 +12,13 @@ interface FileItem {
 
 interface GitCommitModalProps {
   projectPath: string;
+  currentRemote?: string | null;
+  currentBranch?: string;
   onClose: () => void;
   onSuccess?: () => void;
 }
 
-export function GitCommitModal({ projectPath, onClose, onSuccess }: GitCommitModalProps) {
+export function GitCommitModal({ projectPath, currentRemote, currentBranch, onClose, onSuccess }: GitCommitModalProps) {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,9 +50,9 @@ export function GitCommitModal({ projectPath, onClose, onSuccess }: GitCommitMod
       setGitStatus(status);
       setRemotes(remoteList);
 
-      // Default select first remote
+      // 使用传入的当前远程仓库，如果没有则使用第一个
       if (remoteList.length > 0) {
-        setSelectedRemote(remoteList[0].name);
+        setSelectedRemote(currentRemote || remoteList[0].name);
       }
 
       // 构建统一的文件列表，去重（同一文件可能同时出现在 staged 和 unstaged）
@@ -109,9 +111,9 @@ export function GitCommitModal({ projectPath, onClose, onSuccess }: GitCommitMod
     try {
       setCommitting(true);
 
-      // 需要暂存的文件（选中的非 staged 文件）
-      const filesToAdd = allFiles
-        .filter(f => selectedFiles.has(f.path) && f.type !== "staged")
+      // 获取所有选中的文件路径
+      const selectedFilePaths = allFiles
+        .filter(f => selectedFiles.has(f.path))
         .map(f => f.path);
 
       // 需要取消暂存的文件（未选中的 staged 文件）
@@ -119,7 +121,7 @@ export function GitCommitModal({ projectPath, onClose, onSuccess }: GitCommitMod
         .filter(f => !selectedFiles.has(f.path) && f.type === "staged")
         .map(f => f.path);
 
-      // 取消暂存
+      // 取消暂存未选中的文件
       if (filesToUnstage.length > 0) {
         try {
           await gitUnstage(projectPath, filesToUnstage);
@@ -130,10 +132,10 @@ export function GitCommitModal({ projectPath, onClose, onSuccess }: GitCommitMod
         }
       }
 
-      // 暂存选中的文件
-      if (filesToAdd.length > 0) {
+      // 暂存所有选中的文件（确保暂存区与用户选择一致）
+      if (selectedFilePaths.length > 0) {
         try {
-          await gitAdd(projectPath, filesToAdd);
+          await gitAdd(projectPath, selectedFilePaths);
         } catch (error) {
           console.error("Failed to stage files:", error);
           showToast("error", "暂存文件失败", String(error));
@@ -152,11 +154,12 @@ export function GitCommitModal({ projectPath, onClose, onSuccess }: GitCommitMod
       }
 
       // Push if enabled
-      if (pushAfterCommit && selectedRemote && gitStatus.branch) {
+      const branchToPush = gitStatus.branch || currentBranch;
+      if (pushAfterCommit && selectedRemote && branchToPush) {
         setPushing(true);
         try {
-          await gitPush(projectPath, selectedRemote, gitStatus.branch);
-          showToast("success", "推送成功", `已推送到 ${selectedRemote}/${gitStatus.branch}`);
+          await gitPush(projectPath, selectedRemote, branchToPush);
+          showToast("success", "推送成功", `已推送到 ${selectedRemote}/${branchToPush}`);
         } catch (error) {
           console.error("Failed to push:", error);
           showToast("error", "推送失败", String(error));
@@ -172,12 +175,15 @@ export function GitCommitModal({ projectPath, onClose, onSuccess }: GitCommitMod
   }
 
   async function handlePushOnly() {
-    if (!gitStatus || !selectedRemote) return;
+    if (!selectedRemote) return;
+
+    const branchToPush = gitStatus?.branch || currentBranch;
+    if (!branchToPush) return;
 
     try {
       setPushing(true);
-      await gitPush(projectPath, selectedRemote, gitStatus.branch);
-      showToast("success", "推送成功", `已推送到 ${selectedRemote}/${gitStatus.branch}`);
+      await gitPush(projectPath, selectedRemote, branchToPush);
+      showToast("success", "推送成功", `已推送到 ${selectedRemote}/${branchToPush}`);
       onSuccess?.();
       onClose();
     } catch (error) {
@@ -329,7 +335,7 @@ export function GitCommitModal({ projectPath, onClose, onSuccess }: GitCommitMod
                   >
                     {remotes.map((remote) => (
                       <option key={remote.name} value={remote.name}>
-                        {remote.name} ({gitStatus?.branch})
+                        {remote.name} ({gitStatus?.branch || currentBranch})
                       </option>
                     ))}
                   </select>

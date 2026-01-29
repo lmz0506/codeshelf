@@ -74,6 +74,23 @@ fn run_git_command(path: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// 解析 git status --porcelain 输出中的文件路径
+/// 处理引号包裹的路径（包含空格或特殊字符时）
+fn unquote_git_path(path: &str) -> String {
+    let path = path.trim();
+    if path.starts_with('"') && path.ends_with('"') && path.len() >= 2 {
+        // 去除引号并处理转义字符
+        let inner = &path[1..path.len()-1];
+        inner
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\\\", "\\")
+            .replace("\\\"", "\"")
+    } else {
+        path.to_string()
+    }
+}
+
 #[tauri::command]
 pub async fn scan_directory(path: String, depth: Option<u32>) -> Result<Vec<GitRepo>, String> {
     let mut repos = Vec::new();
@@ -139,7 +156,7 @@ pub async fn get_git_status(path: String) -> Result<GitStatus, String> {
             continue;
         }
         let status = &line[0..2];
-        let file = line[3..].to_string();
+        let file = unquote_git_path(&line[3..]);
 
         match status.chars().next() {
             Some('?') => untracked.push(file),
