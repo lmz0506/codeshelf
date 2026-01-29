@@ -21,6 +21,8 @@ export function ShelfPage() {
     categories: storedCategories,
     labels: storedLabels,
     markProjectDirty,
+    selectedProjectId,
+    setSelectedProjectId,
   } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [scanResults, setScanResults] = useState<GitRepo[] | null>(null);
@@ -57,6 +59,17 @@ export function ShelfPage() {
   useEffect(() => {
     loadProjects();
   }, []);
+
+  // 从 store 的 selectedProjectId 同步打开项目详情（由其他页面跳转触发）
+  useEffect(() => {
+    if (selectedProjectId) {
+      const project = projects.find((p) => p.id === selectedProjectId);
+      if (project) {
+        setSelectedProject(project);
+      }
+      setSelectedProjectId(null);
+    }
+  }, [selectedProjectId, projects]);
 
   // 检查窗口最大化状态
   useEffect(() => {
