@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
+use tokio::task;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -147,10 +148,58 @@ pub struct ProjectInfo {
     pub path: String,
 }
 
-/// Refresh dashboard stats for all projects
+/// Result from analyzing a single project
+struct ProjectAnalysisResult {
+    unpushed: u32,
+    commits: Vec<(String, String, String, String, String, String)>,
+    project_name: String,
+    project_path: String,
+}
+
+/// Analyze a single project (for parallel execution)
+fn analyze_project(name: String, path: String) -> ProjectAnalysisResult {
+    let unpushed = get_unpushed_count(&path);
+    let commits = get_project_commits(&path, 365);
+    ProjectAnalysisResult {
+        unpushed,
+        commits,
+        project_name: name,
+        project_path: path,
+    }
+}
+
+/// Refresh dashboard stats for all projects (parallel execution)
 #[tauri::command]
 pub async fn refresh_dashboard_stats(projects: Vec<ProjectInfo>) -> Result<CachedDashboardData, String> {
     let total_projects = projects.len() as u32;
+
+    if total_projects == 0 {
+        let cached_data = CachedDashboardData::default();
+        if let Ok(mut cache) = DASHBOARD_CACHE.lock() {
+            *cache = cached_data.clone();
+        }
+        return Ok(cached_data);
+    }
+
+    // Spawn parallel tasks for each project
+    let mut handles = Vec::new();
+    for project in projects {
+        let name = project.name.clone();
+        let path = project.path.clone();
+        let handle = task::spawn_blocking(move || analyze_project(name, path));
+        handles.push(handle);
+    }
+
+    // Wait for all tasks to complete
+    let mut results = Vec::new();
+    for handle in handles {
+        match handle.await {
+            Ok(result) => results.push(result),
+            Err(e) => eprintln!("Task failed: {}", e),
+        }
+    }
+
+    // Aggregate results
     let mut unpushed_commits = 0u32;
     let mut commits_by_date: HashMap<String, u32> = HashMap::new();
     let mut all_recent_commits: Vec<RecentCommit> = Vec::new();
@@ -158,14 +207,10 @@ pub async fn refresh_dashboard_stats(projects: Vec<ProjectInfo>) -> Result<Cache
     let today = get_today_date();
     let week_dates = get_dates_in_last_week();
 
-    for project in &projects {
-        // Get unpushed count
-        unpushed_commits += get_unpushed_count(&project.path);
+    for result in results {
+        unpushed_commits += result.unpushed;
 
-        // Get commit history (last 365 for heatmap)
-        let commits = get_project_commits(&project.path, 365);
-
-        for (hash, short_hash, message, author, email, date) in commits {
+        for (hash, short_hash, message, author, email, date) in result.commits {
             // Extract date part (YYYY-MM-DD)
             let commit_date = date.split_whitespace().next().unwrap_or(&date).to_string();
 
@@ -173,7 +218,7 @@ pub async fn refresh_dashboard_stats(projects: Vec<ProjectInfo>) -> Result<Cache
             *commits_by_date.entry(commit_date.clone()).or_insert(0) += 1;
 
             // Collect recent commits (first 5 per project)
-            if all_recent_commits.iter().filter(|c| c.project_path == project.path).count() < 5 {
+            if all_recent_commits.iter().filter(|c| c.project_path == result.project_path).count() < 5 {
                 all_recent_commits.push(RecentCommit {
                     hash,
                     short_hash,
@@ -181,8 +226,8 @@ pub async fn refresh_dashboard_stats(projects: Vec<ProjectInfo>) -> Result<Cache
                     author,
                     email,
                     date,
-                    project_name: project.name.clone(),
-                    project_path: project.path.clone(),
+                    project_name: result.project_name.clone(),
+                    project_path: result.project_path.clone(),
                 });
             }
         }
