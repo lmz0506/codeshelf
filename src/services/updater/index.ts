@@ -1,5 +1,7 @@
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { resolveResource } from "@tauri-apps/api/path";
+import { exists } from "@tauri-apps/plugin-fs";
 
 export interface UpdateInfo {
   available: boolean;
@@ -7,12 +9,44 @@ export interface UpdateInfo {
   version?: string;
   date?: string;
   body?: string;
+  isPortable?: boolean;
 }
 
 // 缓存已检查的更新对象
 let cachedUpdate: Update | null = null;
+let isPortableVersion: boolean | null = null;
+
+// 检查是否为便携版
+export async function checkIsPortable(): Promise<boolean> {
+  if (isPortableVersion !== null) {
+    return isPortableVersion;
+  }
+  try {
+    // 检查 .portable 标记文件
+    const portablePath = await resolveResource(".portable");
+    isPortableVersion = await exists(portablePath);
+  } catch {
+    // 尝试检查可执行文件同目录下的 .portable 文件
+    try {
+      isPortableVersion = await exists(".portable");
+    } catch {
+      isPortableVersion = false;
+    }
+  }
+  return isPortableVersion;
+}
 
 export async function checkForUpdates(): Promise<UpdateInfo> {
+  // 便携版跳过更新检查
+  const portable = await checkIsPortable();
+  if (portable) {
+    return {
+      available: false,
+      currentVersion: "",
+      isPortable: true,
+    };
+  }
+
   try {
     const update = await check();
     cachedUpdate = update;

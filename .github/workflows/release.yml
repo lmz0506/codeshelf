@@ -66,3 +66,38 @@ jobs:
           prerelease: false
           updaterJsonKeepUniversal: true
           args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
+
+      # Windows 便携版（绿色版）
+      - name: Create portable version (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $portableDir = "CodeShelf-Portable-v$version"
+          $zipName = "CodeShelf-Portable-v$version-x64.zip"
+
+          # 创建便携版目录
+          New-Item -ItemType Directory -Force -Path $portableDir
+
+          # 复制可执行文件
+          Copy-Item "src-tauri/target/release/CodeShelf.exe" "$portableDir/"
+
+          # 创建便携版标记文件（禁用自动更新）
+          Set-Content -Path "$portableDir/.portable" -Value "This is a portable version. Auto-update is disabled."
+
+          # 创建 ZIP
+          Compress-Archive -Path "$portableDir/*" -DestinationPath $zipName
+
+          echo "PORTABLE_ZIP=$zipName" >> $env:GITHUB_OUTPUT
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+        id: portable
+
+      - name: Upload portable version to release (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.portable.outputs.VERSION }}
+          files: ${{ steps.portable.outputs.PORTABLE_ZIP }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
