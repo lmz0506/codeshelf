@@ -65,4 +65,4 @@ jobs:
           releaseDraft: false
           prerelease: false
           updaterJsonKeepUniversal: true
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
