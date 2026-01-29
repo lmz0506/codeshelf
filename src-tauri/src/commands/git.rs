@@ -156,7 +156,13 @@ pub async fn get_git_status(path: String) -> Result<GitStatus, String> {
             continue;
         }
         let status = &line[0..2];
-        let file = unquote_git_path(&line[3..]);
+        // 跳过状态码后的所有空白字符，更稳健地获取文件路径
+        let file_part = line[2..].trim_start();
+        let file = unquote_git_path(file_part);
+
+        if file.is_empty() {
+            continue;
+        }
 
         match status.chars().next() {
             Some('?') => untracked.push(file),
