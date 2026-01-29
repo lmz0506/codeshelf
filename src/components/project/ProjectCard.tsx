@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus } from "lucide-react";
 import type { Project, GitStatus } from "@/types";
 import { getGitStatus, getRemotes } from "@/services/git";
-import { openInTerminal, openInExplorer, toggleFavorite, removeProject, deleteProjectDirectory, updateProject } from "@/services/db";
+import { openInTerminal, openInExplorer, openInEditor, toggleFavorite, removeProject, deleteProjectDirectory, updateProject } from "@/services/db";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { LabelSelector } from "./LabelSelector";
 import { useAppStore } from "@/stores/appStore";
@@ -20,7 +20,7 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
   const [editingLabels, setEditingLabels] = useState<string[]>([]);
-  const { terminalConfig } = useAppStore();
+  const { terminalConfig, editors } = useAppStore();
 
   useEffect(() => {
     loadGitInfo();
@@ -85,6 +85,17 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
     } catch (error) {
       console.error("Failed to open explorer:", error);
       alert("打开文件夹失败：" + error);
+    }
+  }
+
+  async function handleOpenEditor(e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      const editorPath = editors.length > 0 ? editors[0].path : undefined;
+      await openInEditor(project.path, editorPath);
+    } catch (error) {
+      console.error("Failed to open editor:", error);
+      alert("打开编辑器失败：" + error);
     }
   }
 
@@ -203,6 +214,13 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
           </span>
 
           <div className="re-card-actions">
+            <button
+              className="re-icon-btn"
+              title="打开编辑器"
+              onClick={handleOpenEditor}
+            >
+              ✏️
+            </button>
             <button
               className="re-icon-btn"
               title="打开文件夹"
