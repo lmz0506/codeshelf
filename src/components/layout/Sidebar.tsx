@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useAppStore, type PageType } from "@/stores/appStore";
 import { AnimatedLogo } from "@/components/ui/AnimatedLogo";
+import { NotificationPanel } from "@/components/ui/NotificationPanel";
 
 interface SidebarProps {
   currentPage: PageType;
@@ -97,6 +98,13 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
           );
         })}
       </nav>
+
+      {/* 通知面板 */}
+      <div className="mt-auto px-3 py-2 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-center">
+          <NotificationPanel />
+        </div>
+      </div>
 
       {/* 动画关键帧 */}
       <style>{`

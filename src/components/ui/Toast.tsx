@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { CheckCircle, XCircle, AlertCircle, X, Info } from "lucide-react";
+import { useAppStore } from "@/stores/appStore";
 
 export type ToastType = "success" | "error" | "warning" | "info";
 
@@ -29,6 +30,13 @@ export function showToast(
   const toast: ToastMessage = { id, type, title, message, duration };
   toasts = [...toasts, toast];
   notifyListeners();
+
+  // 同时记录到通知中心
+  try {
+    useAppStore.getState().addNotification({ type, title, message });
+  } catch {
+    // store 未初始化时忽略
+  }
 
   if (duration > 0) {
     setTimeout(() => {

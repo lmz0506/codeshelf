@@ -7,6 +7,7 @@ import {
   installUpdate,
   type UpdateInfo,
 } from "@/services/updater";
+import { showToast } from "@/components/ui/Toast";
 
 const RELEASES_URL = "https://github.com/en-o/codeshelf/releases/latest";
 
@@ -27,6 +28,8 @@ export function UpdateNotification() {
       if (info?.available) {
         setUpdateInfo(info);
         setState("available");
+        // 记录到通知中心
+        showToast("info", "发现新版本", `v${info.version} 可用，正在后台下载...`);
         // 自动开始下载
         startDownload();
       } else {
@@ -47,9 +50,13 @@ export function UpdateNotification() {
         setProgress(Math.round((downloaded / total) * 100));
       });
       setState("ready");
+      // 记录下载完成
+      showToast("success", "更新下载完成", "点击「立即安装并重启」完成更新");
     } catch (error) {
       console.error("Download failed:", error);
       setState("error");
+      // 记录下载失败
+      showToast("error", "更新下载失败", "请手动前往下载页面获取新版本");
     }
   }
 
@@ -59,6 +66,8 @@ export function UpdateNotification() {
     } catch (error) {
       console.error("Install failed:", error);
       setState("error");
+      // 记录安装失败
+      showToast("error", "更新安装失败", "请手动前往下载页面获取新版本");
     }
   }
 

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Project, ViewMode } from "@/types";
+import type { Project, ViewMode, Notification } from "@/types";
 import { markProjectDirty as markDirty } from "@/services/stats";
 
 export type Theme = "light" | "dark";
@@ -85,6 +85,12 @@ interface AppState {
   // Terminal Settings
   terminalConfig: TerminalConfig;
   setTerminalConfig: (config: TerminalConfig) => void;
+
+  // Notifications (消息通知)
+  notifications: Notification[];
+  addNotification: (notification: Omit<Notification, "id" | "createdAt">) => void;
+  removeNotification: (id: string) => void;
+  clearAllNotifications: () => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -206,6 +212,25 @@ export const useAppStore = create<AppState>()(
       // Terminal Settings
       terminalConfig: { type: "default" },
       setTerminalConfig: (terminalConfig) => set({ terminalConfig }),
+
+      // Notifications (消息通知)
+      notifications: [],
+      addNotification: (notification) =>
+        set((state) => {
+          const newNotification: Notification = {
+            ...notification,
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            createdAt: new Date().toISOString(),
+          };
+          const updated = [newNotification, ...state.notifications];
+          // 默认保留最近10条
+          return { notifications: updated.slice(0, 10) };
+        }),
+      removeNotification: (id) =>
+        set((state) => ({
+          notifications: state.notifications.filter((n) => n.id !== id),
+        })),
+      clearAllNotifications: () => set({ notifications: [] }),
     }),
     {
       name: "codeshelf-storage",
@@ -219,6 +244,7 @@ export const useAppStore = create<AppState>()(
         labels: state.labels,
         editors: state.editors,
         terminalConfig: state.terminalConfig,
+        notifications: state.notifications,
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<AppState>;

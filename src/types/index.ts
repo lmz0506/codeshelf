@@ -66,6 +66,17 @@ export interface GitRepo {
   name: string;
 }
 
+// Notification types
+export type NotificationType = "success" | "error" | "warning" | "info";
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message?: string;
+  createdAt: string;
+}
+
 // View types
 export type ViewMode = "grid" | "list";
 
