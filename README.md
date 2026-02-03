@@ -14,6 +14,8 @@
 ![project_3.png](docs/images/project_3.png)
 ![project_4.png](docs/images/project_4.png)
 
+## 安装
+前往 [Releases 页面](https://github.com/en-o/codeshelf/releases) 下载适用于 Windows、macOS 或 Linux 的最新安装包或便携版。
 
 ## 🛠 技术栈
 
@@ -239,6 +241,4 @@ pkg-config --modversion webkit2gtk-4.1
 - [TailwindCSS](https://tailwindcss.com/) - CSS 框架
 - [Lucide](https://lucide.dev/) - 图标库
 
----
 
-**Made with ❤️ by CodeShelf Team**
