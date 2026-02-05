@@ -151,7 +151,7 @@ if errorlevel 1 (
 )
 echo [SUCCESS] 提交完成
 
-:: 7. 创建 release 分支
+:: 8. 创建 release 分支
 echo [INFO] 创建分支 %BRANCH_NAME%...
 git checkout -b "%BRANCH_NAME%"
 if errorlevel 1 (
@@ -160,7 +160,7 @@ if errorlevel 1 (
 )
 echo [SUCCESS] 分支创建完成
 
-:: 8. 推送到远程
+:: 9. 推送到远程
 echo [INFO] 推送到远程 origin/%BRANCH_NAME%...
 git push origin "%BRANCH_NAME%"
 if errorlevel 1 (
@@ -169,7 +169,7 @@ if errorlevel 1 (
 )
 echo [SUCCESS] 推送完成
 
-:: 9. 切回 main 分支
+:: 10. 切回 main 分支
 echo [INFO] 切回 main 分支...
 git checkout main
 
