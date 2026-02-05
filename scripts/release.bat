@@ -78,7 +78,7 @@ echo [SUCCESS] package.json -^> %VERSION%
 :: 2. 更新 package-lock.json
 echo [INFO] 更新 package-lock.json...
 if exist "package-lock.json" (
-    npm install --package-lock-only --ignore-scripts --silent 2>nul
+    call npm install --package-lock-only --ignore-scripts --silent 2>nul
     if errorlevel 1 (
         echo [ERROR] 更新 package-lock.json 失败
         exit /b 1
