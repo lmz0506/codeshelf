@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "codeshelf"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
