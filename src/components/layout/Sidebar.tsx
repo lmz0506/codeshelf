@@ -209,11 +209,9 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
         </div>
       )}
 
-      {/* 通知面板 */}
-      <div className="mt-auto px-3 py-2 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-center">
-          <NotificationPanel />
-        </div>
+      {/* 通知面板 - 与主页脚 re-footer 高度对齐 */}
+      <div className="mt-auto px-3 py-[5px] border-t border-gray-200 dark:border-gray-700 flex items-center justify-center">
+        <NotificationPanel />
       </div>
 
       {/* 动画关键帧 */}
