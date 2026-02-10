@@ -13,7 +13,42 @@ on:
         type: string
 
 jobs:
-  release:
+  # 先创建草稿 Release，避免并发竞争
+  create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create_release.outputs.result }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from tauri.conf.json
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Draft Release
+        id: create_release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${{ steps.get_version.outputs.version }}`,
+              name: `CodeShelf v${{ steps.get_version.outputs.version }}`,
+              body: 'See the assets to download this version and install.',
+              draft: true,  // 草稿状态，构建完成后再发布
+              prerelease: false
+            });
+            return data.id;
+
+  # 构建各平台版本
+  build:
+    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -63,11 +98,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'CodeShelf v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: false
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           updaterJsonKeepUniversal: true
           args: ${{ matrix.args }} --config ${{ matrix.config }}
 
@@ -75,24 +106,16 @@ jobs:
       - name: Create portable version (Windows)
         if: matrix.platform == 'windows-latest'
         run: |
-          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $version = "${{ needs.create-release.outputs.version }}"
           $portableDir = "CodeShelf-Portable-v$version"
           $zipName = "CodeShelf-Portable-v$version-x64.zip"
 
-          # 创建便携版目录
           New-Item -ItemType Directory -Force -Path $portableDir
-
-          # 复制可执行文件
           Copy-Item "src-tauri/target/release/CodeShelf.exe" "$portableDir/"
-
-          # 创建便携版标记文件（禁用自动更新）
           Set-Content -Path "$portableDir/.portable" -Value "This is a portable version. Auto-update is disabled."
-
-          # 创建 ZIP
           Compress-Archive -Path "$portableDir/*" -DestinationPath $zipName
 
           echo "PORTABLE_ZIP=$zipName" >> $env:GITHUB_OUTPUT
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
         shell: pwsh
         id: portable
 
@@ -100,8 +123,27 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.portable.outputs.VERSION }}
+          tag_name: v${{ needs.create-release.outputs.version }}
           files: ${{ steps.portable.outputs.PORTABLE_ZIP }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
+
+  # 所有构建完成后，发布 Release
+  publish-release:
+    needs: [create-release, build]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }},
+              draft: false  // 取消草稿状态，正式发布
+            });
+            console.log('Release published successfully!');
