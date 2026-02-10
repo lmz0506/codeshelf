@@ -21,6 +21,8 @@ export default defineConfig({
     },
   },
   build: {
+    // 调整警告阈值（可选）
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -36,6 +38,10 @@ export default defineConfig({
           if (id.includes('node_modules/lucide-react')) {
             return 'vendor-icons';
           }
+          // 代码高亮库（较大）
+          if (id.includes('node_modules/highlight.js') || id.includes('node_modules/lowlight')) {
+            return 'vendor-highlight';
+          }
           // Markdown 相关
           if (id.includes('node_modules/react-markdown') ||
               id.includes('node_modules/remark') ||
@@ -43,7 +49,8 @@ export default defineConfig({
               id.includes('node_modules/unified') ||
               id.includes('node_modules/mdast') ||
               id.includes('node_modules/hast') ||
-              id.includes('node_modules/micromark')) {
+              id.includes('node_modules/micromark') ||
+              id.includes('node_modules/unist')) {
             return 'vendor-markdown';
           }
           // 其他工具库
