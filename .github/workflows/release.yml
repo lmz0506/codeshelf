@@ -145,13 +145,26 @@ jobs:
 
       - name: Upload portable version to release (Windows)
         if: matrix.platform == 'windows-latest'
-        uses: softprops/action-gh-release@v1
+        uses: actions/github-script@v7
         with:
-          tag_name: v${{ needs.create-release.outputs.version }}
-          files: ${{ steps.portable.outputs.PORTABLE_ZIP }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const zipFile = '${{ steps.portable.outputs.PORTABLE_ZIP }}';
+            const releaseId = ${{ needs.create-release.outputs.release_id }};
+
+            console.log(`Uploading ${zipFile} to release ${releaseId}`);
+
+            const { data } = await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+              name: zipFile,
+              data: fs.readFileSync(zipFile)
+            });
+
+            console.log(`Uploaded: ${data.browser_download_url}`);
 
   # 所有构建完成后，发布 Release
   publish-release:
@@ -164,10 +177,26 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const releaseId = ${{ needs.create-release.outputs.release_id }};
+
+            // 先获取当前 release 状态
+            const { data: release } = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId
+            });
+
+            // 如果已经发布，跳过
+            if (!release.draft) {
+              console.log('Release is already published, skipping...');
+              return;
+            }
+
+            // 否则发布
             await github.rest.repos.updateRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: ${{ needs.create-release.outputs.release_id }},
-              draft: false  // 取消草稿状态，正式发布
+              release_id: releaseId,
+              draft: false
             });
             console.log('Release published successfully!');
