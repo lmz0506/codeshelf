@@ -701,44 +701,45 @@ pub async fn sync_to_remote(
     sync_all_branches: bool,
     force: bool,
 ) -> Result<String, String> {
-    // First, fetch from source remote to ensure we have latest refs
-    run_git_command(&path, &["fetch", &source_remote])?;
+    // First, fetch all branches from source remote to ensure we have latest refs
+    run_git_command(&path, &["fetch", &source_remote, "--prune"])?;
 
     if sync_all_branches {
-        // Get all branches from source remote
-        let branches_output = run_git_command(&path, &["branch", "-r"])?;
-        let branches: Vec<String> = branches_output
-            .lines()
-            .filter_map(|line| {
-                let branch = line.trim();
-                if branch.starts_with(&format!("{}/", source_remote)) && !branch.contains("HEAD") {
-                    Some(branch.trim_start_matches(&format!("{}/", source_remote)).to_string())
+        // Use refspec to push all remote tracking branches at once
+        // This mirrors the approach: git push target refs/remotes/source/*:refs/heads/*
+        let refspec = format!("refs/remotes/{}/*:refs/heads/*", source_remote);
+
+        let mut args = vec!["push", &target_remote, &refspec];
+        if force {
+            args.push("--force");
+        }
+
+        // Try pushing all branches at once
+        match run_git_command(&path, &args) {
+            Ok(output) => {
+                // Get the list of branches that were synced for reporting
+                let branches_output = run_git_command(&path, &["branch", "-r"])?;
+                let branches: Vec<String> = branches_output
+                    .lines()
+                    .filter_map(|line| {
+                        let branch = line.trim();
+                        if branch.starts_with(&format!("{}/", source_remote)) && !branch.contains("HEAD") {
+                            Some(branch.trim_start_matches(&format!("{}/", source_remote)).to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                if branches.is_empty() {
+                    Ok("同步完成（无分支变化）".to_string())
                 } else {
-                    None
+                    let branch_list = branches.iter().map(|b| format!("✓ {}", b)).collect::<Vec<_>>().join("\n");
+                    Ok(format!("成功同步 {} 个分支:\n{}\n\n{}", branches.len(), branch_list, output))
                 }
-            })
-            .collect();
-
-        if branches.is_empty() {
-            return Err("No branches found to sync".to_string());
-        }
-
-        // Push each branch to target remote
-        let mut results = Vec::new();
-        for branch in branches {
-            let branch_spec = format!("{}:{}", branch, branch);
-            let mut args = vec!["push", &target_remote, &branch_spec];
-            if force {
-                args.push("--force");
             }
-
-            match run_git_command(&path, &args) {
-                Ok(_) => results.push(format!("✓ {}", branch)),
-                Err(e) => results.push(format!("✗ {}: {}", branch, e)),
-            }
+            Err(e) => Err(format!("同步失败: {}", e)),
         }
-
-        Ok(results.join("\n"))
     } else {
         // Sync only current branch
         let branch = run_git_command(&path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
