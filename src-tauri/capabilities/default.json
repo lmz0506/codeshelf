@@ -43,9 +43,7 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        "$HOME/**",
-        "$APPDATA/**",
-        "$DOCUMENT/**"
+        "**"
       ]
     }
   ]

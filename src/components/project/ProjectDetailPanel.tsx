@@ -983,7 +983,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
             </div>
 
             <div className="modal-body">
-              <MarkdownRenderer content={readmeContent} />
+              <MarkdownRenderer content={readmeContent} basePath={project.path} />
             </div>
           </div>
         </div>
