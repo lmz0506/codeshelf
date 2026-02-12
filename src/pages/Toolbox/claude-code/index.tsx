@@ -26,8 +26,11 @@ import {
   BookOpen,
   Lock,
   HelpCircle,
+  Download,
+  Upload,
 } from "lucide-react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
 import { ToolPanelHeader } from "../index";
 import { Button } from "@/components/ui";
 import {
@@ -464,6 +467,96 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     }
   }
 
+  // 导出配置档案
+  async function handleExportProfiles() {
+    if (profiles.length === 0) {
+      alert("没有可导出的配置档案");
+      return;
+    }
+
+    try {
+      const exportData = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        profiles: profiles.map(p => ({
+          name: p.name,
+          description: p.description,
+          settings: p.settings,
+        })),
+      };
+
+      const filePath = await save({
+        title: "导出配置档案",
+        defaultPath: `claude-profiles-${selectedEnv?.envName?.replace(/[^a-zA-Z0-9]/g, "_") || "export"}.json`,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+
+      if (filePath) {
+        await writeTextFile(filePath, JSON.stringify(exportData, null, 2));
+        alert(`成功导出 ${profiles.length} 个配置档案`);
+      }
+    } catch (err) {
+      console.error("导出失败:", err);
+      alert(`导出配置档案失败: ${err}`);
+    }
+  }
+
+  // 导入配置档案
+  async function handleImportProfiles() {
+    if (!selectedEnv) return;
+
+    try {
+      const filePath = await open({
+        title: "导入配置档案",
+        multiple: false,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+
+      if (!filePath || typeof filePath !== "string") return;
+
+      const content = await readTextFile(filePath);
+      const importData = JSON.parse(content);
+
+      // 验证数据格式
+      if (!importData.profiles || !Array.isArray(importData.profiles)) {
+        alert("无效的配置档案文件格式");
+        return;
+      }
+
+      let imported = 0;
+      let skipped = 0;
+
+      for (const profile of importData.profiles) {
+        if (!profile.name || typeof profile.settings !== "object") {
+          skipped++;
+          continue;
+        }
+
+        // 检查是否已存在同名档案
+        const exists = profiles.find(p => p.name === profile.name);
+        if (exists) {
+          skipped++;
+          continue;
+        }
+
+        await saveConfigProfile(
+          selectedEnv.envType,
+          selectedEnv.envName,
+          profile.name,
+          profile.description,
+          profile.settings
+        );
+        imported++;
+      }
+
+      await loadProfiles();
+      alert(`导入完成：成功 ${imported} 个，跳过 ${skipped} 个（已存在或格式无效）`);
+    } catch (err) {
+      console.error("导入失败:", err);
+      alert(`导入配置档案失败: ${err}`);
+    }
+  }
+
   const isReadonlyFile = (fileName: string) => READONLY_FILES.includes(fileName);
   const isEditableFile = (fileName: string) => EDITABLE_FILES.includes(fileName);
   const isSettingsJson = selectedFile?.name === "settings.json";
@@ -730,14 +823,31 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                           <Copy size={16} />
                           配置档案
                         </h3>
-                        <Button
-                          onClick={() => setShowCreateProfile(true)}
-                          variant="primary"
-                          className="flex items-center gap-1 text-xs py-1 px-2"
-                        >
-                          <Plus size={12} />
-                          新建
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={handleImportProfiles}
+                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-500 hover:text-blue-500"
+                            title="导入配置档案"
+                          >
+                            <Upload size={14} />
+                          </button>
+                          <button
+                            onClick={handleExportProfiles}
+                            disabled={profiles.length === 0}
+                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-500 hover:text-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="导出配置档案"
+                          >
+                            <Download size={14} />
+                          </button>
+                          <Button
+                            onClick={() => setShowCreateProfile(true)}
+                            variant="primary"
+                            className="flex items-center gap-1 text-xs py-1 px-2"
+                          >
+                            <Plus size={12} />
+                            新建
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="flex-1 overflow-y-auto min-h-0">
