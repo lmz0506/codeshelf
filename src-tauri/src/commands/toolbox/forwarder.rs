@@ -1,8 +1,10 @@
 // 端口转发模块 - TCP 流量代理转发，支持连接管理和流量统计
 
 use super::{current_time, generate_id, ForwardRule, ForwardRuleInput, ForwardStats};
+use crate::storage;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::fs;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -12,11 +14,91 @@ use tokio::time::{timeout, Duration};
 
 /// 转发规则存储
 static FORWARD_RULES: Lazy<Arc<Mutex<HashMap<String, ForwardRule>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+    Lazy::new(|| {
+        // 启动时从文件加载
+        let rules = load_rules_from_file().unwrap_or_default();
+        Arc::new(Mutex::new(rules))
+    });
 
 /// 转发控制器（用于停止转发）
 static FORWARD_CONTROLLERS: Lazy<Arc<Mutex<HashMap<String, Arc<ForwardController>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+/// 从文件加载转发规则
+fn load_rules_from_file() -> Result<HashMap<String, ForwardRule>, String> {
+    if let Ok(config) = storage::get_storage_config() {
+        let path = config.forward_rules_file();
+        if path.exists() {
+            let content = fs::read_to_string(&path)
+                .map_err(|e| format!("读取转发规则失败: {}", e))?;
+
+            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(rules_arr) = versioned.get("data").and_then(|d| d.get("rules")).and_then(|r| r.as_array()) {
+                    // 解析规则时需要转换格式
+                    let mut rules = HashMap::new();
+                    for rule_val in rules_arr {
+                        if let Ok(rule) = serde_json::from_value::<serde_json::Value>(rule_val.clone()) {
+                            let id = rule.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                            let name = rule.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                            let local_port = rule.get("local_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+                            let remote_host = rule.get("remote_host").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                            let remote_port = rule.get("remote_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+                            let created_at = rule.get("created_at").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+
+                            if !id.is_empty() {
+                                rules.insert(id.clone(), ForwardRule {
+                                    id,
+                                    name,
+                                    local_port,
+                                    remote_host,
+                                    remote_port,
+                                    status: "stopped".to_string(), // 重启后默认停止
+                                    connections: 0,
+                                    bytes_in: 0,
+                                    bytes_out: 0,
+                                    created_at,
+                                });
+                            }
+                        }
+                    }
+                    return Ok(rules);
+                }
+            }
+        }
+    }
+    Ok(HashMap::new())
+}
+
+/// 保存转发规则到文件
+async fn save_rules_to_file() {
+    if let Ok(config) = storage::get_storage_config() {
+        let rules = FORWARD_RULES.lock().await;
+
+        // 只保存持久化需要的字段
+        let rules_data: Vec<serde_json::Value> = rules.values().map(|r| {
+            serde_json::json!({
+                "id": r.id,
+                "name": r.name,
+                "local_port": r.local_port,
+                "remote_host": r.remote_host,
+                "remote_port": r.remote_port,
+                "created_at": r.created_at
+            })
+        }).collect();
+
+        let data = serde_json::json!({
+            "version": 1,
+            "last_updated": chrono::Utc::now().to_rfc3339(),
+            "data": {
+                "rules": rules_data
+            }
+        });
+
+        if let Ok(content) = serde_json::to_string_pretty(&data) {
+            let _ = fs::write(config.forward_rules_file(), content);
+        }
+    }
+}
 
 /// 转发控制器
 struct ForwardController {
@@ -117,6 +199,9 @@ pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, St
         rules.insert(rule_id.clone(), rule.clone());
     }
 
+    // 持久化到文件
+    save_rules_to_file().await;
+
     Ok(rule)
 }
 
@@ -131,6 +216,9 @@ pub async fn remove_forward_rule(rule_id: String) -> Result<(), String> {
         let mut rules = FORWARD_RULES.lock().await;
         rules.remove(&rule_id);
     }
+
+    // 持久化到文件
+    save_rules_to_file().await;
 
     Ok(())
 }
@@ -447,6 +535,9 @@ pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> Re
             rule.remote_port = input.remote_port;
         }
     }
+
+    // 持久化到文件
+    save_rules_to_file().await;
 
     let rules = FORWARD_RULES.lock().await;
     rules

@@ -1,6 +1,7 @@
 mod commands;
+mod storage;
 
-use commands::{git, project, stats, system, toolbox};
+use commands::{git, project, stats, system, toolbox, settings};
 use tauri::{
     Manager,
     tray::TrayIconBuilder,
@@ -28,6 +29,12 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // 初始化存储系统
+            if let Err(e) = storage::init_storage() {
+                eprintln!("存储系统初始化警告: {}", e);
+                // 不阻止应用启动，只是警告
+            }
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -211,6 +218,24 @@ pub fn run() {
             toolbox::claude_code::apply_config_profile,
             toolbox::claude_code::create_profile_from_current,
             toolbox::claude_code::scan_claude_config_dir,
+            // Settings commands
+            settings::get_labels,
+            settings::save_labels,
+            settings::add_label,
+            settings::remove_label,
+            settings::get_categories,
+            settings::save_categories,
+            settings::add_category,
+            settings::remove_category,
+            settings::get_editors,
+            settings::add_editor,
+            settings::update_editor,
+            settings::remove_editor,
+            settings::set_default_editor,
+            settings::get_terminal_config,
+            settings::save_terminal_config,
+            settings::get_app_settings,
+            settings::save_app_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

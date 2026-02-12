@@ -1,6 +1,7 @@
 // 静态服务模块 - 本地 Web 服务器，支持 CORS、gzip、API 代理
 
 use super::{current_time, generate_id, ServerConfig, ServerConfigInput};
+use crate::storage;
 use axum::{
     body::Body,
     extract::{Path, State},
@@ -12,6 +13,7 @@ use axum::{
 use once_cell::sync::Lazy;
 use socket2::{Domain, Socket, Type};
 use std::collections::HashMap;
+use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,11 +27,77 @@ use tower_http::{
 
 /// 服务配置存储
 static SERVERS: Lazy<Arc<Mutex<HashMap<String, ServerConfig>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+    Lazy::new(|| {
+        // 启动时从文件加载
+        let servers = load_servers_from_file().unwrap_or_default();
+        Arc::new(Mutex::new(servers))
+    });
 
 /// 服务控制器
 static SERVER_CONTROLLERS: Lazy<Arc<Mutex<HashMap<String, Arc<ServerController>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+/// 从文件加载服务配置
+fn load_servers_from_file() -> Result<HashMap<String, ServerConfig>, String> {
+    if let Ok(config) = storage::get_storage_config() {
+        let path = config.server_configs_file();
+        if path.exists() {
+            let content = fs::read_to_string(&path)
+                .map_err(|e| format!("读取服务配置失败: {}", e))?;
+
+            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(servers_arr) = versioned.get("data").and_then(|d| d.get("servers")).and_then(|s| s.as_array()) {
+                    let mut servers = HashMap::new();
+                    for server_val in servers_arr {
+                        if let Ok(server) = serde_json::from_value::<ServerConfig>(server_val.clone()) {
+                            // 重启后默认停止
+                            let mut server = server;
+                            server.status = "stopped".to_string();
+                            servers.insert(server.id.clone(), server);
+                        }
+                    }
+                    return Ok(servers);
+                }
+            }
+        }
+    }
+    Ok(HashMap::new())
+}
+
+/// 保存服务配置到文件
+async fn save_servers_to_file() {
+    if let Ok(config) = storage::get_storage_config() {
+        let servers = SERVERS.lock().await;
+
+        // 只保存持久化需要的字段
+        let servers_data: Vec<serde_json::Value> = servers.values().map(|s| {
+            serde_json::json!({
+                "id": s.id,
+                "name": s.name,
+                "port": s.port,
+                "root_dir": s.root_dir,
+                "cors": s.cors,
+                "gzip": s.gzip,
+                "cache_control": s.cache_control,
+                "url_prefix": s.url_prefix,
+                "proxies": s.proxies,
+                "created_at": s.created_at
+            })
+        }).collect();
+
+        let data = serde_json::json!({
+            "version": 1,
+            "last_updated": chrono::Utc::now().to_rfc3339(),
+            "data": {
+                "servers": servers_data
+            }
+        });
+
+        if let Ok(content) = serde_json::to_string_pretty(&data) {
+            let _ = fs::write(config.server_configs_file(), content);
+        }
+    }
+}
 
 /// 服务控制器
 struct ServerController {
@@ -123,6 +191,9 @@ pub async fn create_server(input: ServerConfigInput) -> Result<ServerConfig, Str
         let mut servers = SERVERS.lock().await;
         servers.insert(server_id.clone(), config.clone());
     }
+
+    // 持久化到文件
+    save_servers_to_file().await;
 
     Ok(config)
 }
@@ -512,6 +583,9 @@ pub async fn remove_server(server_id: String) -> Result<(), String> {
         servers.remove(&server_id);
     }
 
+    // 持久化到文件
+    save_servers_to_file().await;
+
     Ok(())
 }
 
@@ -577,6 +651,9 @@ pub async fn update_server(server_id: String, input: ServerConfigInput) -> Resul
             server.proxies = input.proxies.unwrap_or_default();
         }
     }
+
+    // 持久化到文件
+    save_servers_to_file().await;
 
     let servers = SERVERS.lock().await;
     servers

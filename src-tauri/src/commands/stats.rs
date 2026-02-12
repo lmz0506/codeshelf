@@ -7,6 +7,8 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 use tokio::task;
 
+use crate::storage;
+
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -77,6 +79,12 @@ static STATS_CACHE: Lazy<Mutex<PersistedStatsCache>> = Lazy::new(|| {
 
 /// 获取统计缓存文件路径
 fn get_stats_cache_path() -> PathBuf {
+    // 优先使用新的存储路径
+    if let Ok(config) = storage::get_storage_config() {
+        return config.stats_cache_file();
+    }
+
+    // 回退到旧路径（兼容性）
     let mut path = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("codeshelf");
     let _ = fs::create_dir_all(&path);

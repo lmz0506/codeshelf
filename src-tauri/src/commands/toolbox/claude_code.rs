@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
 
+use crate::storage;
+
 /// 环境类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EnvType {
@@ -1160,9 +1162,6 @@ pub async fn apply_config_profile(
 
 /// 获取配置档案存储路径（按环境隔离）
 fn get_profiles_storage_path(env_type: &EnvType, env_name: &str) -> PathBuf {
-    let config_dir = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."));
-
     // 根据环境类型和名称生成唯一的文件名
     let env_suffix = match env_type {
         EnvType::Host => "host".to_string(),
@@ -1172,6 +1171,15 @@ fn get_profiles_storage_path(env_type: &EnvType, env_name: &str) -> PathBuf {
             format!("wsl_{}", distro.to_lowercase().replace(' ', "_"))
         }
     };
+
+    // 优先使用新的存储路径
+    if let Ok(config) = storage::get_storage_config() {
+        return config.data_dir.join(format!("claude_profiles_{}.json", env_suffix));
+    }
+
+    // 回退到旧路径（兼容性）
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."));
 
     config_dir.join("codeshelf").join(format!("claude_profiles_{}.json", env_suffix))
 }

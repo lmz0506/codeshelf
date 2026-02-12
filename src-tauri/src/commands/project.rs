@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
+use crate::storage;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -47,6 +49,12 @@ static PROJECTS: Lazy<Mutex<Vec<Project>>> = Lazy::new(|| {
 
 // 获取数据文件路径
 fn get_data_file_path() -> PathBuf {
+    // 优先使用新的存储路径
+    if let Ok(config) = storage::get_storage_config() {
+        return config.projects_file();
+    }
+
+    // 回退到旧路径（兼容性）
     let mut path = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("codeshelf");
     // 确保目录存在

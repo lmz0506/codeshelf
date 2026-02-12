@@ -1,6 +1,7 @@
 // 文件下载模块 - 支持断点续传、重试机制、下载队列管理
 
 use super::{current_time, generate_id, DownloadConfig, DownloadTask};
+use crate::storage;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
@@ -13,11 +14,64 @@ use tokio::time::{sleep, Duration};
 
 /// 下载任务存储
 static DOWNLOAD_TASKS: Lazy<Arc<Mutex<HashMap<String, DownloadTask>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+    Lazy::new(|| {
+        // 启动时从文件加载
+        let tasks = load_tasks_from_file().unwrap_or_default();
+        Arc::new(Mutex::new(tasks))
+    });
 
 /// 下载取消标志
 static DOWNLOAD_CANCELLED: Lazy<Arc<Mutex<HashMap<String, AtomicBool>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+/// 从文件加载下载任务
+fn load_tasks_from_file() -> Result<HashMap<String, DownloadTask>, String> {
+    if let Ok(config) = storage::get_storage_config() {
+        let path = config.download_tasks_file();
+        if path.exists() {
+            let content = fs::read_to_string(&path)
+                .map_err(|e| format!("读取下载任务失败: {}", e))?;
+
+            // 尝试解析版本化格式
+            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(tasks_arr) = versioned.get("data").and_then(|d| d.get("tasks")).and_then(|t| t.as_array()) {
+                    let tasks: Vec<DownloadTask> = serde_json::from_value(serde_json::Value::Array(tasks_arr.clone()))
+                        .unwrap_or_default();
+                    return Ok(tasks.into_iter()
+                        .filter(|t| t.status != "downloading") // 重启后，下载中的任务变为暂停
+                        .map(|mut t| {
+                            if t.status == "downloading" {
+                                t.status = "paused".to_string();
+                            }
+                            (t.id.clone(), t)
+                        })
+                        .collect());
+                }
+            }
+        }
+    }
+    Ok(HashMap::new())
+}
+
+/// 保存下载任务到文件
+async fn save_tasks_to_file() {
+    if let Ok(config) = storage::get_storage_config() {
+        let tasks = DOWNLOAD_TASKS.lock().await;
+        let tasks_vec: Vec<&DownloadTask> = tasks.values().collect();
+
+        let data = serde_json::json!({
+            "version": 1,
+            "last_updated": chrono::Utc::now().to_rfc3339(),
+            "data": {
+                "tasks": tasks_vec
+            }
+        });
+
+        if let Ok(content) = serde_json::to_string_pretty(&data) {
+            let _ = fs::write(config.download_tasks_file(), content);
+        }
+    }
+}
 
 /// 默认下载目录
 fn default_download_dir() -> String {
@@ -79,6 +133,9 @@ pub async fn start_download(config: DownloadConfig) -> Result<String, String> {
         let mut tasks = DOWNLOAD_TASKS.lock().await;
         tasks.insert(task_id.clone(), task);
     }
+
+    // 持久化保存
+    save_tasks_to_file().await;
 
     // 初始化取消标志
     {
@@ -303,6 +360,12 @@ async fn update_task_status(task_id: &str, status: &str, error: Option<String>) 
         task.error = error;
         task.updated_at = current_time();
     }
+    drop(tasks);
+
+    // 在终态时持久化保存
+    if status == "completed" || status == "failed" || status == "cancelled" || status == "paused" {
+        save_tasks_to_file().await;
+    }
 }
 
 /// 暂停下载
@@ -387,6 +450,9 @@ pub async fn cancel_download(task_id: String) -> Result<(), String> {
         flags.remove(&task_id);
     }
 
+    // 持久化保存
+    save_tasks_to_file().await;
+
     Ok(())
 }
 
@@ -412,7 +478,15 @@ pub async fn clear_completed_downloads() -> Result<u32, String> {
 
     tasks.retain(|_, task| task.status != "completed" && task.status != "failed");
 
-    Ok((initial_count - tasks.len()) as u32)
+    let removed_count = (initial_count - tasks.len()) as u32;
+    drop(tasks);
+
+    // 持久化保存
+    if removed_count > 0 {
+        save_tasks_to_file().await;
+    }
+
+    Ok(removed_count)
 }
 
 /// 打开下载文件夹
