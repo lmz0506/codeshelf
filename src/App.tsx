@@ -49,6 +49,14 @@ interface NotificationBackend {
   created_at: string;
 }
 
+// 后端返回的迁移结果类型
+interface MigrationResult {
+  success: boolean;
+  migrated_items: string[];
+  errors: string[];
+  warnings: string[];
+}
+
 // 从 localStorage 迁移旧数据
 async function migrateFromLocalStorage() {
   const oldData = localStorage.getItem("codeshelf-storage");
