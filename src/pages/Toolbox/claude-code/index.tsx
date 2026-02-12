@@ -310,12 +310,15 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         configFiles: newConfigFiles,
       };
 
-      setInstallations(prev => prev.map(env =>
+      const updatedInstallations = installations.map(env =>
         env.envName === selectedEnv.envName ? updatedEnv : env
-      ));
+      );
+      setInstallations(updatedInstallations);
       setSelectedEnv(updatedEnv);
       setShowEditConfigDir(false);
       setSelectedFile(null);
+      // 更新缓存
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(updatedInstallations));
     } catch (err) {
       console.error("更新配置目录失败:", err);
       alert(`更新配置目录失败: ${err}`);
