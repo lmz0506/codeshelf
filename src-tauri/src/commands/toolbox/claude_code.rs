@@ -1328,21 +1328,17 @@ pub async fn scan_claude_config_dir(env_type: EnvType, env_name: String, config_
 
 /// 获取保存的 Claude 快捷配置
 #[tauri::command]
-pub async fn get_saved_quick_configs() -> Result<Vec<ClaudeQuickConfigOption>, String> {
+pub async fn get_saved_quick_configs() -> Result<Vec<ClaudeQuickConfig>, String> {
     if let Ok(config) = storage::get_storage_config() {
         let path = config.claude_quick_configs_file();
         if path.exists() {
             let content = fs::read_to_string(&path)
                 .map_err(|e| format!("读取快捷配置失败: {}", e))?;
 
-            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
-                // VersionedData 使用 flatten，configs 在顶层
-                if let Some(configs) = versioned.get("configs") {
-                    let configs: Vec<ClaudeQuickConfigOption> = serde_json::from_value(configs.clone())
-                        .unwrap_or_default();
-                    return Ok(configs);
-                }
-            }
+            // 直接解析为配置数组
+            let configs: Vec<ClaudeQuickConfig> = serde_json::from_str(&content)
+                .unwrap_or_default();
+            return Ok(configs);
         }
     }
     Ok(vec![])
@@ -1350,16 +1346,12 @@ pub async fn get_saved_quick_configs() -> Result<Vec<ClaudeQuickConfigOption>, S
 
 /// 保存 Claude 快捷配置
 #[tauri::command]
-pub async fn save_quick_configs(configs: Vec<ClaudeQuickConfigOption>) -> Result<(), String> {
+pub async fn save_quick_configs(configs: Vec<ClaudeQuickConfig>) -> Result<(), String> {
     let config = storage::get_storage_config()?;
     config.ensure_dirs()?;
 
-    let data = VersionedData {
-        version: 1,
-        last_updated: current_iso_time(),
-        data: ClaudeQuickConfigsData { configs },
-    };
-    let content = serde_json::to_string(&data)
+    // 直接保存为配置数组
+    let content = serde_json::to_string_pretty(&configs)
         .map_err(|e| format!("序列化快捷配置失败: {}", e))?;
     fs::write(config.claude_quick_configs_file(), content)
         .map_err(|e| format!("保存快捷配置失败: {}", e))?;
@@ -1377,14 +1369,30 @@ pub async fn get_claude_installations_cache() -> Result<Option<Vec<ClaudeCodeInf
             let content = fs::read_to_string(&path)
                 .map_err(|e| format!("读取安装缓存失败: {}", e))?;
 
-            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
-                // VersionedData 使用 flatten，installations 在顶层
-                if let Some(installations) = versioned.get("installations") {
-                    let installations: Vec<ClaudeCodeInfo> = serde_json::from_value(installations.clone())
-                        .unwrap_or_default();
-                    return Ok(Some(installations));
+            // 直接解析为安装信息数组
+            let installations: Vec<ClaudeInstallation> = serde_json::from_str(&content)
+                .unwrap_or_default();
+
+            // 转换为 ClaudeCodeInfo
+            let result: Vec<ClaudeCodeInfo> = installations.into_iter().map(|i| {
+                ClaudeCodeInfo {
+                    env_type: if i.env_type == "wsl" { EnvType::Wsl } else { EnvType::Host },
+                    env_name: i.env_name,
+                    installed: true,
+                    version: i.version,
+                    path: None,
+                    config_dir: Some(i.config_dir),
+                    config_files: i.config_files.into_iter().map(|f| ConfigFileInfo {
+                        name: f.name,
+                        path: f.path,
+                        exists: f.exists,
+                        size: 0,
+                        modified: None,
+                        description: String::new(),
+                    }).collect(),
                 }
-            }
+            }).collect();
+            return Ok(Some(result));
         }
     }
     Ok(None)
@@ -1396,9 +1404,9 @@ pub async fn save_claude_installations_cache(installs: Vec<ClaudeCodeInfo>) -> R
     let config = storage::get_storage_config()?;
     config.ensure_dirs()?;
 
-    // 转换为 Schema 类型
-    let schema_installs: Vec<SchemaClaudeCodeInfo> = installs.iter().map(|i| {
-        SchemaClaudeCodeInfo {
+    // 转换为简化的安装信息格式
+    let installations: Vec<ClaudeInstallation> = installs.iter().map(|i| {
+        ClaudeInstallation {
             env_type: match i.env_type {
                 EnvType::Host => "host".to_string(),
                 EnvType::Wsl => "wsl".to_string(),
@@ -1416,15 +1424,8 @@ pub async fn save_claude_installations_cache(installs: Vec<ClaudeCodeInfo>) -> R
         }
     }).collect();
 
-    let data = VersionedData {
-        version: 1,
-        last_updated: current_iso_time(),
-        data: ClaudeInstallationsCacheData {
-            installations: schema_installs,
-            cached_at: current_iso_time(),
-        },
-    };
-    let content = serde_json::to_string(&data)
+    // 直接保存为安装信息数组
+    let content = serde_json::to_string_pretty(&installations)
         .map_err(|e| format!("序列化安装缓存失败: {}", e))?;
     fs::write(config.claude_installations_cache_file(), content)
         .map_err(|e| format!("保存安装缓存失败: {}", e))?;
