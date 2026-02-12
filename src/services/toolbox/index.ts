@@ -338,7 +338,7 @@ function transformServerConfig(server: any): ServerConfig {
 
 // ============== Claude Code 配置服务 ==============
 
-import type { ClaudeCodeInfo, EnvType, QuickConfigOption, ConfigProfile } from "@/types/toolbox";
+import type { ClaudeCodeInfo, EnvType, QuickConfigOption, ConfigProfile, ConfigFileInfo } from "@/types/toolbox";
 
 export async function checkAllClaudeInstallations(): Promise<ClaudeCodeInfo[]> {
   const infos: any[] = await invoke("check_all_claude_installations");

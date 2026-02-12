@@ -111,6 +111,11 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   const [showEditConfigDir, setShowEditConfigDir] = useState(false);
   const [editingConfigDir, setEditingConfigDir] = useState("");
 
+  // WSL 手动输入 Claude 路径
+  const [showWslClaudePathInput, setShowWslClaudePathInput] = useState(false);
+  const [wslClaudePath, setWslClaudePath] = useState("");
+  const [wslClaudePathError, setWslClaudePathError] = useState<string | null>(null);
+
   // 缓存 key
   const CACHE_KEY = "codeshelf_claude_installations";
 
@@ -205,6 +210,14 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   async function handleSelectClaudePath() {
     if (!selectedEnv) return;
 
+    // 对于 WSL 环境，直接弹出手动输入对话框（Tauri 文件对话框无法处理 WSL UNC 路径）
+    if (selectedEnv.envType === "wsl") {
+      setWslClaudePath("");
+      setWslClaudePathError(null);
+      setShowWslClaudePathInput(true);
+      return;
+    }
+
     try {
       const selected = await open({
         title: "选择 Claude 可执行文件",
@@ -212,58 +225,71 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
       });
 
       if (selected && typeof selected === "string") {
-        // 调试：显示实际收到的路径
-        console.log("[DEBUG] Selected path:", selected);
-        console.log("[DEBUG] Path length:", selected.length);
-        console.log("[DEBUG] Path char codes:", Array.from(selected.slice(0, 30)).map(c => c.charCodeAt(0)));
-
-        // 检测是否是 WSL UNC 路径 - 使用更宽松的匹配
-        const lowerPath = selected.toLowerCase();
-        const isWslPath = lowerPath.includes("wsl.localhost") || lowerPath.includes("wsl$");
-
-        console.log("[DEBUG] Is WSL path:", isWslPath);
-
-        try {
-          const info = await checkClaudeByPath(selected);
-          if (info.installed) {
-            // 更新当前环境的路径信息
-            const updatedInstallations = installations.map(env =>
-              env.envName === selectedEnv.envName
-                ? { ...env, ...info, envName: env.envName, envType: env.envType }
-                : env
-            );
-            setInstallations(updatedInstallations);
-            setSelectedEnv(prev => prev ? { ...prev, ...info, envName: prev.envName, envType: prev.envType } : null);
-            // 更新缓存
-            sessionStorage.setItem(CACHE_KEY, JSON.stringify(updatedInstallations));
-          } else {
-            alert("无法识别该路径为有效的 Claude Code 安装");
-          }
-        } catch (checkErr) {
-          console.log("[DEBUG] Check error:", checkErr);
-          // 如果是 WSL 路径检测失败，提示用户手动设置配置目录
-          if (isWslPath) {
-            const confirmed = confirm(
-              `无法自动检测 WSL 中的 Claude Code 安装。\n\n` +
-              `收到的路径: ${selected}\n\n` +
-              `这可能是因为应用无法直接访问 WSL 文件系统执行检测命令。\n\n` +
-              `您可以手动设置配置目录来管理 Claude Code 配置。\n` +
-              `配置目录通常位于: ~/.claude\n\n` +
-              `是否现在设置配置目录？`
-            );
-            if (confirmed) {
-              // 设置默认的配置目录提示
-              setEditingConfigDir("/home/用户名/.claude");
-              setShowEditConfigDir(true);
-            }
-          } else {
-            alert(`选择路径失败:\n\n路径: ${selected}\n\n错误: ${checkErr}`);
-          }
-        }
+        await processClaudePath(selected);
       }
     } catch (err) {
       console.error("选择路径失败:", err);
       alert(`选择路径失败: ${err}`);
+    }
+  }
+
+  // 处理 WSL 手动输入的 Claude 路径
+  async function handleWslClaudePathSubmit() {
+    if (!selectedEnv || !wslClaudePath.trim()) return;
+
+    const path = wslClaudePath.trim();
+
+    // 验证路径格式
+    if (!path.startsWith("/")) {
+      setWslClaudePathError("请输入 Linux 格式的绝对路径，如 /usr/bin/claude");
+      return;
+    }
+
+    setWslClaudePathError(null);
+    await processClaudePath(path);
+    setShowWslClaudePathInput(false);
+  }
+
+  // 处理 Claude 路径检测
+  async function processClaudePath(path: string) {
+    if (!selectedEnv) return;
+
+    try {
+      const info = await checkClaudeByPath(path);
+      if (info.installed) {
+        // 更新当前环境的路径信息
+        const updatedInstallations = installations.map(env =>
+          env.envName === selectedEnv.envName
+            ? { ...env, ...info, envName: env.envName, envType: env.envType }
+            : env
+        );
+        setInstallations(updatedInstallations);
+        setSelectedEnv(prev => prev ? { ...prev, ...info, envName: prev.envName, envType: prev.envType } : null);
+        // 更新缓存
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(updatedInstallations));
+      } else {
+        alert("无法识别该路径为有效的 Claude Code 安装");
+      }
+    } catch (checkErr) {
+      console.log("[DEBUG] Check error:", checkErr);
+      // 如果是 WSL 路径检测失败，提示用户手动设置配置目录
+      if (selectedEnv.envType === "wsl") {
+        const confirmed = confirm(
+          `无法自动检测 WSL 中的 Claude Code 安装。\n\n` +
+          `收到的路径: ${path}\n\n` +
+          `这可能是因为应用无法直接访问 WSL 文件系统执行检测命令。\n\n` +
+          `您可以手动设置配置目录来管理 Claude Code 配置。\n` +
+          `配置目录通常位于: ~/.claude\n\n` +
+          `是否现在设置配置目录？`
+        );
+        if (confirmed) {
+          // 设置默认的配置目录提示
+          setEditingConfigDir("/home/用户名/.claude");
+          setShowEditConfigDir(true);
+        }
+      } else {
+        alert(`选择路径失败:\n\n路径: ${path}\n\n错误: ${checkErr}`);
+      }
     }
   }
 
@@ -644,7 +670,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
           <div className="re-card p-6 text-center">
             <AlertCircle size={48} className="mx-auto mb-4 text-red-500" />
             <p className="text-red-500 mb-4">{error}</p>
-            <Button onClick={loadAll} variant="primary">重试</Button>
+            <Button onClick={() => loadAll()} variant="primary">重试</Button>
           </div>
         ) : (
           <div className="flex flex-col h-full gap-4 overflow-hidden">
@@ -1367,8 +1393,8 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                     <br />• <code className="text-xs">~/.local/bin/claude</code>
                   </p>
                   <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded text-xs text-yellow-700 dark:text-yellow-400">
-                    <strong>提示：</strong>选择 WSL 路径时，请通过文件选择器导航到
-                    <code className="mx-1">\\wsl.localhost\发行版名称\...</code>
+                    <strong>注意：</strong>WSL 路径需要手动输入 Linux 格式的路径（如 <code>/usr/bin/claude</code>），
+                    不支持通过文件选择器选择。点击"手动选择"后直接输入路径即可。
                   </div>
                 </div>
               </div>
@@ -1529,6 +1555,79 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                 onClick={handleUpdateConfigDir}
                 variant="primary"
                 disabled={!editingConfigDir.trim()}
+              >
+                <Check size={14} className="mr-1" />
+                确定
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WSL 手动输入 Claude 路径弹框 */}
+      {showWslClaudePathInput && selectedEnv && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-full">
+                <Terminal size={20} className="text-orange-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">输入 Claude Code 路径</h3>
+            </div>
+
+            <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-sm text-yellow-700 dark:text-yellow-400 mb-4">
+              <p className="font-medium mb-2">WSL 环境需要手动输入路径</p>
+              <p className="text-xs">
+                由于 Windows 文件对话框无法正确访问 WSL 文件系统，请直接输入 Linux 格式的路径。
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1">Claude 可执行文件路径</label>
+                <input
+                  type="text"
+                  value={wslClaudePath}
+                  onChange={(e) => {
+                    setWslClaudePath(e.target.value);
+                    setWslClaudePathError(null);
+                  }}
+                  placeholder="/usr/bin/claude"
+                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm ${
+                    wslClaudePathError ? "border-red-500" : "border-gray-200 dark:border-gray-700"
+                  }`}
+                />
+                {wslClaudePathError && (
+                  <p className="text-xs text-red-500 mt-1">{wslClaudePathError}</p>
+                )}
+              </div>
+
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs">
+                <p className="font-medium text-blue-700 dark:text-blue-400 mb-2">如何查询 Claude Code 路径？</p>
+                <p className="text-blue-600 dark:text-blue-300 mb-2">
+                  在 WSL 终端中运行以下命令：
+                </p>
+                <code className="block p-2 bg-white dark:bg-gray-800 rounded text-gray-700 dark:text-gray-300 font-mono">
+                  which claude
+                </code>
+                <p className="text-blue-600 dark:text-blue-300 mt-3 mb-1">常见安装路径：</p>
+                <ul className="list-disc list-inside text-blue-600 dark:text-blue-300 space-y-0.5">
+                  <li><code>/usr/bin/claude</code></li>
+                  <li><code>/usr/local/bin/claude</code></li>
+                  <li><code>~/.nvm/versions/node/v版本号/bin/claude</code></li>
+                  <li><code>~/.local/bin/claude</code></li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <Button onClick={() => setShowWslClaudePathInput(false)} variant="secondary">
+                取消
+              </Button>
+              <Button
+                onClick={handleWslClaudePathSubmit}
+                variant="primary"
+                disabled={!wslClaudePath.trim()}
               >
                 <Check size={14} className="mr-1" />
                 确定
