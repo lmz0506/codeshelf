@@ -165,8 +165,15 @@ pub async fn start_server(server_id: String) -> Result<String, String> {
 
     // 启动服务
     tokio::spawn(async move {
-        if let Err(e) = run_server(&id, config, controller).await {
-            log::error!("服务错误: {}", e);
+        let result = run_server(&id, config, controller).await;
+
+        match result {
+            Ok(()) => {
+                log::info!("服务正常停止: {}", port);
+            }
+            Err(e) => {
+                log::error!("服务错误 (端口 {}): {}", port, e);
+            }
         }
 
         // 更新状态

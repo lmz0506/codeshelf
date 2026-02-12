@@ -12,8 +12,11 @@ import {
   ExternalLink,
   FolderOpen,
   X,
+  Copy,
+  Check,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { ToolPanelHeader } from "./index";
 import { Input, Button } from "@/components/ui";
 import {
@@ -310,10 +313,35 @@ export function LocalService({ onBack }: LocalServiceProps) {
     }
   }
 
-  // 在浏览器中打开
-  function handleOpenBrowser(server: ServerConfig) {
+  // 获取服务的完整访问 URL
+  function getServerUrl(server: ServerConfig): string {
     const prefix = server.urlPrefix === "/" ? "" : server.urlPrefix;
-    window.open(`http://127.0.0.1:${server.port}${prefix}/`, "_blank");
+    return `http://127.0.0.1:${server.port}${prefix}/`;
+  }
+
+  // 在浏览器中打开
+  async function handleOpenBrowser(server: ServerConfig) {
+    const url = getServerUrl(server);
+    try {
+      await shellOpen(url);
+    } catch (error) {
+      console.error("打开浏览器失败:", error);
+      // 降级到 window.open
+      window.open(url, "_blank");
+    }
+  }
+
+  // 复制 URL 到剪贴板
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  async function handleCopyUrl(server: ServerConfig) {
+    const url = getServerUrl(server);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(server.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (error) {
+      console.error("复制失败:", error);
+    }
   }
 
   // 过滤显示的服务
@@ -440,18 +468,39 @@ export function LocalService({ onBack }: LocalServiceProps) {
                           {server.name}
                           <span className="ml-2 text-xs text-gray-400">Web 服务</span>
                         </h4>
-                        <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
-                          <span className="font-mono">:{server.port}{server.urlPrefix !== "/" ? server.urlPrefix : ""}</span>
-                          <span className="truncate max-w-xs" title={server.rootDir}>
-                            {server.rootDir}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          {server.urlPrefix && server.urlPrefix !== "/" && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
-                              前缀: {server.urlPrefix}
+                        {/* 访问地址 */}
+                        <div className="flex items-center gap-2 mt-1">
+                          {server.status === "running" ? (
+                            <>
+                              <button
+                                onClick={() => handleOpenBrowser(server)}
+                                className="text-sm font-mono text-blue-500 hover:text-blue-600 hover:underline"
+                                title="点击在浏览器中打开"
+                              >
+                                {getServerUrl(server)}
+                              </button>
+                              <button
+                                onClick={() => handleCopyUrl(server)}
+                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+                                title="复制地址"
+                              >
+                                {copiedId === server.id ? (
+                                  <Check size={14} className="text-green-500" />
+                                ) : (
+                                  <Copy size={14} className="text-gray-400" />
+                                )}
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-sm font-mono text-gray-400">
+                              {getServerUrl(server)}
                             </span>
                           )}
+                        </div>
+                        <div className="text-sm text-gray-500 mt-0.5 truncate max-w-xs" title={server.rootDir}>
+                          {server.rootDir}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
                           {server.cors && (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                               CORS
@@ -468,7 +517,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
                               className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
                               title={`${proxy.prefix} → ${proxy.target}`}
                             >
-                              /{proxy.prefix}
+                              {proxy.prefix} → {proxy.target}
                             </span>
                           ))}
                         </div>
@@ -760,16 +809,16 @@ export function LocalService({ onBack }: LocalServiceProps) {
                       <div className="space-y-3">
                         {formProxies.map((proxy, index) => (
                           <div key={index} className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                            <div className="flex-1 grid grid-cols-2 gap-2">
+                            <div className="flex-1 space-y-2">
                               <Input
                                 value={proxy.prefix}
                                 onChange={(e) => updateProxyRule(index, "prefix", e.target.value)}
-                                placeholder="前缀，如: api"
+                                placeholder="本地访问路径，如: /api"
                               />
                               <Input
                                 value={proxy.target}
                                 onChange={(e) => updateProxyRule(index, "target", e.target.value)}
-                                placeholder="目标，如: http://localhost:3000"
+                                placeholder="代理目标地址，如: http://192.168.1.100:8080/api"
                               />
                             </div>
                             <button
@@ -781,7 +830,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
                           </div>
                         ))}
                         <p className="text-xs text-gray-400">
-                          访问 /前缀/* 的请求将被转发到目标服务器
+                          访问本地路径的请求将被转发到代理目标地址，如: /api/* → http://192.168.1.100:8080/api/*
                         </p>
                       </div>
                     )}
