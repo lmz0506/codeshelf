@@ -6,6 +6,14 @@ use std::process::Command;
 
 use crate::storage;
 
+/// 清理 WSL 命令输出中的特殊字符（\r, \0 等）
+fn clean_wsl_output(output: &[u8]) -> String {
+    String::from_utf8_lossy(output)
+        .trim()
+        .replace('\r', "")
+        .replace('\0', "")
+}
+
 /// 环境类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EnvType {
@@ -252,8 +260,8 @@ async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, 
             .args(["-d", distro, "--", &linux_path, arg])
             .output()
         {
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = clean_wsl_output(&output.stdout);
+            let stderr = clean_wsl_output(&output.stderr);
 
             if !stdout.is_empty() {
                 info.version = Some(parse_version(&stdout));
@@ -276,7 +284,7 @@ async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, 
         .output()
     {
         if output.status.success() {
-            let linux_config_dir = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let linux_config_dir = clean_wsl_output(&output.stdout);
             // 转换为 UNC 路径：/home/user/.claude -> \\wsl.localhost\distro\home\user\.claude
             let unc_config_dir = format!("{}{}",
                 unc_prefix,
@@ -496,11 +504,11 @@ async fn get_wsl_distros() -> Result<Vec<String>, String> {
         return Ok(vec![]);
     }
 
-    // WSL 输出可能是 UTF-16
+    // WSL 输出可能是 UTF-16，使用 clean_wsl_output 清理
     let stdout = String::from_utf8_lossy(&output.stdout);
     let distros: Vec<String> = stdout
         .lines()
-        .map(|s| s.trim().replace('\0', ""))
+        .map(|s| s.trim().replace('\0', "").replace('\r', ""))
         .filter(|s| !s.is_empty())
         .collect();
 
@@ -526,7 +534,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
         .output()
     {
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let path = clean_wsl_output(&output.stdout);
             if !path.is_empty() {
                 info.installed = true;
                 info.path = Some(path);
@@ -542,14 +550,14 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
             .output()
         {
             if output.status.success() {
-                let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let version = clean_wsl_output(&output.stdout);
                 if !version.is_empty() {
                     info.version = Some(parse_version(&version));
                 }
             }
             // 检查 stderr
             if info.version.is_none() {
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                let stderr = clean_wsl_output(&output.stderr);
                 if !stderr.is_empty() && (stderr.contains("claude") || stderr.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)) {
                     info.version = Some(parse_version(&stderr));
                 }
@@ -563,7 +571,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
                 .output()
             {
                 if output.status.success() {
-                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    let version = clean_wsl_output(&output.stdout);
                     if !version.is_empty() {
                         info.version = Some(parse_version(&version));
                     }
@@ -577,7 +585,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
                 .args(["-d", distro, "--", "npm", "list", "-g", "@anthropic-ai/claude-code", "--depth=0"])
                 .output()
             {
-                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stdout = clean_wsl_output(&output.stdout);
                 if let Some(version) = extract_npm_version(&stdout) {
                     info.version = Some(version);
                 }
@@ -591,7 +599,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
         .output()
     {
         if output.status.success() {
-            let config_dir = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let config_dir = clean_wsl_output(&output.stdout);
             info.config_dir = Some(config_dir.clone());
 
             // 扫描配置文件
@@ -634,7 +642,7 @@ fn scan_wsl_config_files(distro: &str, config_dir: &str) -> Vec<ConfigFileInfo> 
                     .output()
                 {
                     if stat_output.status.success() {
-                        let stat = String::from_utf8_lossy(&stat_output.stdout).trim().to_string();
+                        let stat = clean_wsl_output(&stat_output.stdout);
                         let parts: Vec<&str> = stat.split_whitespace().collect();
                         if parts.len() >= 2 {
                             file_info.size = parts[0].parse().unwrap_or(0);
@@ -1221,6 +1229,9 @@ pub async fn create_profile_from_current(
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub async fn get_wsl_config_dir(distro: String) -> Result<WslConfigDirResult, String> {
+    // 清理 distro 名称中的特殊字符
+    let distro = distro.trim().replace('\r', "").replace('\0', "");
+
     // 获取 WSL 用户的 home 目录
     let output = Command::new("wsl")
         .args(["-d", &distro, "--", "bash", "-c", "echo $HOME/.claude"])
@@ -1231,7 +1242,7 @@ pub async fn get_wsl_config_dir(distro: String) -> Result<WslConfigDirResult, St
         return Err(format!("获取 WSL home 目录失败: {}", String::from_utf8_lossy(&output.stderr)));
     }
 
-    let linux_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let linux_path = clean_wsl_output(&output.stdout);
 
     // 转换为 UNC 路径
     let unc_path = format!("\\\\wsl.localhost\\{}{}",
