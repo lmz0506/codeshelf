@@ -836,7 +836,7 @@ pub async fn get_config_profiles() -> Result<Vec<ConfigProfile>, String> {
         .map_err(|e| format!("解析配置档案失败: {}", e))
 }
 
-/// 保存配置档案
+/// 保存配置档案（如果名称已存在则更新，否则新建）
 #[tauri::command]
 pub async fn save_config_profile(
     name: String,
@@ -846,6 +846,19 @@ pub async fn save_config_profile(
     let mut profiles = get_config_profiles().await?;
 
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    // 查找是否已存在同名档案
+    if let Some(existing) = profiles.iter_mut().find(|p| p.name == name) {
+        // 更新现有档案
+        existing.description = description;
+        existing.settings = settings;
+        existing.updated_at = now;
+        let profile = existing.clone();
+        save_profiles(&profiles)?;
+        return Ok(profile);
+    }
+
+    // 新建档案
     let profile = ConfigProfile {
         id: format!("{:x}", std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

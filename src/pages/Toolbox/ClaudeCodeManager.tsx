@@ -23,6 +23,7 @@ import {
   Info,
   Sliders,
   Check,
+  BookOpen,
 } from "lucide-react";
 import { ToolPanelHeader } from "./index";
 import { Button } from "@/components/ui";
@@ -47,10 +48,49 @@ const READONLY_FILES = [
   "stats-cache.json",
   "projects.json",
   "statsig.json",
-  ".clauderc",
   "credentials.json",
   "settings.local.json",
 ];
+
+// 可编辑文件列表
+const EDITABLE_FILES = [
+  "settings.json",
+  "CLAUDE.md",
+  ".clauderc",
+];
+
+// 配置文件参考文档
+const CONFIG_REFERENCES: Record<string, { title: string; sections: { name: string; description: string; example?: string }[] }> = {
+  "CLAUDE.md": {
+    title: "CLAUDE.md 配置参考",
+    sections: [
+      { name: "项目说明", description: "描述项目的基本信息、技术栈、架构等", example: "# 项目名称\n\n这是一个使用 React + TypeScript 的前端项目。" },
+      { name: "代码规范", description: "定义代码风格、命名规范、文件组织等", example: "## 代码规范\n\n- 使用 camelCase 命名变量\n- 组件使用 PascalCase" },
+      { name: "常用命令", description: "列出项目常用的开发、构建、测试命令", example: "## 常用命令\n\n- `npm run dev` - 启动开发服务器\n- `npm run build` - 构建生产版本" },
+      { name: "注意事项", description: "AI 在处理代码时需要注意的特殊规则", example: "## 注意事项\n\n- 不要修改 config/ 目录下的文件\n- 所有 API 请求都需要错误处理" },
+    ],
+  },
+  ".clauderc": {
+    title: ".clauderc 配置参考",
+    sections: [
+      { name: "allowedTools", description: "允许 Claude 使用的工具列表", example: '{\n  "allowedTools": ["Read", "Write", "Bash"]\n}' },
+      { name: "disallowedTools", description: "禁止 Claude 使用的工具列表", example: '{\n  "disallowedTools": ["WebSearch"]\n}' },
+      { name: "permissions", description: "权限配置，控制文件访问范围", example: '{\n  "permissions": {\n    "allow": ["src/**"],\n    "deny": ["secrets/**"]\n  }\n}' },
+    ],
+  },
+  "settings.json": {
+    title: "settings.json 配置参考",
+    sections: [
+      { name: "model", description: "覆盖 Claude Code 使用的默认模型", example: '"model": "claude-sonnet-4-5-20250929"' },
+      { name: "theme", description: "界面颜色主题", example: '"theme": "dark"  // system | light | dark' },
+      { name: "language", description: "配置 Claude 的首选响应语言", example: '"language": "chinese"' },
+      { name: "permissions", description: "权限规则配置", example: '{\n  "permissions": {\n    "allow": ["Bash(npm run *)", "Read(~/.zshrc)"],\n    "deny": ["Read(./.env)", "Read(./secrets/**)"],\n    "defaultMode": "acceptEdits"\n  }\n}' },
+      { name: "env", description: "为每个会话设置环境变量（包括代理）", example: '{\n  "env": {\n    "HTTP_PROXY": "http://127.0.0.1:7890",\n    "HTTPS_PROXY": "http://127.0.0.1:7890",\n    "NO_PROXY": "localhost,127.0.0.1"\n  }\n}' },
+      { name: "hooks", description: "配置自定义命令在生命周期事件处运行", example: '{\n  "hooks": {\n    "PreToolUse": [{\n      "matcher": "Edit",\n      "hooks": [{ "type": "command", "command": "echo Editing..." }]\n    }]\n  }\n}' },
+      { name: "sandbox", description: "沙箱配置，隔离 bash 命令", example: '{\n  "sandbox": {\n    "enabled": true,\n    "network": {\n      "allowedDomains": ["github.com", "*.npmjs.org"]\n    }\n  }\n}' },
+    ],
+  },
+};
 
 // 快捷配置项定义
 interface QuickConfigOption {
@@ -59,98 +99,37 @@ interface QuickConfigOption {
   description: string;
   category: string;
   configKey: string;
-  valueType: "string" | "boolean" | "number" | "select";
+  valueType: "string" | "boolean" | "number" | "select" | "model";
   defaultValue: unknown;
   options?: { label: string; value: unknown }[];
   placeholder?: string;
+  allowEmpty?: boolean; // 是否允许不设置
 }
 
 // 默认快捷配置
 const DEFAULT_QUICK_CONFIGS: QuickConfigOption[] = [
+  // ============== 模型配置 ==============
   {
     id: "model",
     name: "默认模型",
-    description: "设置默认使用的 Claude 模型",
+    description: "覆盖 Claude Code 使用的默认模型",
     category: "模型",
     configKey: "model",
-    valueType: "select",
-    defaultValue: "claude-sonnet-4-20250514",
+    valueType: "model",
+    defaultValue: "",
+    allowEmpty: true,
     options: [
-      { label: "Claude Sonnet 4", value: "claude-sonnet-4-20250514" },
+      { label: "Claude Opus 4.5", value: "claude-opus-4-5-20251101" },
+      { label: "Claude Sonnet 4.5", value: "claude-sonnet-4-5-20250929" },
       { label: "Claude Opus 4", value: "claude-opus-4-20250514" },
+      { label: "Claude Sonnet 4", value: "claude-sonnet-4-20250514" },
       { label: "Claude 3.5 Sonnet", value: "claude-3-5-sonnet-20241022" },
       { label: "Claude 3.5 Haiku", value: "claude-3-5-haiku-20241022" },
+      { label: "Claude 3 Opus", value: "claude-3-opus-20240229" },
     ],
   },
-  {
-    id: "smallFastModel",
-    name: "快速模型",
-    description: "用于简单任务的快速模型",
-    category: "模型",
-    configKey: "smallFastModel",
-    valueType: "select",
-    defaultValue: "claude-3-5-haiku-20241022",
-    options: [
-      { label: "Claude 3.5 Haiku", value: "claude-3-5-haiku-20241022" },
-      { label: "Claude Sonnet 4", value: "claude-sonnet-4-20250514" },
-    ],
-  },
-  {
-    id: "autoApprove",
-    name: "自动批准所有",
-    description: "自动批准所有工具使用请求",
-    category: "权限",
-    configKey: "autoApproveAll",
-    valueType: "boolean",
-    defaultValue: false,
-  },
-  {
-    id: "autoApproveRead",
-    name: "自动批准读取",
-    description: "自动批准文件读取请求",
-    category: "权限",
-    configKey: "autoApproveRead",
-    valueType: "boolean",
-    defaultValue: true,
-  },
-  {
-    id: "autoApproveWrite",
-    name: "自动批准写入",
-    description: "自动批准文件写入请求",
-    category: "权限",
-    configKey: "autoApproveWrite",
-    valueType: "boolean",
-    defaultValue: false,
-  },
-  {
-    id: "autoApproveBash",
-    name: "自动批准命令",
-    description: "自动批准 Bash 命令执行",
-    category: "权限",
-    configKey: "autoApproveBash",
-    valueType: "boolean",
-    defaultValue: false,
-  },
-  {
-    id: "proxyUrl",
-    name: "代理地址",
-    description: "HTTP/HTTPS 代理服务器地址",
-    category: "代理",
-    configKey: "proxy",
-    valueType: "string",
-    defaultValue: "",
-    placeholder: "http://127.0.0.1:7890",
-  },
-  {
-    id: "apiBaseUrl",
-    name: "API 基础地址",
-    description: "自定义 Anthropic API 端点",
-    category: "代理",
-    configKey: "apiBaseUrl",
-    valueType: "string",
-    defaultValue: "",
-    placeholder: "https://api.anthropic.com",
-  },
+
+  // ============== 界面配置 ==============
   {
     id: "theme",
     name: "主题",
@@ -158,7 +137,8 @@ const DEFAULT_QUICK_CONFIGS: QuickConfigOption[] = [
     category: "界面",
     configKey: "theme",
     valueType: "select",
-    defaultValue: "system",
+    defaultValue: "",
+    allowEmpty: true,
     options: [
       { label: "跟随系统", value: "system" },
       { label: "浅色", value: "light" },
@@ -166,13 +146,314 @@ const DEFAULT_QUICK_CONFIGS: QuickConfigOption[] = [
     ],
   },
   {
-    id: "verbose",
-    name: "详细输出",
-    description: "显示更多调试信息",
+    id: "language",
+    name: "响应语言",
+    description: "配置 Claude 的首选响应语言",
     category: "界面",
-    configKey: "verbose",
+    configKey: "language",
+    valueType: "string",
+    defaultValue: "",
+    placeholder: "如: chinese, japanese, english",
+    allowEmpty: true,
+  },
+  {
+    id: "outputStyle",
+    name: "输出样式",
+    description: "配置输出样式以调整系统提示",
+    category: "界面",
+    configKey: "outputStyle",
+    valueType: "string",
+    defaultValue: "",
+    placeholder: "如: Explanatory, Concise",
+    allowEmpty: true,
+  },
+  {
+    id: "showTurnDuration",
+    name: "显示轮次时长",
+    description: "在响应后显示轮次持续时间消息",
+    category: "界面",
+    configKey: "showTurnDuration",
     valueType: "boolean",
-    defaultValue: false,
+    defaultValue: "",
+    allowEmpty: true,
+  },
+  {
+    id: "spinnerTipsEnabled",
+    name: "微调器提示",
+    description: "在 Claude 工作时在微调器中显示提示",
+    category: "界面",
+    configKey: "spinnerTipsEnabled",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+  {
+    id: "terminalProgressBarEnabled",
+    name: "终端进度条",
+    description: "启用终端进度条（Windows Terminal 和 iTerm2）",
+    category: "界面",
+    configKey: "terminalProgressBarEnabled",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+  {
+    id: "prefersReducedMotion",
+    name: "减少动画",
+    description: "减少或禁用 UI 动画以实现可访问性",
+    category: "界面",
+    configKey: "prefersReducedMotion",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+
+  // ============== 代理配置 ==============
+  {
+    id: "httpProxy",
+    name: "HTTP 代理",
+    description: "HTTP 代理服务器地址",
+    category: "代理",
+    configKey: "env.HTTP_PROXY",
+    valueType: "string",
+    defaultValue: "",
+    placeholder: "http://127.0.0.1:7890",
+    allowEmpty: true,
+  },
+  {
+    id: "httpsProxy",
+    name: "HTTPS 代理",
+    description: "HTTPS 代理服务器地址",
+    category: "代理",
+    configKey: "env.HTTPS_PROXY",
+    valueType: "string",
+    defaultValue: "",
+    placeholder: "http://127.0.0.1:7890",
+    allowEmpty: true,
+  },
+  {
+    id: "noProxy",
+    name: "不代理地址",
+    description: "绕过代理的域和 IP 列表",
+    category: "代理",
+    configKey: "env.NO_PROXY",
+    valueType: "string",
+    defaultValue: "",
+    placeholder: "localhost,127.0.0.1",
+    allowEmpty: true,
+  },
+
+  // ============== 权限配置 ==============
+  {
+    id: "permissionDefaultMode",
+    name: "默认权限模式",
+    description: "打开 Claude Code 时的默认权限模式",
+    category: "权限",
+    configKey: "permissions.defaultMode",
+    valueType: "select",
+    defaultValue: "",
+    allowEmpty: true,
+    options: [
+      { label: "接受编辑", value: "acceptEdits" },
+      { label: "计划模式", value: "plan" },
+      { label: "绕过权限", value: "bypassPermissions" },
+    ],
+  },
+  {
+    id: "disableBypassPermissionsMode",
+    name: "禁用绕过权限",
+    description: "设置为 disable 以防止激活 bypassPermissions 模式",
+    category: "权限",
+    configKey: "permissions.disableBypassPermissionsMode",
+    valueType: "select",
+    defaultValue: "",
+    allowEmpty: true,
+    options: [
+      { label: "禁用", value: "disable" },
+    ],
+  },
+
+  // ============== 沙箱配置 ==============
+  {
+    id: "sandboxEnabled",
+    name: "启用沙箱",
+    description: "启用 bash 沙箱（macOS、Linux 和 WSL2）",
+    category: "沙箱",
+    configKey: "sandbox.enabled",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+  {
+    id: "autoAllowBashIfSandboxed",
+    name: "沙箱自动批准",
+    description: "沙箱化时自动批准 bash 命令",
+    category: "沙箱",
+    configKey: "sandbox.autoAllowBashIfSandboxed",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+  {
+    id: "allowUnsandboxedCommands",
+    name: "允许非沙箱命令",
+    description: "允许命令通过 dangerouslyDisableSandbox 在沙箱外运行",
+    category: "沙箱",
+    configKey: "sandbox.allowUnsandboxedCommands",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+  {
+    id: "sandboxAllowLocalBinding",
+    name: "允许本地绑定",
+    description: "允许绑定到 localhost 端口（仅 macOS）",
+    category: "沙箱",
+    configKey: "sandbox.network.allowLocalBinding",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+  {
+    id: "sandboxAllowAllUnixSockets",
+    name: "允许所有 Unix 套接字",
+    description: "允许沙箱中的所有 Unix 套接字连接",
+    category: "沙箱",
+    configKey: "sandbox.network.allowAllUnixSockets",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+
+  // ============== 会话配置 ==============
+  {
+    id: "cleanupPeriodDays",
+    name: "会话清理周期",
+    description: "非活动时间超过此天数的会话在启动时被删除（默认30天，0为立即删除）",
+    category: "会话",
+    configKey: "cleanupPeriodDays",
+    valueType: "number",
+    defaultValue: "",
+    placeholder: "30",
+    allowEmpty: true,
+  },
+  {
+    id: "plansDirectory",
+    name: "计划文件目录",
+    description: "自定义计划文件的存储位置（相对于项目根目录）",
+    category: "会话",
+    configKey: "plansDirectory",
+    valueType: "string",
+    defaultValue: "",
+    placeholder: "./plans",
+    allowEmpty: true,
+  },
+  {
+    id: "alwaysThinkingEnabled",
+    name: "始终启用思考",
+    description: "为所有会话默认启用扩展思考",
+    category: "会话",
+    configKey: "alwaysThinkingEnabled",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+
+  // ============== 更新配置 ==============
+  {
+    id: "autoUpdatesChannel",
+    name: "自动更新渠道",
+    description: "遵循更新的发布渠道",
+    category: "更新",
+    configKey: "autoUpdatesChannel",
+    valueType: "select",
+    defaultValue: "",
+    allowEmpty: true,
+    options: [
+      { label: "最新版 (latest)", value: "latest" },
+      { label: "稳定版 (stable)", value: "stable" },
+    ],
+  },
+
+  // ============== MCP 配置 ==============
+  {
+    id: "enableAllProjectMcpServers",
+    name: "启用所有项目 MCP",
+    description: "自动批准项目 .mcp.json 文件中定义的所有 MCP servers",
+    category: "MCP",
+    configKey: "enableAllProjectMcpServers",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+
+  // ============== 登录配置 ==============
+  {
+    id: "forceLoginMethod",
+    name: "强制登录方式",
+    description: "限制登录方式",
+    category: "登录",
+    configKey: "forceLoginMethod",
+    valueType: "select",
+    defaultValue: "",
+    allowEmpty: true,
+    options: [
+      { label: "Claude.ai 账户", value: "claudeai" },
+      { label: "Claude Console (API)", value: "console" },
+    ],
+  },
+
+  // ============== Agent Teams ==============
+  {
+    id: "teammateMode",
+    name: "队友模式",
+    description: "Agent team 队友的显示方式",
+    category: "Agent Teams",
+    configKey: "teammateMode",
+    valueType: "select",
+    defaultValue: "",
+    allowEmpty: true,
+    options: [
+      { label: "自动 (auto)", value: "auto" },
+      { label: "进程内 (in-process)", value: "in-process" },
+      { label: "tmux", value: "tmux" },
+    ],
+  },
+
+  // ============== Hooks 配置 ==============
+  {
+    id: "disableAllHooks",
+    name: "禁用所有 Hooks",
+    description: "禁用所有 hooks",
+    category: "Hooks",
+    configKey: "disableAllHooks",
+    valueType: "boolean",
+    defaultValue: "",
+    allowEmpty: true,
+  },
+
+  // ============== 归属配置 ==============
+  {
+    id: "attributionCommit",
+    name: "提交归属",
+    description: "git 提交的归属信息（空字符串隐藏归属）",
+    category: "归属",
+    configKey: "attribution.commit",
+    valueType: "string",
+    defaultValue: "",
+    placeholder: "🤖 Generated with Claude Code",
+    allowEmpty: true,
+  },
+  {
+    id: "attributionPr",
+    name: "PR 归属",
+    description: "拉取请求描述的归属信息（空字符串隐藏归属）",
+    category: "归属",
+    configKey: "attribution.pr",
+    valueType: "string",
+    defaultValue: "",
+    placeholder: "🤖 Generated with Claude Code",
+    allowEmpty: true,
   },
 ];
 
@@ -202,7 +483,11 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
   const [selectedFile, setSelectedFile] = useState<ConfigFileInfo | null>(null);
   const [fileContent, setFileContent] = useState("");
+  const [editingFileContent, setEditingFileContent] = useState("");
+  const [isEditingFile, setIsEditingFile] = useState(false);
+  const [savingFile, setSavingFile] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
+  const [showConfigReference, setShowConfigReference] = useState(false);
 
   const [currentSettings, setCurrentSettings] = useState("");
   const [showCurrentSettings, setShowCurrentSettings] = useState(false);
@@ -296,12 +581,14 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
     if (file.name === "settings.json") {
       setSelectedFile(file);
+      setIsEditingFile(false);
       return;
     }
 
     if (!file.exists) {
       setSelectedFile(file);
       setFileContent("文件不存在");
+      setIsEditingFile(false);
       return;
     }
 
@@ -310,11 +597,34 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
       const content = await readClaudeConfigFile(selectedEnv.envType, selectedEnv.envName, file.path);
       setSelectedFile(file);
       setFileContent(content);
+      setEditingFileContent(content);
+      setIsEditingFile(false);
     } catch (err) {
       console.error("读取文件失败:", err);
       setFileContent(`读取失败: ${err}`);
     } finally {
       setLoadingFile(false);
+    }
+  }
+
+  async function handleSaveFile() {
+    if (!selectedEnv || !selectedFile) return;
+
+    setSavingFile(true);
+    try {
+      await writeClaudeConfigFile(
+        selectedEnv.envType,
+        selectedEnv.envName,
+        selectedFile.path,
+        editingFileContent
+      );
+      setFileContent(editingFileContent);
+      setIsEditingFile(false);
+    } catch (err) {
+      console.error("保存文件失败:", err);
+      alert(`保存文件失败: ${err}`);
+    } finally {
+      setSavingFile(false);
     }
   }
 
@@ -371,16 +681,33 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     }
   }
 
+  // 获取嵌套键的值
+  function getNestedValue(obj: Record<string, unknown>, keys: string[]): unknown {
+    let current: unknown = obj;
+    for (const key of keys) {
+      if (current && typeof current === "object" && key in (current as object)) {
+        current = (current as Record<string, unknown>)[key];
+      } else {
+        return undefined;
+      }
+    }
+    return current;
+  }
+
   function openEditProfile(profile: ConfigProfile) {
     setEditingProfile(profile);
     const settings = { ...(profile.settings as Record<string, unknown>) };
     delete settings.__active;
     setEditingContent(JSON.stringify(settings, null, 2));
 
+    // 解析配置值到编辑表单，包括嵌套键
     const values: Record<string, unknown> = {};
     quickConfigs.forEach(opt => {
-      if (settings[opt.configKey] !== undefined) {
-        values[opt.id] = settings[opt.configKey];
+      const keys = opt.configKey.split(".");
+      const value = getNestedValue(settings, keys);
+
+      if (value !== undefined) {
+        values[opt.id] = value;
       } else {
         values[opt.id] = opt.defaultValue;
       }
@@ -436,15 +763,50 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         config = JSON.parse(editingContent);
       }
 
-      if (value === "" || value === opt.defaultValue) {
-        delete config[opt.configKey];
+      // 处理嵌套键，如 "env.HTTP_PROXY" 或 "sandbox.network.allowLocalBinding"
+      const keys = opt.configKey.split(".");
+
+      if (value === "" || value === undefined || value === null) {
+        // 删除值
+        deleteNestedKey(config, keys);
       } else {
-        config[opt.configKey] = value;
+        // 设置值
+        setNestedKey(config, keys, value);
       }
 
       setEditingContent(JSON.stringify(config, null, 2));
     } catch {
       // JSON 解析失败
+    }
+  }
+
+  // 设置嵌套键的值
+  function setNestedKey(obj: Record<string, unknown>, keys: string[], value: unknown) {
+    let current = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+      const key = keys[i];
+      if (!current[key] || typeof current[key] !== "object") {
+        current[key] = {};
+      }
+      current = current[key] as Record<string, unknown>;
+    }
+    current[keys[keys.length - 1]] = value;
+  }
+
+  // 删除嵌套键，并清理空的父对象
+  function deleteNestedKey(obj: Record<string, unknown>, keys: string[]) {
+    if (keys.length === 1) {
+      delete obj[keys[0]];
+      return;
+    }
+
+    const key = keys[0];
+    if (obj[key] && typeof obj[key] === "object") {
+      deleteNestedKey(obj[key] as Record<string, unknown>, keys.slice(1));
+      // 如果父对象为空，也删除它
+      if (Object.keys(obj[key] as object).length === 0) {
+        delete obj[key];
+      }
     }
   }
 
@@ -553,7 +915,9 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   }, {} as Record<string, QuickConfigOption[]>);
 
   const isReadonlyFile = (fileName: string) => READONLY_FILES.includes(fileName);
+  const isEditableFile = (fileName: string) => EDITABLE_FILES.includes(fileName);
   const isSettingsJson = selectedFile?.name === "settings.json";
+  const hasConfigReference = selectedFile?.name ? CONFIG_REFERENCES[selectedFile.name] : false;
 
   function renderConfigEditor(opt: QuickConfigOption) {
     const value = editingValues[opt.id];
@@ -561,31 +925,91 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     switch (opt.valueType) {
       case "boolean":
         return (
-          <button
-            onClick={() => applyQuickConfig(opt.id, !value)}
-            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              value
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-            }`}
-          >
-            {value ? "开启" : "关闭"}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => applyQuickConfig(opt.id, "")}
+              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                value === "" || value === undefined
+                  ? "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                  : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
+              }`}
+            >
+              未设置
+            </button>
+            <button
+              onClick={() => applyQuickConfig(opt.id, true)}
+              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                value === true
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
+              }`}
+            >
+              开启
+            </button>
+            <button
+              onClick={() => applyQuickConfig(opt.id, false)}
+              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                value === false
+                  ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                  : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
+              }`}
+            >
+              关闭
+            </button>
+          </div>
         );
 
       case "select":
         return (
           <select
-            value={String(value)}
+            value={String(value ?? "")}
             onChange={(e) => applyQuickConfig(opt.id, e.target.value)}
             className="px-2 py-1 text-xs border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
+            {opt.allowEmpty && <option value="">未设置</option>}
             {opt.options?.map(option => (
               <option key={String(option.value)} value={String(option.value)}>
                 {option.label}
               </option>
             ))}
           </select>
+        );
+
+      case "model":
+        // 模型选择：支持预设选择和自定义输入
+        const isCustom = value && !opt.options?.some(o => o.value === value);
+        return (
+          <div className="flex flex-col gap-1 w-full">
+            <select
+              value={isCustom ? "__custom__" : String(value ?? "")}
+              onChange={(e) => {
+                if (e.target.value === "__custom__") {
+                  // 保持当前值或设置为空以便输入
+                  if (!isCustom) applyQuickConfig(opt.id, "");
+                } else {
+                  applyQuickConfig(opt.id, e.target.value);
+                }
+              }}
+              className="px-2 py-1 text-xs border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">未设置</option>
+              {opt.options?.map(option => (
+                <option key={String(option.value)} value={String(option.value)}>
+                  {option.label}
+                </option>
+              ))}
+              <option value="__custom__">自定义...</option>
+            </select>
+            {(isCustom || (editingValues[opt.id] === "" && document.activeElement?.closest(`[data-config-id="${opt.id}"]`))) && (
+              <input
+                type="text"
+                value={String(value || "")}
+                onChange={(e) => applyQuickConfig(opt.id, e.target.value)}
+                placeholder="输入模型名称，如: claude-opus-4-5-20251101"
+                className="px-2 py-1 text-xs border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            )}
+          </div>
         );
 
       case "string":
@@ -659,7 +1083,8 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
           <div className="flex flex-col h-full gap-4 overflow-hidden">
             {/* 环境信息卡片 */}
             {selectedEnv && (
-              <div className="re-card p-3 flex-shrink-0">
+              <div className="re-card p-3 flex-shrink-0 space-y-3">
+                {/* 环境选择器 */}
                 <div className="flex items-center gap-4 flex-wrap">
                   <span className="text-sm font-medium text-gray-500">环境:</span>
                   {installations.map((env) => (
@@ -683,52 +1108,65 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                       )}
                     </button>
                   ))}
+                </div>
 
-                  {/* 环境详情 */}
-                  <div className="flex-1" />
-                  {selectedEnv.version && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-400">版本:</span>
-                      <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs">{selectedEnv.version}</code>
-                      <button
-                        onClick={() => copyToClipboard(selectedEnv.version!, "version")}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
-                        title="复制版本"
-                      >
-                        {copiedText === "version" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
-                      </button>
-                    </div>
-                  )}
-                  {selectedEnv.path && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-400">路径:</span>
-                      <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs max-w-[200px] truncate" title={selectedEnv.path}>
-                        {selectedEnv.path}
-                      </code>
-                      <button
-                        onClick={() => copyToClipboard(selectedEnv.path!, "path")}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
-                        title="复制路径"
-                      >
-                        {copiedText === "path" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
-                      </button>
-                    </div>
-                  )}
-                  {selectedEnv.configDir && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-400">配置:</span>
-                      <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs max-w-[200px] truncate" title={selectedEnv.configDir}>
-                        {selectedEnv.configDir}
-                      </code>
-                      <button
-                        onClick={() => copyToClipboard(selectedEnv.configDir!, "configDir")}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
-                        title="复制配置目录"
-                      >
-                        {copiedText === "configDir" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
-                      </button>
-                    </div>
-                  )}
+                {/* 环境详情 */}
+                <div className="grid grid-cols-3 gap-4 text-sm border-t border-gray-100 dark:border-gray-800 pt-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-400 flex-shrink-0">版本:</span>
+                    {selectedEnv.version ? (
+                      <>
+                        <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs">{selectedEnv.version}</code>
+                        <button
+                          onClick={() => copyToClipboard(selectedEnv.version!, "version")}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0"
+                          title="复制版本"
+                        >
+                          {copiedText === "version" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-gray-300">-</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-400 flex-shrink-0">路径:</span>
+                    {selectedEnv.path ? (
+                      <>
+                        <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs truncate flex-1" title={selectedEnv.path}>
+                          {selectedEnv.path}
+                        </code>
+                        <button
+                          onClick={() => copyToClipboard(selectedEnv.path!, "path")}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0"
+                          title="复制路径"
+                        >
+                          {copiedText === "path" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-gray-300">-</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-400 flex-shrink-0">配置目录:</span>
+                    {selectedEnv.configDir ? (
+                      <>
+                        <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs truncate flex-1" title={selectedEnv.configDir}>
+                          {selectedEnv.configDir}
+                        </code>
+                        <button
+                          onClick={() => copyToClipboard(selectedEnv.configDir!, "configDir")}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0"
+                          title="复制配置目录"
+                        >
+                          {copiedText === "configDir" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-gray-300">-</span>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -753,6 +1191,8 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                           <div className="flex items-center gap-2">
                             {isReadonlyFile(file.name) ? (
                               <Lock size={12} className="text-gray-400 flex-shrink-0" />
+                            ) : isEditableFile(file.name) ? (
+                              <Edit3 size={12} className="text-blue-500 flex-shrink-0" />
                             ) : (
                               <FileText size={12} className={`flex-shrink-0 ${file.exists ? "text-blue-500" : "text-gray-400"}`} />
                             )}
@@ -907,10 +1347,63 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                 ) : selectedFile ? (
                   <div className="flex-1 re-card p-3 flex flex-col overflow-hidden">
                     <div className="flex items-center gap-2 mb-2 flex-shrink-0">
-                      <Lock size={14} className="text-gray-400" />
+                      {isReadonlyFile(selectedFile.name) ? (
+                        <Lock size={14} className="text-gray-400" />
+                      ) : (
+                        <FileText size={14} className="text-blue-500" />
+                      )}
                       <h3 className="font-semibold text-gray-900 dark:text-white text-sm">{selectedFile.name}</h3>
-                      <span className="text-xs text-gray-400">只读</span>
+                      {isReadonlyFile(selectedFile.name) ? (
+                        <span className="text-xs text-gray-400">只读</span>
+                      ) : (
+                        <span className="text-xs text-blue-500">可编辑</span>
+                      )}
                       <div className="flex-1" />
+
+                      {/* 配置参考按钮 */}
+                      {hasConfigReference && (
+                        <button
+                          onClick={() => setShowConfigReference(true)}
+                          className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
+                        >
+                          <BookOpen size={12} />
+                          <span>配置参考</span>
+                        </button>
+                      )}
+
+                      {/* 编辑/保存按钮 */}
+                      {isEditableFile(selectedFile.name) && !isReadonlyFile(selectedFile.name) && (
+                        isEditingFile ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                setEditingFileContent(fileContent);
+                                setIsEditingFile(false);
+                              }}
+                              className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                            >
+                              取消
+                            </button>
+                            <button
+                              onClick={handleSaveFile}
+                              disabled={savingFile}
+                              className="flex items-center gap-1 px-2 py-1 text-xs text-white bg-blue-500 hover:bg-blue-600 rounded disabled:opacity-50"
+                            >
+                              {savingFile ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                              <span>保存</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setIsEditingFile(true)}
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                          >
+                            <Edit3 size={12} />
+                            <span>编辑</span>
+                          </button>
+                        )
+                      )}
+
                       <div className="group relative">
                         <Info size={14} className="text-gray-400 cursor-help" />
                         <div className="absolute right-0 top-full mt-1 z-50 hidden group-hover:block">
@@ -924,6 +1417,13 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                       <div className="flex-1 flex items-center justify-center text-gray-400">
                         <Loader2 size={24} className="animate-spin" />
                       </div>
+                    ) : isEditingFile ? (
+                      <textarea
+                        value={editingFileContent}
+                        onChange={(e) => setEditingFileContent(e.target.value)}
+                        className="flex-1 p-3 font-mono text-xs bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        placeholder="输入配置内容..."
+                      />
                     ) : (
                       <pre className="flex-1 p-3 font-mono text-xs bg-gray-50 dark:bg-gray-800 rounded-lg overflow-auto text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
                         {fileContent}
@@ -1213,6 +1713,64 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
           </div>
         </div>
       )}
+
+      {/* 配置参考弹框 */}
+      {showConfigReference && selectedFile?.name && CONFIG_REFERENCES[selectedFile.name] && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <BookOpen size={20} />
+                {CONFIG_REFERENCES[selectedFile.name].title}
+              </h3>
+              <button
+                onClick={() => setShowConfigReference(false)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {CONFIG_REFERENCES[selectedFile.name].sections.map((section, index) => (
+                <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                  <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800">
+                    <h4 className="font-medium text-gray-900 dark:text-white">{section.name}</h4>
+                    <p className="text-sm text-gray-500 mt-0.5">{section.description}</p>
+                  </div>
+                  {section.example && (
+                    <div className="p-3 border-t border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-400">示例:</span>
+                        <button
+                          onClick={() => copyToClipboard(section.example!, `example-${index}`)}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                          title="复制示例"
+                        >
+                          {copiedText === `example-${index}` ? (
+                            <Check size={12} className="text-green-500" />
+                          ) : (
+                            <Copy size={12} className="text-gray-400" />
+                          )}
+                        </button>
+                      </div>
+                      <pre className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                        {section.example}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end p-4 border-t border-gray-200 dark:border-gray-700">
+              <Button onClick={() => setShowConfigReference(false)} variant="secondary">
+                关闭
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1236,7 +1794,7 @@ function QuickConfigEditor({
 
   function handleSave() {
     const finalConfig = { ...form };
-    if (form.valueType === "select" && optionsText.trim()) {
+    if ((form.valueType === "select" || form.valueType === "model") && optionsText.trim()) {
       finalConfig.options = optionsText.split("\n").filter(Boolean).map(line => {
         const [label, value] = line.split(":");
         return { label: label?.trim() || "", value: value?.trim() || label?.trim() || "" };
@@ -1304,6 +1862,7 @@ function QuickConfigEditor({
             <option value="boolean">布尔值</option>
             <option value="number">数字</option>
             <option value="select">选择</option>
+            <option value="model">模型（可自定义）</option>
           </select>
         </div>
       </div>
@@ -1312,24 +1871,26 @@ function QuickConfigEditor({
         <label className="block text-sm font-medium text-gray-500 mb-1">默认值</label>
         {form.valueType === "boolean" ? (
           <select
-            value={String(form.defaultValue)}
-            onChange={(e) => setForm(f => ({ ...f, defaultValue: e.target.value === "true" }))}
+            value={form.defaultValue === "" ? "" : String(form.defaultValue)}
+            onChange={(e) => setForm(f => ({ ...f, defaultValue: e.target.value === "" ? "" : e.target.value === "true" }))}
             className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="false">关闭 (false)</option>
+            <option value="">未设置</option>
             <option value="true">开启 (true)</option>
+            <option value="false">关闭 (false)</option>
           </select>
         ) : (
           <input
             type={form.valueType === "number" ? "number" : "text"}
-            value={String(form.defaultValue)}
+            value={String(form.defaultValue ?? "")}
             onChange={(e) => setForm(f => ({ ...f, defaultValue: form.valueType === "number" ? Number(e.target.value) : e.target.value }))}
+            placeholder={form.valueType === "model" ? "如: claude-opus-4-5-20251101 或留空" : ""}
             className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         )}
       </div>
 
-      {form.valueType === "select" && (
+      {(form.valueType === "select" || form.valueType === "model") && (
         <div>
           <label className="block text-sm font-medium text-gray-500 mb-1">选项（每行一个，格式: 显示名:值）</label>
           <textarea
