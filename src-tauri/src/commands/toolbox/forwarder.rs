@@ -12,92 +12,121 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{timeout, Duration};
 
-/// 转发规则存储
+/// 转发规则存储 - 延迟初始化
 static FORWARD_RULES: Lazy<Arc<Mutex<HashMap<String, ForwardRule>>>> =
-    Lazy::new(|| {
-        // 启动时从文件加载
-        let rules = load_rules_from_file().unwrap_or_default();
-        Arc::new(Mutex::new(rules))
-    });
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+/// 是否已从文件加载
+static RULES_LOADED: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 
 /// 转发控制器（用于停止转发）
 static FORWARD_CONTROLLERS: Lazy<Arc<Mutex<HashMap<String, Arc<ForwardController>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
+/// 确保转发规则已从文件加载
+async fn ensure_rules_loaded() {
+    let mut loaded = RULES_LOADED.lock().await;
+    if !*loaded {
+        if let Ok(rules) = load_rules_from_file() {
+            let mut rules_map = FORWARD_RULES.lock().await;
+            *rules_map = rules;
+        }
+        *loaded = true;
+    }
+}
+
 /// 从文件加载转发规则
 fn load_rules_from_file() -> Result<HashMap<String, ForwardRule>, String> {
-    if let Ok(config) = storage::get_storage_config() {
-        let path = config.forward_rules_file();
-        if path.exists() {
-            let content = fs::read_to_string(&path)
-                .map_err(|e| format!("读取转发规则失败: {}", e))?;
+    let config = storage::get_storage_config()?;
+    let path = config.forward_rules_file();
 
-            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(rules_arr) = versioned.get("data").and_then(|d| d.get("rules")).and_then(|r| r.as_array()) {
-                    // 解析规则时需要转换格式
-                    let mut rules = HashMap::new();
-                    for rule_val in rules_arr {
-                        if let Ok(rule) = serde_json::from_value::<serde_json::Value>(rule_val.clone()) {
-                            let id = rule.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                            let name = rule.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                            let local_port = rule.get("local_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
-                            let remote_host = rule.get("remote_host").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                            let remote_port = rule.get("remote_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
-                            let created_at = rule.get("created_at").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    log::info!("加载转发规则: {:?}", path);
 
-                            if !id.is_empty() {
-                                rules.insert(id.clone(), ForwardRule {
-                                    id,
-                                    name,
-                                    local_port,
-                                    remote_host,
-                                    remote_port,
-                                    status: "stopped".to_string(), // 重启后默认停止
-                                    connections: 0,
-                                    bytes_in: 0,
-                                    bytes_out: 0,
-                                    created_at,
-                                });
-                            }
-                        }
-                    }
-                    return Ok(rules);
-                }
+    if !path.exists() {
+        log::info!("转发规则文件不存在，返回空列表");
+        return Ok(HashMap::new());
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("读取转发规则失败: {}", e))?;
+
+    let versioned: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("解析转发规则失败: {}", e))?;
+
+    let rules_arr = versioned
+        .get("data")
+        .and_then(|d| d.get("rules"))
+        .and_then(|r| r.as_array())
+        .ok_or_else(|| "转发规则格式错误".to_string())?;
+
+    let mut rules = HashMap::new();
+    for rule_val in rules_arr {
+        if let Ok(rule) = serde_json::from_value::<serde_json::Value>(rule_val.clone()) {
+            let id = rule.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let name = rule.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let local_port = rule.get("local_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+            let remote_host = rule.get("remote_host").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let remote_port = rule.get("remote_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+            let created_at = rule.get("created_at").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+
+            if !id.is_empty() {
+                log::info!("加载转发规则: {} ({}:{} -> {}:{})", name, "localhost", local_port, remote_host, remote_port);
+                rules.insert(id.clone(), ForwardRule {
+                    id,
+                    name,
+                    local_port,
+                    remote_host,
+                    remote_port,
+                    status: "stopped".to_string(),
+                    connections: 0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                    created_at,
+                });
             }
         }
     }
-    Ok(HashMap::new())
+
+    log::info!("共加载 {} 个转发规则", rules.len());
+    Ok(rules)
 }
 
 /// 保存转发规则到文件
-async fn save_rules_to_file() {
-    if let Ok(config) = storage::get_storage_config() {
-        let rules = FORWARD_RULES.lock().await;
+async fn save_rules_to_file() -> Result<(), String> {
+    let config = storage::get_storage_config()?;
+    let rules = FORWARD_RULES.lock().await;
 
-        // 只保存持久化需要的字段
-        let rules_data: Vec<serde_json::Value> = rules.values().map(|r| {
-            serde_json::json!({
-                "id": r.id,
-                "name": r.name,
-                "local_port": r.local_port,
-                "remote_host": r.remote_host,
-                "remote_port": r.remote_port,
-                "created_at": r.created_at
-            })
-        }).collect();
+    // 只保存持久化需要的字段
+    let rules_data: Vec<serde_json::Value> = rules.values().map(|r| {
+        serde_json::json!({
+            "id": r.id,
+            "name": r.name,
+            "local_port": r.local_port,
+            "remote_host": r.remote_host,
+            "remote_port": r.remote_port,
+            "created_at": r.created_at
+        })
+    }).collect();
 
-        let data = serde_json::json!({
-            "version": 1,
-            "last_updated": chrono::Utc::now().to_rfc3339(),
-            "data": {
-                "rules": rules_data
-            }
-        });
-
-        if let Ok(content) = serde_json::to_string_pretty(&data) {
-            let _ = fs::write(config.forward_rules_file(), content);
+    let data = serde_json::json!({
+        "version": 1,
+        "last_updated": chrono::Utc::now().to_rfc3339(),
+        "data": {
+            "rules": rules_data
         }
-    }
+    });
+
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("序列化转发规则失败: {}", e))?;
+
+    let path = config.forward_rules_file();
+    log::info!("保存转发规则到: {:?}", path);
+
+    fs::write(&path, content)
+        .map_err(|e| format!("写入转发规则失败: {}", e))?;
+
+    log::info!("转发规则保存成功，共 {} 个规则", rules.len());
+    Ok(())
 }
 
 /// 转发控制器
@@ -158,6 +187,8 @@ impl ForwardController {
 /// 添加转发规则
 #[tauri::command]
 pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, String> {
+    ensure_rules_loaded().await;
+
     // 验证端口
     if input.local_port == 0 {
         return Err("本地端口不能为 0".to_string());
@@ -200,7 +231,9 @@ pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, St
     }
 
     // 持久化到文件
-    save_rules_to_file().await;
+    if let Err(e) = save_rules_to_file().await {
+        log::error!("保存转发规则失败: {}", e);
+    }
 
     Ok(rule)
 }
@@ -208,6 +241,8 @@ pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, St
 /// 移除转发规则
 #[tauri::command]
 pub async fn remove_forward_rule(rule_id: String) -> Result<(), String> {
+    ensure_rules_loaded().await;
+
     // 先停止转发
     let _ = stop_forwarding(rule_id.clone()).await;
 
@@ -218,7 +253,9 @@ pub async fn remove_forward_rule(rule_id: String) -> Result<(), String> {
     }
 
     // 持久化到文件
-    save_rules_to_file().await;
+    if let Err(e) = save_rules_to_file().await {
+        log::error!("保存转发规则失败: {}", e);
+    }
 
     Ok(())
 }
@@ -226,6 +263,8 @@ pub async fn remove_forward_rule(rule_id: String) -> Result<(), String> {
 /// 启动转发
 #[tauri::command]
 pub async fn start_forwarding(rule_id: String) -> Result<(), String> {
+    ensure_rules_loaded().await;
+
     // 获取规则
     let rule = {
         let rules = FORWARD_RULES.lock().await;
@@ -434,22 +473,28 @@ async fn update_rule_stats(rule_id: &str) {
 /// 停止转发
 #[tauri::command]
 pub async fn stop_forwarding(rule_id: String) -> Result<(), String> {
+    log::info!("停止转发: {}", rule_id);
+
     // 发送停止信号
     {
         let controllers = FORWARD_CONTROLLERS.lock().await;
         if let Some(controller) = controllers.get(&rule_id) {
             controller.stop();
+            log::info!("已发送停止信号");
+        } else {
+            log::warn!("未找到转发控制器: {}", rule_id);
         }
     }
 
     // 等待一小段时间让服务停止
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     // 更新状态
     {
         let mut rules = FORWARD_RULES.lock().await;
         if let Some(rule) = rules.get_mut(&rule_id) {
             rule.status = "stopped".to_string();
+            log::info!("转发状态已更新为停止");
         }
     }
 
@@ -465,6 +510,8 @@ pub async fn stop_forwarding(rule_id: String) -> Result<(), String> {
 /// 获取所有转发规则
 #[tauri::command]
 pub async fn get_forward_rules() -> Result<Vec<ForwardRule>, String> {
+    ensure_rules_loaded().await;
+
     // 先更新所有运行中规则的统计信息
     let rule_ids: Vec<String> = {
         let rules = FORWARD_RULES.lock().await;
@@ -486,6 +533,8 @@ pub async fn get_forward_rules() -> Result<Vec<ForwardRule>, String> {
 /// 获取单个转发规则
 #[tauri::command]
 pub async fn get_forward_rule(rule_id: String) -> Result<Option<ForwardRule>, String> {
+    ensure_rules_loaded().await;
+
     update_rule_stats(&rule_id).await;
 
     let rules = FORWARD_RULES.lock().await;
@@ -512,6 +561,8 @@ pub async fn get_forward_stats(rule_id: String) -> Result<ForwardStats, String> 
 /// 更新转发规则
 #[tauri::command]
 pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> Result<ForwardRule, String> {
+    ensure_rules_loaded().await;
+
     // 获取当前规则
     let current_rule = {
         let rules = FORWARD_RULES.lock().await;
@@ -537,7 +588,9 @@ pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> Re
     }
 
     // 持久化到文件
-    save_rules_to_file().await;
+    if let Err(e) = save_rules_to_file().await {
+        log::error!("保存转发规则失败: {}", e);
+    }
 
     let rules = FORWARD_RULES.lock().await;
     rules

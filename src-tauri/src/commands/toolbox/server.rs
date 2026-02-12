@@ -25,78 +25,107 @@ use tower_http::{
     services::ServeDir,
 };
 
-/// 服务配置存储
+/// 服务配置存储 - 延迟初始化，首次访问时从文件加载
 static SERVERS: Lazy<Arc<Mutex<HashMap<String, ServerConfig>>>> =
-    Lazy::new(|| {
-        // 启动时从文件加载
-        let servers = load_servers_from_file().unwrap_or_default();
-        Arc::new(Mutex::new(servers))
-    });
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+/// 是否已从文件加载
+static SERVERS_LOADED: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 
 /// 服务控制器
 static SERVER_CONTROLLERS: Lazy<Arc<Mutex<HashMap<String, Arc<ServerController>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
+/// 确保服务配置已从文件加载
+async fn ensure_servers_loaded() {
+    let mut loaded = SERVERS_LOADED.lock().await;
+    if !*loaded {
+        if let Ok(servers) = load_servers_from_file() {
+            let mut servers_map = SERVERS.lock().await;
+            *servers_map = servers;
+        }
+        *loaded = true;
+    }
+}
+
 /// 从文件加载服务配置
 fn load_servers_from_file() -> Result<HashMap<String, ServerConfig>, String> {
-    if let Ok(config) = storage::get_storage_config() {
-        let path = config.server_configs_file();
-        if path.exists() {
-            let content = fs::read_to_string(&path)
-                .map_err(|e| format!("读取服务配置失败: {}", e))?;
+    let config = storage::get_storage_config()?;
+    let path = config.server_configs_file();
 
-            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(servers_arr) = versioned.get("data").and_then(|d| d.get("servers")).and_then(|s| s.as_array()) {
-                    let mut servers = HashMap::new();
-                    for server_val in servers_arr {
-                        if let Ok(server) = serde_json::from_value::<ServerConfig>(server_val.clone()) {
-                            // 重启后默认停止
-                            let mut server = server;
-                            server.status = "stopped".to_string();
-                            servers.insert(server.id.clone(), server);
-                        }
-                    }
-                    return Ok(servers);
-                }
-            }
+    log::info!("加载服务配置: {:?}", path);
+
+    if !path.exists() {
+        log::info!("服务配置文件不存在，返回空列表");
+        return Ok(HashMap::new());
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("读取服务配置失败: {}", e))?;
+
+    let versioned: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("解析服务配置失败: {}", e))?;
+
+    let servers_arr = versioned
+        .get("data")
+        .and_then(|d| d.get("servers"))
+        .and_then(|s| s.as_array())
+        .ok_or_else(|| "服务配置格式错误".to_string())?;
+
+    let mut servers = HashMap::new();
+    for server_val in servers_arr {
+        if let Ok(mut server) = serde_json::from_value::<ServerConfig>(server_val.clone()) {
+            // 重启后默认停止
+            server.status = "stopped".to_string();
+            log::info!("加载服务: {} (端口 {})", server.name, server.port);
+            servers.insert(server.id.clone(), server);
         }
     }
-    Ok(HashMap::new())
+
+    log::info!("共加载 {} 个服务配置", servers.len());
+    Ok(servers)
 }
 
 /// 保存服务配置到文件
-async fn save_servers_to_file() {
-    if let Ok(config) = storage::get_storage_config() {
-        let servers = SERVERS.lock().await;
+async fn save_servers_to_file() -> Result<(), String> {
+    let config = storage::get_storage_config()?;
+    let servers = SERVERS.lock().await;
 
-        // 只保存持久化需要的字段
-        let servers_data: Vec<serde_json::Value> = servers.values().map(|s| {
-            serde_json::json!({
-                "id": s.id,
-                "name": s.name,
-                "port": s.port,
-                "root_dir": s.root_dir,
-                "cors": s.cors,
-                "gzip": s.gzip,
-                "cache_control": s.cache_control,
-                "url_prefix": s.url_prefix,
-                "proxies": s.proxies,
-                "created_at": s.created_at
-            })
-        }).collect();
+    // 只保存持久化需要的字段
+    let servers_data: Vec<serde_json::Value> = servers.values().map(|s| {
+        serde_json::json!({
+            "id": s.id,
+            "name": s.name,
+            "port": s.port,
+            "root_dir": s.root_dir,
+            "cors": s.cors,
+            "gzip": s.gzip,
+            "cache_control": s.cache_control,
+            "url_prefix": s.url_prefix,
+            "proxies": s.proxies,
+            "created_at": s.created_at
+        })
+    }).collect();
 
-        let data = serde_json::json!({
-            "version": 1,
-            "last_updated": chrono::Utc::now().to_rfc3339(),
-            "data": {
-                "servers": servers_data
-            }
-        });
-
-        if let Ok(content) = serde_json::to_string_pretty(&data) {
-            let _ = fs::write(config.server_configs_file(), content);
+    let data = serde_json::json!({
+        "version": 1,
+        "last_updated": chrono::Utc::now().to_rfc3339(),
+        "data": {
+            "servers": servers_data
         }
-    }
+    });
+
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("序列化服务配置失败: {}", e))?;
+
+    let path = config.server_configs_file();
+    log::info!("保存服务配置到: {:?}", path);
+
+    fs::write(&path, content)
+        .map_err(|e| format!("写入服务配置失败: {}", e))?;
+
+    log::info!("服务配置保存成功，共 {} 个服务", servers.len());
+    Ok(())
 }
 
 /// 服务控制器
@@ -130,6 +159,8 @@ struct ProxyState {
 /// 创建服务
 #[tauri::command]
 pub async fn create_server(input: ServerConfigInput) -> Result<ServerConfig, String> {
+    ensure_servers_loaded().await;
+
     // 验证
     if input.port == 0 {
         return Err("端口不能为 0".to_string());
@@ -193,7 +224,9 @@ pub async fn create_server(input: ServerConfigInput) -> Result<ServerConfig, Str
     }
 
     // 持久化到文件
-    save_servers_to_file().await;
+    if let Err(e) = save_servers_to_file().await {
+        log::error!("保存服务配置失败: {}", e);
+    }
 
     Ok(config)
 }
@@ -201,6 +234,8 @@ pub async fn create_server(input: ServerConfigInput) -> Result<ServerConfig, Str
 /// 启动服务
 #[tauri::command]
 pub async fn start_server(server_id: String) -> Result<String, String> {
+    ensure_servers_loaded().await;
+
     // 获取配置
     let config = {
         let servers = SERVERS.lock().await;
@@ -353,7 +388,7 @@ async fn run_server(
     // 绑定地址
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
 
-    log::info!("静态服务启动: http://127.0.0.1:{}{}", config.port,
+    log::info!("静态服务启动: http://127.0.0.1:{}{}",config.port,
         if config.url_prefix == "/" { "".to_string() } else { format!("{}/", config.url_prefix) });
     log::info!("根目录: {}", config.root_dir);
 
@@ -543,22 +578,28 @@ fn is_hop_by_hop_header(name: &str) -> bool {
 /// 停止服务
 #[tauri::command]
 pub async fn stop_server(server_id: String) -> Result<(), String> {
+    log::info!("停止服务: {}", server_id);
+
     // 发送停止信号
     {
         let controllers = SERVER_CONTROLLERS.lock().await;
         if let Some(controller) = controllers.get(&server_id) {
             controller.stop();
+            log::info!("已发送停止信号");
+        } else {
+            log::warn!("未找到服务控制器: {}", server_id);
         }
     }
 
-    // 等待一小段时间让服务停止
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    // 等待服务停止
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     // 更新状态
     {
         let mut servers = SERVERS.lock().await;
         if let Some(server) = servers.get_mut(&server_id) {
             server.status = "stopped".to_string();
+            log::info!("服务状态已更新为停止");
         }
     }
 
@@ -574,6 +615,8 @@ pub async fn stop_server(server_id: String) -> Result<(), String> {
 /// 移除服务
 #[tauri::command]
 pub async fn remove_server(server_id: String) -> Result<(), String> {
+    ensure_servers_loaded().await;
+
     // 先停止服务
     let _ = stop_server(server_id.clone()).await;
 
@@ -584,7 +627,9 @@ pub async fn remove_server(server_id: String) -> Result<(), String> {
     }
 
     // 持久化到文件
-    save_servers_to_file().await;
+    if let Err(e) = save_servers_to_file().await {
+        log::error!("保存服务配置失败: {}", e);
+    }
 
     Ok(())
 }
@@ -592,6 +637,8 @@ pub async fn remove_server(server_id: String) -> Result<(), String> {
 /// 获取所有服务
 #[tauri::command]
 pub async fn get_servers() -> Result<Vec<ServerConfig>, String> {
+    ensure_servers_loaded().await;
+
     let servers = SERVERS.lock().await;
     Ok(servers.values().cloned().collect())
 }
@@ -599,6 +646,8 @@ pub async fn get_servers() -> Result<Vec<ServerConfig>, String> {
 /// 获取单个服务
 #[tauri::command]
 pub async fn get_server(server_id: String) -> Result<Option<ServerConfig>, String> {
+    ensure_servers_loaded().await;
+
     let servers = SERVERS.lock().await;
     Ok(servers.get(&server_id).cloned())
 }
@@ -606,6 +655,8 @@ pub async fn get_server(server_id: String) -> Result<Option<ServerConfig>, Strin
 /// 更新服务配置
 #[tauri::command]
 pub async fn update_server(server_id: String, input: ServerConfigInput) -> Result<ServerConfig, String> {
+    ensure_servers_loaded().await;
+
     // 获取当前配置
     let current = {
         let servers = SERVERS.lock().await;
@@ -653,7 +704,9 @@ pub async fn update_server(server_id: String, input: ServerConfigInput) -> Resul
     }
 
     // 持久化到文件
-    save_servers_to_file().await;
+    if let Err(e) = save_servers_to_file().await {
+        log::error!("保存服务配置失败: {}", e);
+    }
 
     let servers = SERVERS.lock().await;
     servers
