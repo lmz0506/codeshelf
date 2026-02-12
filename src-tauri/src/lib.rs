@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{git, project, stats, system};
+use commands::{git, project, stats, system, toolbox};
 use tauri::{
     Manager,
     tray::TrayIconBuilder,
@@ -158,6 +158,45 @@ pub fn run() {
             system::check_node_version,
             system::get_app_paths,
             system::clear_logs,
+            // Toolbox - Scanner commands
+            toolbox::scanner::scan_ports,
+            toolbox::scanner::stop_scan,
+            toolbox::scanner::get_common_ports,
+            toolbox::scanner::check_port,
+            toolbox::scanner::scan_local_dev_ports,
+            // Toolbox - Downloader commands
+            toolbox::downloader::start_download,
+            toolbox::downloader::pause_download,
+            toolbox::downloader::resume_download,
+            toolbox::downloader::cancel_download,
+            toolbox::downloader::get_download_tasks,
+            toolbox::downloader::get_download_task,
+            toolbox::downloader::clear_completed_downloads,
+            toolbox::downloader::open_download_folder,
+            toolbox::downloader::remove_download_task,
+            // Toolbox - Process commands
+            toolbox::process::get_processes,
+            toolbox::process::get_port_processes,
+            toolbox::process::kill_process,
+            toolbox::process::get_system_stats,
+            toolbox::process::get_local_port_occupation,
+            // Toolbox - Forwarder commands
+            toolbox::forwarder::add_forward_rule,
+            toolbox::forwarder::remove_forward_rule,
+            toolbox::forwarder::start_forwarding,
+            toolbox::forwarder::stop_forwarding,
+            toolbox::forwarder::get_forward_rules,
+            toolbox::forwarder::get_forward_rule,
+            toolbox::forwarder::get_forward_stats,
+            toolbox::forwarder::update_forward_rule,
+            // Toolbox - Server commands
+            toolbox::server::create_server,
+            toolbox::server::start_server,
+            toolbox::server::stop_server,
+            toolbox::server::remove_server,
+            toolbox::server::get_servers,
+            toolbox::server::get_server,
+            toolbox::server::update_server,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

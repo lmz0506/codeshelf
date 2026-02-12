@@ -25,7 +25,7 @@ export interface TerminalConfig {
   };
 }
 
-export type PageType = "shelf" | "dashboard" | "settings";
+export type PageType = "shelf" | "dashboard" | "settings" | "toolbox";
 
 interface AppState {
   // Projects

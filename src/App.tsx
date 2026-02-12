@@ -3,6 +3,7 @@ import { MainLayout } from "@/components/layout";
 import { ShelfPage } from "@/pages/Shelf";
 import { DashboardPage } from "@/pages/Dashboard";
 import { SettingsPage } from "@/pages/Settings";
+import { ToolboxPage } from "@/pages/Toolbox";
 import { ToastContainer, UpdateNotification } from "@/components/ui";
 
 const queryClient = new QueryClient({
@@ -24,6 +25,8 @@ function App() {
               return <ShelfPage />;
             case "dashboard":
               return <DashboardPage />;
+            case "toolbox":
+              return <ToolboxPage />;
             case "settings":
               return <SettingsPage />;
             default:
