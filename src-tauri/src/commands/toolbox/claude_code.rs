@@ -1413,6 +1413,7 @@ pub async fn save_claude_installations_cache(installs: Vec<ClaudeCodeInfo>) -> R
             },
             env_name: i.env_name.clone(),
             version: i.version.clone(),
+            path: i.path.clone(),
             config_dir: i.config_dir.clone().unwrap_or_default(),
             config_files: i.config_files.iter().map(|f| {
                 SchemaConfigFileInfo {
