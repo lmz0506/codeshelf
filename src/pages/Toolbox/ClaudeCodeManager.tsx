@@ -18,9 +18,11 @@ import {
   Globe,
   Edit3,
   Power,
-  Eye,
   Lock,
   GripVertical,
+  Info,
+  Sliders,
+  Check,
 } from "lucide-react";
 import { ToolPanelHeader } from "./index";
 import { Button } from "@/components/ui";
@@ -51,7 +53,7 @@ const READONLY_FILES = [
 ];
 
 // 快捷配置项定义
-interface EditableConfigOption {
+interface QuickConfigOption {
   id: string;
   name: string;
   description: string;
@@ -63,8 +65,8 @@ interface EditableConfigOption {
   placeholder?: string;
 }
 
-// 预定义的快捷配置
-const QUICK_CONFIG_OPTIONS: EditableConfigOption[] = [
+// 默认快捷配置
+const DEFAULT_QUICK_CONFIGS: QuickConfigOption[] = [
   {
     id: "model",
     name: "默认模型",
@@ -174,6 +176,25 @@ const QUICK_CONFIG_OPTIONS: EditableConfigOption[] = [
   },
 ];
 
+// 本地存储 key
+const QUICK_CONFIGS_STORAGE_KEY = "claude-code-quick-configs";
+
+function loadQuickConfigs(): QuickConfigOption[] {
+  try {
+    const saved = localStorage.getItem(QUICK_CONFIGS_STORAGE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_QUICK_CONFIGS;
+}
+
+function saveQuickConfigs(configs: QuickConfigOption[]) {
+  localStorage.setItem(QUICK_CONFIGS_STORAGE_KEY, JSON.stringify(configs));
+}
+
 export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   const [loading, setLoading] = useState(true);
   const [installations, setInstallations] = useState<ClaudeCodeInfo[]>([]);
@@ -184,20 +205,32 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   const [loadingFile, setLoadingFile] = useState(false);
 
   const [currentSettings, setCurrentSettings] = useState("");
+  const [showCurrentSettings, setShowCurrentSettings] = useState(false);
 
   const [profiles, setProfiles] = useState<ConfigProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
 
+  // 快捷配置管理
+  const [quickConfigs, setQuickConfigs] = useState<QuickConfigOption[]>(loadQuickConfigs);
+  const [showQuickConfigManager, setShowQuickConfigManager] = useState(false);
+  const [editingQuickConfig, setEditingQuickConfig] = useState<QuickConfigOption | null>(null);
+
+  // 编辑档案弹框
+  const [showEditProfile, setShowEditProfile] = useState(false);
   const [editingProfile, setEditingProfile] = useState<ConfigProfile | null>(null);
   const [editingContent, setEditingContent] = useState("");
   const [editingValues, setEditingValues] = useState<Record<string, unknown>>({});
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(["模型", "代理"]));
 
+  // 新建档案弹框
   const [showCreateProfile, setShowCreateProfile] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
   const [newProfileDesc, setNewProfileDesc] = useState("");
-  const [newProfileSource, setNewProfileSource] = useState<"empty" | "current">("empty");
+  const [newProfileSource, setNewProfileSource] = useState<"empty" | "current" | "quick">("empty");
   const [savingProfile, setSavingProfile] = useState(false);
+
+  // 复制提示
+  const [copiedText, setCopiedText] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -263,7 +296,6 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
     if (file.name === "settings.json") {
       setSelectedFile(file);
-      setEditingProfile(null);
       return;
     }
 
@@ -294,6 +326,12 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
       console.error("打开目录失败:", err);
       alert(`打开目录失败: ${err}`);
     }
+  }
+
+  function copyToClipboard(text: string, label: string) {
+    navigator.clipboard.writeText(text);
+    setCopiedText(label);
+    setTimeout(() => setCopiedText(null), 2000);
   }
 
   async function handleActivateProfile(profile: ConfigProfile) {
@@ -333,14 +371,14 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     }
   }
 
-  function startEditProfile(profile: ConfigProfile) {
+  function openEditProfile(profile: ConfigProfile) {
     setEditingProfile(profile);
     const settings = { ...(profile.settings as Record<string, unknown>) };
     delete settings.__active;
     setEditingContent(JSON.stringify(settings, null, 2));
 
     const values: Record<string, unknown> = {};
-    QUICK_CONFIG_OPTIONS.forEach(opt => {
+    quickConfigs.forEach(opt => {
       if (settings[opt.configKey] !== undefined) {
         values[opt.id] = settings[opt.configKey];
       } else {
@@ -348,6 +386,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
       }
     });
     setEditingValues(values);
+    setShowEditProfile(true);
   }
 
   async function saveEditingProfile() {
@@ -376,6 +415,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         }
       }
 
+      setShowEditProfile(false);
       setEditingProfile(null);
       await loadAll();
     } catch (err) {
@@ -387,7 +427,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   function applyQuickConfig(optionId: string, value: unknown) {
     setEditingValues(prev => ({ ...prev, [optionId]: value }));
 
-    const opt = QUICK_CONFIG_OPTIONS.find(o => o.id === optionId);
+    const opt = quickConfigs.find(o => o.id === optionId);
     if (!opt) return;
 
     try {
@@ -414,12 +454,20 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     setSavingProfile(true);
     try {
       let settings: Record<string, unknown> = {};
+
       if (newProfileSource === "current" && currentSettings) {
         try {
           settings = JSON.parse(currentSettings);
         } catch {
           // 解析失败使用空配置
         }
+      } else if (newProfileSource === "quick") {
+        // 使用快捷配置的默认值
+        quickConfigs.forEach(opt => {
+          if (opt.defaultValue !== "" && opt.defaultValue !== null && opt.defaultValue !== undefined) {
+            settings[opt.configKey] = opt.defaultValue;
+          }
+        });
       }
 
       const profile = await saveConfigProfile(
@@ -435,7 +483,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
       await loadAll();
 
       if (profile) {
-        startEditProfile(profile);
+        openEditProfile(profile);
       }
     } catch (err) {
       console.error("创建档案失败:", err);
@@ -454,9 +502,6 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
     try {
       await deleteConfigProfile(profile.id);
-      if (editingProfile?.id === profile.id) {
-        setEditingProfile(null);
-      }
       await loadAll();
     } catch (err) {
       console.error("删除档案失败:", err);
@@ -476,18 +521,41 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     });
   }
 
-  const groupedOptions = QUICK_CONFIG_OPTIONS.reduce((acc, opt) => {
+  // 快捷配置管理
+  function handleSaveQuickConfig(config: QuickConfigOption) {
+    const newConfigs = editingQuickConfig
+      ? quickConfigs.map(c => c.id === config.id ? config : c)
+      : [...quickConfigs, { ...config, id: `custom_${Date.now()}` }];
+    setQuickConfigs(newConfigs);
+    saveQuickConfigs(newConfigs);
+    setEditingQuickConfig(null);
+  }
+
+  function handleDeleteQuickConfig(id: string) {
+    if (!confirm("确定要删除此快捷配置吗？")) return;
+    const newConfigs = quickConfigs.filter(c => c.id !== id);
+    setQuickConfigs(newConfigs);
+    saveQuickConfigs(newConfigs);
+  }
+
+  function handleResetQuickConfigs() {
+    if (!confirm("确定要重置为默认快捷配置吗？")) return;
+    setQuickConfigs(DEFAULT_QUICK_CONFIGS);
+    saveQuickConfigs(DEFAULT_QUICK_CONFIGS);
+  }
+
+  const groupedOptions = quickConfigs.reduce((acc, opt) => {
     if (!acc[opt.category]) {
       acc[opt.category] = [];
     }
     acc[opt.category].push(opt);
     return acc;
-  }, {} as Record<string, EditableConfigOption[]>);
+  }, {} as Record<string, QuickConfigOption[]>);
 
   const isReadonlyFile = (fileName: string) => READONLY_FILES.includes(fileName);
   const isSettingsJson = selectedFile?.name === "settings.json";
 
-  function renderConfigEditor(opt: EditableConfigOption) {
+  function renderConfigEditor(opt: QuickConfigOption) {
     const value = editingValues[opt.id];
 
     switch (opt.valueType) {
@@ -545,6 +613,14 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         onBack={onBack}
         actions={
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowQuickConfigManager(true)}
+              className="re-btn flex items-center gap-2"
+              title="快捷配置管理"
+            >
+              <Sliders size={16} />
+              <span>快捷配置</span>
+            </button>
             {selectedEnv?.configDir && (
               <button
                 onClick={handleOpenDir}
@@ -581,76 +657,158 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
           </div>
         ) : (
           <div className="flex flex-col h-full gap-4 overflow-hidden">
-            {/* 环境选择器 - 固定高度 */}
-            <div className="re-card p-3 flex-shrink-0">
-              <div className="flex items-center gap-4 flex-wrap">
-                <span className="text-sm font-medium text-gray-500">环境:</span>
-                {installations.map((env) => (
-                  <button
-                    key={`${env.envType}-${env.envName}`}
-                    onClick={() => {
-                      setSelectedEnv(env);
-                      setSelectedFile(null);
-                      setEditingProfile(null);
-                    }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-sm ${
-                      selectedEnv?.envName === env.envName
-                        ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                        : "border-gray-200 dark:border-gray-700 hover:border-gray-300"
-                    }`}
-                  >
-                    <span className="font-medium">{env.envName}</span>
-                    {env.installed ? (
-                      <CheckCircle size={14} className="text-green-500" />
-                    ) : (
-                      <X size={14} className="text-red-400" />
-                    )}
-                    {env.version && <span className="text-xs text-gray-400">{env.version}</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 主内容区 - 填充剩余空间 */}
+            {/* 环境信息卡片 */}
             {selectedEnv && (
-              <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden min-h-0">
-                {/* 左侧：文件列表 */}
-                <div className="re-card p-3 flex flex-col overflow-hidden">
+              <div className="re-card p-3 flex-shrink-0">
+                <div className="flex items-center gap-4 flex-wrap">
+                  <span className="text-sm font-medium text-gray-500">环境:</span>
+                  {installations.map((env) => (
+                    <button
+                      key={`${env.envType}-${env.envName}`}
+                      onClick={() => {
+                        setSelectedEnv(env);
+                        setSelectedFile(null);
+                      }}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-sm ${
+                        selectedEnv?.envName === env.envName
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                          : "border-gray-200 dark:border-gray-700 hover:border-gray-300"
+                      }`}
+                    >
+                      <span className="font-medium">{env.envName}</span>
+                      {env.installed ? (
+                        <CheckCircle size={14} className="text-green-500" />
+                      ) : (
+                        <X size={14} className="text-red-400" />
+                      )}
+                    </button>
+                  ))}
+
+                  {/* 环境详情 */}
+                  <div className="flex-1" />
+                  {selectedEnv.version && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-400">版本:</span>
+                      <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs">{selectedEnv.version}</code>
+                      <button
+                        onClick={() => copyToClipboard(selectedEnv.version!, "version")}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                        title="复制版本"
+                      >
+                        {copiedText === "version" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
+                      </button>
+                    </div>
+                  )}
+                  {selectedEnv.path && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-400">路径:</span>
+                      <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs max-w-[200px] truncate" title={selectedEnv.path}>
+                        {selectedEnv.path}
+                      </code>
+                      <button
+                        onClick={() => copyToClipboard(selectedEnv.path!, "path")}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                        title="复制路径"
+                      >
+                        {copiedText === "path" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
+                      </button>
+                    </div>
+                  )}
+                  {selectedEnv.configDir && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-400">配置:</span>
+                      <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs max-w-[200px] truncate" title={selectedEnv.configDir}>
+                        {selectedEnv.configDir}
+                      </code>
+                      <button
+                        onClick={() => copyToClipboard(selectedEnv.configDir!, "configDir")}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                        title="复制配置目录"
+                      >
+                        {copiedText === "configDir" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 主内容区 */}
+            {selectedEnv && (
+              <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
+                {/* 左侧：配置文件列表 - 窄列 */}
+                <div className="w-40 flex-shrink-0 re-card p-3 flex flex-col overflow-hidden">
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-2 text-sm flex-shrink-0">配置文件</h3>
                   <div className="flex-1 overflow-y-auto space-y-1">
                     {selectedEnv.configFiles.map((file) => (
-                      <button
-                        key={file.path}
-                        onClick={() => loadFile(file)}
-                        className={`w-full text-left p-2 rounded-lg border transition-colors ${
-                          selectedFile?.path === file.path
-                            ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                            : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          {isReadonlyFile(file.name) ? (
-                            <Lock size={12} className="text-gray-400 flex-shrink-0" />
-                          ) : (
-                            <FileText size={12} className={`flex-shrink-0 ${file.exists ? "text-blue-500" : "text-gray-400"}`} />
-                          )}
-                          <span className={`font-medium text-xs truncate ${file.exists ? "" : "text-gray-400"}`}>
-                            {file.name}
-                          </span>
+                      <div key={file.path} className="group relative">
+                        <button
+                          onClick={() => loadFile(file)}
+                          className={`w-full text-left p-2 rounded-lg border transition-colors ${
+                            selectedFile?.path === file.path
+                              ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                              : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {isReadonlyFile(file.name) ? (
+                              <Lock size={12} className="text-gray-400 flex-shrink-0" />
+                            ) : (
+                              <FileText size={12} className={`flex-shrink-0 ${file.exists ? "text-blue-500" : "text-gray-400"}`} />
+                            )}
+                            <span className={`font-medium text-xs truncate ${file.exists ? "" : "text-gray-400"}`}>
+                              {file.name}
+                            </span>
+                          </div>
+                        </button>
+                        {/* 悬浮提示 */}
+                        <div className="absolute left-full top-0 ml-2 z-50 hidden group-hover:block">
+                          <div className="bg-gray-900 text-white text-xs rounded-lg p-2 shadow-lg max-w-[200px] whitespace-normal">
+                            <div className="font-medium mb-1">{file.name}</div>
+                            <div className="text-gray-300">{file.description || "配置文件"}</div>
+                            {file.exists && file.size !== undefined && (
+                              <div className="text-gray-400 mt-1">大小: {(file.size / 1024).toFixed(1)} KB</div>
+                            )}
+                          </div>
                         </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 </div>
 
-                {/* 中间和右侧内容 */}
+                {/* 右侧内容 */}
                 {isSettingsJson ? (
-                  <>
+                  <div className="flex-1 flex flex-col gap-4 overflow-hidden min-h-0">
+                    {/* 当前 settings.json 卡片 */}
+                    <div className="re-card flex-shrink-0 overflow-hidden">
+                      <button
+                        onClick={() => setShowCurrentSettings(!showCurrentSettings)}
+                        className="w-full flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Settings size={16} className="text-blue-500" />
+                          <span className="font-semibold text-gray-900 dark:text-white text-sm">当前 settings.json</span>
+                        </div>
+                        {showCurrentSettings ? (
+                          <ChevronDown size={16} className="text-gray-400" />
+                        ) : (
+                          <ChevronRight size={16} className="text-gray-400" />
+                        )}
+                      </button>
+                      {showCurrentSettings && (
+                        <div className="px-3 pb-3">
+                          <pre className="p-2 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs font-mono text-gray-600 dark:text-gray-400 max-h-[200px] overflow-auto whitespace-pre-wrap break-all">
+                            {currentSettings || "{}"}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+
                     {/* 配置档案列表 */}
-                    <div className="col-span-2 re-card p-3 flex flex-col overflow-hidden">
+                    <div className="flex-1 re-card p-3 flex flex-col overflow-hidden min-h-0">
                       <div className="flex items-center justify-between mb-3 flex-shrink-0">
                         <h3 className="font-semibold text-gray-900 dark:text-white text-sm flex items-center gap-2">
-                          <Settings size={16} />
+                          <Copy size={16} />
                           配置档案
                         </h3>
                         <Button
@@ -663,178 +821,104 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                         </Button>
                       </div>
 
-                      {/* 当前配置预览 */}
-                      <div className="mb-3 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg flex-shrink-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Eye size={12} className="text-gray-400" />
-                          <span className="text-xs text-gray-500">当前 settings.json</span>
-                        </div>
-                        <pre className="text-xs font-mono text-gray-500 max-h-[60px] overflow-auto whitespace-pre-wrap break-all">
-                          {currentSettings || "{}"}
-                        </pre>
-                      </div>
-
-                      {/* 档案列表 */}
-                      <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+                      {/* 档案网格 */}
+                      <div className="flex-1 overflow-y-auto min-h-0">
                         {profiles.length === 0 ? (
                           <div className="text-center py-8 text-gray-400">
                             <Copy size={32} className="mx-auto mb-2 opacity-50" />
                             <p className="text-sm">暂无配置档案</p>
+                            <p className="text-xs mt-1">点击"新建"创建第一个配置档案</p>
                           </div>
                         ) : (
-                          profiles.map((profile) => {
-                            const isActive = activeProfileId === profile.id;
-                            const isEditing = editingProfile?.id === profile.id;
+                          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                            {profiles.map((profile) => {
+                              const isActive = activeProfileId === profile.id;
 
-                            return (
-                              <div
-                                key={profile.id}
-                                className={`p-3 rounded-xl border-2 transition-all ${
-                                  isActive
-                                    ? "border-green-500 bg-green-50 dark:bg-green-900/20"
-                                    : isEditing
-                                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                                    : "border-gray-100 dark:border-gray-800 hover:border-gray-200"
-                                }`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <GripVertical size={16} className="text-gray-300 flex-shrink-0" />
-                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                                    isActive ? "bg-green-500" : "bg-blue-500"
-                                  }`}>
-                                    <Settings size={16} className="text-white" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-medium text-gray-900 dark:text-white truncate">
-                                        {profile.name}
-                                      </span>
-                                      {isActive && (
-                                        <span className="text-xs text-green-600 bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 rounded flex-shrink-0">
-                                          已启用
-                                        </span>
-                                      )}
+                              return (
+                                <div
+                                  key={profile.id}
+                                  onDoubleClick={() => openEditProfile(profile)}
+                                  className={`p-3 rounded-xl border-2 transition-all cursor-pointer hover:shadow-md ${
+                                    isActive
+                                      ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                                      : "border-gray-100 dark:border-gray-800 hover:border-gray-200"
+                                  }`}
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <GripVertical size={16} className="text-gray-300 flex-shrink-0 mt-0.5 cursor-grab" />
+                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                      isActive ? "bg-green-500" : "bg-blue-500"
+                                    }`}>
+                                      <Settings size={18} className="text-white" />
                                     </div>
-                                    <p className="text-xs text-gray-500 truncate">
-                                      {profile.description || "无描述"}
-                                    </p>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium text-gray-900 dark:text-white truncate text-sm">
+                                          {profile.name}
+                                        </span>
+                                        {isActive && (
+                                          <span className="text-[10px] text-green-600 bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 rounded flex-shrink-0">
+                                            已启用
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-gray-500 truncate mt-0.5">
+                                        {profile.description || "无描述"}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                  <div className="flex items-center justify-end gap-1 mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
                                     {!isActive && (
                                       <button
-                                        onClick={() => handleActivateProfile(profile)}
-                                        className="p-1.5 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-600"
+                                        onClick={(e) => { e.stopPropagation(); handleActivateProfile(profile); }}
+                                        className="p-1.5 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-600 text-xs flex items-center gap-1"
                                         title="启用"
                                       >
-                                        <Power size={14} />
+                                        <Power size={12} />
+                                        <span>启用</span>
                                       </button>
                                     )}
                                     <button
-                                      onClick={() => startEditProfile(profile)}
-                                      className={`p-1.5 rounded ${
-                                        isEditing
-                                          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600"
-                                          : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500"
-                                      }`}
+                                      onClick={(e) => { e.stopPropagation(); openEditProfile(profile); }}
+                                      className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-500 text-xs flex items-center gap-1"
                                       title="编辑"
                                     >
-                                      <Edit3 size={14} />
+                                      <Edit3 size={12} />
+                                      <span>编辑</span>
                                     </button>
                                     {!isActive && (
                                       <button
-                                        onClick={() => handleDeleteProfile(profile)}
-                                        className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500"
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile); }}
+                                        className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500 text-xs flex items-center gap-1"
                                         title="删除"
                                       >
-                                        <Trash2 size={14} />
+                                        <Trash2 size={12} />
                                       </button>
                                     )}
                                   </div>
                                 </div>
-                              </div>
-                            );
-                          })
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
                     </div>
-
-                    {/* 右侧编辑区 */}
-                    <div className="re-card p-3 flex flex-col overflow-hidden">
-                      {editingProfile ? (
-                        <>
-                          <div className="flex items-center justify-between mb-2 flex-shrink-0">
-                            <h3 className="font-semibold text-gray-900 dark:text-white text-sm truncate">
-                              编辑: {editingProfile.name}
-                            </h3>
-                            <div className="flex items-center gap-1">
-                              <Button onClick={() => setEditingProfile(null)} variant="secondary" className="text-xs py-1 px-2">
-                                取消
-                              </Button>
-                              <Button onClick={saveEditingProfile} variant="primary" className="text-xs py-1 px-2">
-                                <Save size={12} className="mr-1" />
-                                保存
-                              </Button>
-                            </div>
-                          </div>
-
-                          <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
-                            {/* 快捷配置 */}
-                            <div className="space-y-1">
-                              {Object.entries(groupedOptions).map(([category, options]) => (
-                                <div key={category} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                                  <button
-                                    onClick={() => toggleCategory(category)}
-                                    className="w-full flex items-center justify-between px-2 py-1.5 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                  >
-                                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
-                                      {category === "代理" && <Globe size={10} />}
-                                      {category}
-                                    </span>
-                                    {expandedCategories.has(category) ? (
-                                      <ChevronDown size={12} className="text-gray-400" />
-                                    ) : (
-                                      <ChevronRight size={12} className="text-gray-400" />
-                                    )}
-                                  </button>
-                                  {expandedCategories.has(category) && (
-                                    <div className="p-2 space-y-1.5">
-                                      {options.map((opt) => (
-                                        <div key={opt.id} className="flex items-center justify-between gap-2">
-                                          <span className="text-xs text-gray-700 dark:text-gray-300 truncate">{opt.name}</span>
-                                          <div className="flex-shrink-0">{renderConfigEditor(opt)}</div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* JSON 编辑 */}
-                            <div>
-                              <label className="text-xs font-medium text-gray-500 mb-1 block">JSON</label>
-                              <textarea
-                                value={editingContent}
-                                onChange={(e) => setEditingContent(e.target.value)}
-                                className="w-full h-[150px] p-2 font-mono text-xs bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
-                              />
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                          <Edit3 size={32} className="mb-2 opacity-50" />
-                          <p className="text-sm">选择档案进行编辑</p>
-                        </div>
-                      )}
-                    </div>
-                  </>
+                  </div>
                 ) : selectedFile ? (
-                  <div className="col-span-3 re-card p-3 flex flex-col overflow-hidden">
+                  <div className="flex-1 re-card p-3 flex flex-col overflow-hidden">
                     <div className="flex items-center gap-2 mb-2 flex-shrink-0">
                       <Lock size={14} className="text-gray-400" />
                       <h3 className="font-semibold text-gray-900 dark:text-white text-sm">{selectedFile.name}</h3>
                       <span className="text-xs text-gray-400">只读</span>
+                      <div className="flex-1" />
+                      <div className="group relative">
+                        <Info size={14} className="text-gray-400 cursor-help" />
+                        <div className="absolute right-0 top-full mt-1 z-50 hidden group-hover:block">
+                          <div className="bg-gray-900 text-white text-xs rounded-lg p-2 shadow-lg max-w-[250px] whitespace-normal">
+                            {selectedFile.description || "配置文件"}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     {loadingFile ? (
                       <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -847,7 +931,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                     )}
                   </div>
                 ) : (
-                  <div className="col-span-3 re-card p-3 flex flex-col items-center justify-center text-gray-400">
+                  <div className="flex-1 re-card p-3 flex flex-col items-center justify-center text-gray-400">
                     <FileText size={48} className="mb-4 opacity-50" />
                     <p>选择配置文件查看</p>
                   </div>
@@ -912,6 +996,18 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                       <div className="text-xs text-gray-500">从 settings.json 复制</div>
                     </div>
                   </label>
+                  <label className="flex items-center gap-3 p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+                    <input
+                      type="radio"
+                      checked={newProfileSource === "quick"}
+                      onChange={() => setNewProfileSource("quick")}
+                      className="w-4 h-4 text-blue-500"
+                    />
+                    <div>
+                      <div className="font-medium text-sm">使用快捷配置默认值</div>
+                      <div className="text-xs text-gray-500">应用快捷配置中设置的默认值</div>
+                    </div>
+                  </label>
                 </div>
               </div>
             </div>
@@ -937,6 +1033,334 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
           </div>
         </div>
       )}
+
+      {/* 编辑档案弹框 */}
+      {showEditProfile && editingProfile && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                编辑配置: {editingProfile.name}
+              </h3>
+              <button
+                onClick={() => { setShowEditProfile(false); setEditingProfile(null); }}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* 快捷配置 */}
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                  <Sliders size={14} />
+                  快捷配置
+                </h4>
+                {Object.entries(groupedOptions).map(([category, options]) => (
+                  <div key={category} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => toggleCategory(category)}
+                      className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                        {category === "代理" && <Globe size={12} />}
+                        {category}
+                      </span>
+                      {expandedCategories.has(category) ? (
+                        <ChevronDown size={14} className="text-gray-400" />
+                      ) : (
+                        <ChevronRight size={14} className="text-gray-400" />
+                      )}
+                    </button>
+                    {expandedCategories.has(category) && (
+                      <div className="p-3 space-y-2">
+                        {options.map((opt) => (
+                          <div key={opt.id} className="flex items-center justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm text-gray-700 dark:text-gray-300">{opt.name}</span>
+                              <p className="text-xs text-gray-400 truncate">{opt.description}</p>
+                            </div>
+                            <div className="flex-shrink-0 w-40">{renderConfigEditor(opt)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* JSON 编辑 */}
+              <div>
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">JSON 配置</h4>
+                <textarea
+                  value={editingContent}
+                  onChange={(e) => setEditingContent(e.target.value)}
+                  className="w-full h-[200px] p-3 font-mono text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
+              <Button onClick={() => { setShowEditProfile(false); setEditingProfile(null); }} variant="secondary">
+                取消
+              </Button>
+              <Button onClick={saveEditingProfile} variant="primary">
+                <Save size={14} className="mr-1" />
+                保存
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 快捷配置管理弹框 */}
+      {showQuickConfigManager && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Sliders size={20} />
+                快捷配置管理
+              </h3>
+              <div className="flex items-center gap-2">
+                <Button onClick={handleResetQuickConfigs} variant="secondary" className="text-xs">
+                  重置默认
+                </Button>
+                <button
+                  onClick={() => { setShowQuickConfigManager(false); setEditingQuickConfig(null); }}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {editingQuickConfig ? (
+                <QuickConfigEditor
+                  config={editingQuickConfig}
+                  onSave={handleSaveQuickConfig}
+                  onCancel={() => setEditingQuickConfig(null)}
+                  isNew={!quickConfigs.find(c => c.id === editingQuickConfig.id)}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={() => setEditingQuickConfig({
+                        id: "",
+                        name: "",
+                        description: "",
+                        category: "自定义",
+                        configKey: "",
+                        valueType: "string",
+                        defaultValue: "",
+                      })}
+                      variant="primary"
+                      className="text-sm"
+                    >
+                      <Plus size={14} className="mr-1" />
+                      新增配置项
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {Object.entries(groupedOptions).map(([category, options]) => (
+                      <div key={category} className="border border-gray-200 dark:border-gray-700 rounded-lg">
+                        <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 font-medium text-sm text-gray-700 dark:text-gray-300">
+                          {category}
+                        </div>
+                        <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                          {options.map((opt) => (
+                            <div key={opt.id} className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800">
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-sm">{opt.name}</div>
+                                <div className="text-xs text-gray-500 truncate">{opt.description}</div>
+                                <div className="text-xs text-gray-400 mt-1">
+                                  <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">{opt.configKey}</code>
+                                  <span className="mx-2">•</span>
+                                  <span>默认: {String(opt.defaultValue) || "(空)"}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => setEditingQuickConfig(opt)}
+                                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-500"
+                                  title="编辑"
+                                >
+                                  <Edit3 size={14} />
+                                </button>
+                                {opt.id.startsWith("custom_") && (
+                                  <button
+                                    onClick={() => handleDeleteQuickConfig(opt.id)}
+                                    className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500"
+                                    title="删除"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 快捷配置编辑器组件
+function QuickConfigEditor({
+  config,
+  onSave,
+  onCancel,
+  isNew,
+}: {
+  config: QuickConfigOption;
+  onSave: (config: QuickConfigOption) => void;
+  onCancel: () => void;
+  isNew: boolean;
+}) {
+  const [form, setForm] = useState<QuickConfigOption>(config);
+  const [optionsText, setOptionsText] = useState(
+    config.options?.map(o => `${o.label}:${o.value}`).join("\n") || ""
+  );
+
+  function handleSave() {
+    const finalConfig = { ...form };
+    if (form.valueType === "select" && optionsText.trim()) {
+      finalConfig.options = optionsText.split("\n").filter(Boolean).map(line => {
+        const [label, value] = line.split(":");
+        return { label: label?.trim() || "", value: value?.trim() || label?.trim() || "" };
+      });
+    }
+    onSave(finalConfig);
+  }
+
+  return (
+    <div className="space-y-4">
+      <h4 className="font-medium text-gray-900 dark:text-white">
+        {isNew ? "新增配置项" : "编辑配置项"}
+      </h4>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-500 mb-1">名称 *</label>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-500 mb-1">配置键 *</label>
+          <input
+            type="text"
+            value={form.configKey}
+            onChange={(e) => setForm(f => ({ ...f, configKey: e.target.value }))}
+            placeholder="如: autoApproveAll"
+            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-500 mb-1">描述</label>
+        <input
+          type="text"
+          value={form.description}
+          onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))}
+          className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-500 mb-1">分类</label>
+          <input
+            type="text"
+            value={form.category}
+            onChange={(e) => setForm(f => ({ ...f, category: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-500 mb-1">值类型</label>
+          <select
+            value={form.valueType}
+            onChange={(e) => setForm(f => ({ ...f, valueType: e.target.value as QuickConfigOption["valueType"] }))}
+            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="string">字符串</option>
+            <option value="boolean">布尔值</option>
+            <option value="number">数字</option>
+            <option value="select">选择</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-500 mb-1">默认值</label>
+        {form.valueType === "boolean" ? (
+          <select
+            value={String(form.defaultValue)}
+            onChange={(e) => setForm(f => ({ ...f, defaultValue: e.target.value === "true" }))}
+            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="false">关闭 (false)</option>
+            <option value="true">开启 (true)</option>
+          </select>
+        ) : (
+          <input
+            type={form.valueType === "number" ? "number" : "text"}
+            value={String(form.defaultValue)}
+            onChange={(e) => setForm(f => ({ ...f, defaultValue: form.valueType === "number" ? Number(e.target.value) : e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        )}
+      </div>
+
+      {form.valueType === "select" && (
+        <div>
+          <label className="block text-sm font-medium text-gray-500 mb-1">选项（每行一个，格式: 显示名:值）</label>
+          <textarea
+            value={optionsText}
+            onChange={(e) => setOptionsText(e.target.value)}
+            placeholder={"Claude Sonnet 4:claude-sonnet-4-20250514\nClaude Opus 4:claude-opus-4-20250514"}
+            rows={4}
+            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+          />
+        </div>
+      )}
+
+      {form.valueType === "string" && (
+        <div>
+          <label className="block text-sm font-medium text-gray-500 mb-1">占位符</label>
+          <input
+            type="text"
+            value={form.placeholder || ""}
+            onChange={(e) => setForm(f => ({ ...f, placeholder: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2 pt-4">
+        <Button onClick={onCancel} variant="secondary">取消</Button>
+        <Button onClick={handleSave} variant="primary" disabled={!form.name || !form.configKey}>
+          <Save size={14} className="mr-1" />
+          保存
+        </Button>
+      </div>
     </div>
   );
 }
