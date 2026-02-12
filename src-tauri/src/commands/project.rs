@@ -49,18 +49,15 @@ static PROJECTS: Lazy<Mutex<Vec<Project>>> = Lazy::new(|| {
 
 // 获取数据文件路径
 fn get_data_file_path() -> PathBuf {
-    // 优先使用新的存储路径
-    if let Ok(config) = storage::get_storage_config() {
-        return config.projects_file();
+    // 使用安装目录的 data 文件夹
+    match storage::get_storage_config() {
+        Ok(config) => config.projects_file(),
+        Err(e) => {
+            log::error!("获取存储配置失败: {}", e);
+            // 如果无法获取配置，使用当前目录的 data 文件夹
+            PathBuf::from("data").join("projects.json")
+        }
     }
-
-    // 回退到旧路径（兼容性）
-    let mut path = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("codeshelf");
-    // 确保目录存在
-    let _ = fs::create_dir_all(&path);
-    path.push("projects.json");
-    path
 }
 
 // 从文件加载项目

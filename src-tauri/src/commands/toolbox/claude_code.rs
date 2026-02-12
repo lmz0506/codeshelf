@@ -1211,16 +1211,15 @@ fn get_profiles_storage_path(env_type: &EnvType, env_name: &str) -> PathBuf {
         }
     };
 
-    // 优先使用新的存储路径
-    if let Ok(config) = storage::get_storage_config() {
-        return config.data_dir.join(format!("claude_profiles_{}.json", env_suffix));
+    // 使用安装目录的 data 文件夹
+    match storage::get_storage_config() {
+        Ok(config) => config.data_dir.join(format!("claude_profiles_{}.json", env_suffix)),
+        Err(e) => {
+            log::error!("获取存储配置失败: {}", e);
+            // 如果无法获取配置，使用当前目录的 data 文件夹
+            PathBuf::from("data").join(format!("claude_profiles_{}.json", env_suffix))
+        }
     }
-
-    // 回退到旧路径（兼容性）
-    let config_dir = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."));
-
-    config_dir.join("codeshelf").join(format!("claude_profiles_{}.json", env_suffix))
 }
 
 /// 保存配置档案到文件

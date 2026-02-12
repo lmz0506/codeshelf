@@ -79,17 +79,15 @@ static STATS_CACHE: Lazy<Mutex<PersistedStatsCache>> = Lazy::new(|| {
 
 /// 获取统计缓存文件路径
 fn get_stats_cache_path() -> PathBuf {
-    // 优先使用新的存储路径
-    if let Ok(config) = storage::get_storage_config() {
-        return config.stats_cache_file();
+    // 使用安装目录的 data 文件夹
+    match storage::get_storage_config() {
+        Ok(config) => config.stats_cache_file(),
+        Err(e) => {
+            log::error!("获取存储配置失败: {}", e);
+            // 如果无法获取配置，使用当前目录的 data 文件夹
+            PathBuf::from("data").join("stats_cache.json")
+        }
     }
-
-    // 回退到旧路径（兼容性）
-    let mut path = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("codeshelf");
-    let _ = fs::create_dir_all(&path);
-    path.push("stats_cache.json");
-    path
 }
 
 /// 从文件加载统计缓存
