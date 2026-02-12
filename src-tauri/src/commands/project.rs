@@ -148,6 +148,27 @@ pub fn delete_project(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn delete_project_directory(id: String) -> Result<(), String> {
+    let mut projects = PROJECTS.lock().map_err(|e| e.to_string())?;
+
+    let index = projects.iter().position(|p| p.id == id).ok_or("项目不存在")?;
+    let project = &projects[index];
+    let path = PathBuf::from(&project.path);
+
+    // 删除目录
+    if path.exists() {
+        fs::remove_dir_all(&path)
+            .map_err(|e| format!("删除目录失败: {}", e))?;
+    }
+
+    // 从列表中移除
+    projects.remove(index);
+    save_projects_to_file(&projects)?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn toggle_favorite(id: String) -> Result<Project, String> {
     let mut projects = PROJECTS.lock().map_err(|e| e.to_string())?;
 

@@ -163,6 +163,7 @@ pub fn run() {
             project::create_project,
             project::update_project,
             project::delete_project,
+            project::delete_project_directory,
             project::toggle_favorite,
             project::update_last_opened,
             project::batch_update_projects,
