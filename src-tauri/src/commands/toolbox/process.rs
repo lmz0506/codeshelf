@@ -274,6 +274,12 @@ pub async fn get_port_processes(port: u16) -> Result<Vec<ProcessInfo>, String> {
 /// 终止进程
 #[tauri::command]
 pub async fn kill_process(pid: u32, force: Option<bool>) -> Result<(), String> {
+    // 获取当前进程 PID，防止用户意外结束 CodeShelf 自身
+    let current_pid = std::process::id();
+    if pid == current_pid {
+        return Err("无法终止 CodeShelf 进程。如需停止内部服务，请使用本地服务页面的停止按钮。".to_string());
+    }
+
     let force = force.unwrap_or(false);
 
     #[cfg(target_os = "windows")]

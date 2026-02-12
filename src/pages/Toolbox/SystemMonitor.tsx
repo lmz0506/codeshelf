@@ -24,6 +24,8 @@ import {
   killProcess,
   getSystemStats,
   formatBytes,
+  getServers,
+  getForwardRules,
 } from "@/services/toolbox";
 import type {
   ScanResult,
@@ -59,6 +61,8 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
   const [occupations, setOccupations] = useState<PortOccupation[]>([]);
   const [loadingOccupation, setLoadingOccupation] = useState(false);
   const [occupationFilter, setOccupationFilter] = useState("");
+  // CodeShelf 内部服务占用的端口
+  const [codeshelfPorts, setCodeshelfPorts] = useState<Set<number>>(new Set());
 
   // 进程管理状态
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
@@ -92,8 +96,27 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
   async function loadOccupations() {
     setLoadingOccupation(true);
     try {
-      const data = await getLocalPortOccupation();
+      // 并行获取端口占用和 CodeShelf 内部服务
+      const [data, servers, rules] = await Promise.all([
+        getLocalPortOccupation(),
+        getServers(),
+        getForwardRules(),
+      ]);
       setOccupations(data);
+
+      // 收集 CodeShelf 内部服务使用的端口
+      const internalPorts = new Set<number>();
+      servers.forEach(s => {
+        if (s.status === "running") {
+          internalPorts.add(s.port);
+        }
+      });
+      rules.forEach(r => {
+        if (r.status === "running") {
+          internalPorts.add(r.localPort);
+        }
+      });
+      setCodeshelfPorts(internalPorts);
     } catch (error) {
       console.error("获取端口占用失败:", error);
     } finally {
@@ -369,13 +392,24 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredOccupations.map((item, index) => (
+                      {filteredOccupations.map((item, index) => {
+                        const isCodeshelfPort = codeshelfPorts.has(item.port);
+                        return (
                         <tr
                           key={`${item.port}-${item.protocol}-${item.pid}-${index}`}
-                          className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                          className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 ${
+                            isCodeshelfPort ? "bg-blue-50/50 dark:bg-blue-900/10" : ""
+                          }`}
                         >
                           <td className="py-3 px-4 font-mono font-medium text-blue-600">
-                            {item.port}
+                            <div className="flex items-center gap-2">
+                              {item.port}
+                              {isCodeshelfPort && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-500 text-white" title="CodeShelf 内部服务">
+                                  内部
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3 px-4">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
@@ -403,16 +437,23 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
                             )}
                           </td>
                           <td className="py-3 px-4 text-right">
-                            <button
-                              onClick={() => setShowKillConfirm({ pid: item.pid, name: item.processName, source: "occupation" })}
-                              className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
-                              title="终止进程"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            {isCodeshelfPort ? (
+                              <span className="text-xs text-gray-400" title="请在本地服务页面停止此服务">
+                                内部服务
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => setShowKillConfirm({ pid: item.pid, name: item.processName, source: "occupation" })}
+                                className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500 transition-colors"
+                                title="终止进程"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
