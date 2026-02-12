@@ -292,10 +292,18 @@ pub async fn start_server(server_id: String) -> Result<String, String> {
             }
         }
 
-        // 更新状态
-        let mut servers = SERVERS.lock().await;
-        if let Some(s) = servers.get_mut(&id) {
-            s.status = "stopped".to_string();
+        // 更新状态（使用 try_lock 避免死锁）
+        if let Ok(mut servers) = SERVERS.try_lock() {
+            if let Some(s) = servers.get_mut(&id) {
+                s.status = "stopped".to_string();
+            }
+        } else {
+            // 如果获取锁失败，延迟重试
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let mut servers = SERVERS.lock().await;
+            if let Some(s) = servers.get_mut(&id) {
+                s.status = "stopped".to_string();
+            }
         }
     });
 
@@ -612,18 +620,23 @@ pub async fn stop_server(server_id: String) -> Result<(), String> {
     log::info!("停止服务: {}", server_id);
 
     // 发送停止信号
-    {
+    let has_controller = {
         let controllers = SERVER_CONTROLLERS.lock().await;
         if let Some(controller) = controllers.get(&server_id) {
             controller.stop();
             log::info!("已发送停止信号");
+            true
         } else {
             log::warn!("未找到服务控制器: {}", server_id);
+            false
         }
-    }
+    };
 
-    // 等待服务停止
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    // 只有在找到控制器时才等待
+    if has_controller {
+        // 等待服务停止
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    }
 
     // 更新状态
     {
@@ -640,6 +653,7 @@ pub async fn stop_server(server_id: String) -> Result<(), String> {
         controllers.remove(&server_id);
     }
 
+    log::info!("服务停止完成: {}", server_id);
     Ok(())
 }
 

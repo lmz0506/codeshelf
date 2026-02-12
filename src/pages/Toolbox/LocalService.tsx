@@ -14,6 +14,7 @@ import {
   X,
   Copy,
   Check,
+  AlertTriangle,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
@@ -67,6 +68,16 @@ export function LocalService({ onBack }: LocalServiceProps) {
   const [formLocalPort, setFormLocalPort] = useState("");
   const [formRemoteHost, setFormRemoteHost] = useState("");
   const [formRemotePort, setFormRemotePort] = useState("");
+
+  // 删除确认对话框状态
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    type: "server" | "forward";
+    id: string;
+    name: string;
+  } | null>(null);
+
+  // 复制 URL 状态
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // 加载数据
   useEffect(() => {
@@ -252,14 +263,25 @@ export function LocalService({ onBack }: LocalServiceProps) {
     }
   }
 
-  // 删除 Web 服务
-  async function handleRemoveServer(serverId: string) {
-    if (!confirm("确定要删除此服务吗？")) return;
+  // 删除 Web 服务（显示确认对话框）
+  function handleRemoveServer(server: ServerConfig) {
+    setDeleteConfirm({
+      type: "server",
+      id: server.id,
+      name: server.name,
+    });
+  }
+
+  // 确认删除 Web 服务
+  async function confirmRemoveServer() {
+    if (!deleteConfirm || deleteConfirm.type !== "server") return;
     try {
-      await removeServer(serverId);
+      await removeServer(deleteConfirm.id);
       loadAll();
     } catch (error) {
       console.error("删除服务失败:", error);
+    } finally {
+      setDeleteConfirm(null);
     }
   }
 
@@ -285,14 +307,25 @@ export function LocalService({ onBack }: LocalServiceProps) {
     }
   }
 
-  // 删除转发规则
-  async function handleRemoveRule(ruleId: string) {
-    if (!confirm("确定要删除此转发规则吗？")) return;
+  // 删除转发规则（显示确认对话框）
+  function handleRemoveRule(rule: ForwardRule) {
+    setDeleteConfirm({
+      type: "forward",
+      id: rule.id,
+      name: rule.name,
+    });
+  }
+
+  // 确认删除转发规则
+  async function confirmRemoveRule() {
+    if (!deleteConfirm || deleteConfirm.type !== "forward") return;
     try {
-      await removeForwardRule(ruleId);
+      await removeForwardRule(deleteConfirm.id);
       loadAll();
     } catch (error) {
       console.error("删除规则失败:", error);
+    } finally {
+      setDeleteConfirm(null);
     }
   }
 
@@ -317,10 +350,30 @@ export function LocalService({ onBack }: LocalServiceProps) {
     }
   }
 
-  // 获取服务的完整访问 URL
-  function getServerUrl(server: ServerConfig): string {
+  // 获取服务的完整访问 URL（包含首页）
+  function getServerUrl(server: ServerConfig, includeIndex = true): string {
     const prefix = server.urlPrefix === "/" ? "" : server.urlPrefix;
-    return `http://127.0.0.1:${server.port}${prefix}/`;
+    const base = `http://127.0.0.1:${server.port}${prefix}`;
+
+    if (includeIndex && server.indexPage) {
+      const index = server.indexPage.startsWith("/") ? server.indexPage : `/${server.indexPage}`;
+      return `${base}${index}`;
+    }
+
+    return `${base}/`;
+  }
+
+  // 获取可通过内网访问的 URL（用于显示）
+  function getServerUrls(server: ServerConfig): { local: string; network: string } {
+    const prefix = server.urlPrefix === "/" ? "" : server.urlPrefix;
+    const indexPath = server.indexPage
+      ? (server.indexPage.startsWith("/") ? server.indexPage : `/${server.indexPage}`)
+      : "/";
+
+    return {
+      local: `http://127.0.0.1:${server.port}${prefix}${indexPath}`,
+      network: `http://0.0.0.0:${server.port}${prefix}${indexPath}`,
+    };
   }
 
   // 在浏览器中打开
@@ -336,7 +389,6 @@ export function LocalService({ onBack }: LocalServiceProps) {
   }
 
   // 复制 URL 到剪贴板
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   async function handleCopyUrl(server: ServerConfig) {
     const url = getServerUrl(server);
     try {
@@ -496,6 +548,9 @@ export function LocalService({ onBack }: LocalServiceProps) {
                                   <Copy size={14} className="text-gray-400" />
                                 )}
                               </button>
+                              <span className="text-xs text-gray-400" title="局域网内其他设备可通过本机 IP 访问">
+                                (内网可访问 :{server.port})
+                              </span>
                             </>
                           ) : (
                             <span className="text-sm font-mono text-gray-400">
@@ -566,7 +621,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
                             <Edit2 size={16} />
                           </button>
                           <button
-                            onClick={() => handleRemoveServer(server.id)}
+                            onClick={() => handleRemoveServer(server)}
                             className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-red-500"
                             title="删除"
                           >
@@ -656,7 +711,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
                               <Edit2 size={16} />
                             </button>
                             <button
-                              onClick={() => handleRemoveRule(rule.id)}
+                              onClick={() => handleRemoveRule(rule)}
                               className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-red-500"
                               title="删除"
                             >
@@ -909,6 +964,48 @@ export function LocalService({ onBack }: LocalServiceProps) {
               </Button>
               <Button onClick={handleSubmit} variant="primary">
                 {editingServer || editingRule ? "保存" : "创建"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 删除确认对话框 */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-full">
+                <AlertTriangle size={20} className="text-red-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                确认删除
+              </h3>
+            </div>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              确定要删除{deleteConfirm.type === "server" ? "服务" : "转发规则"}{" "}
+              <span className="font-medium text-gray-900 dark:text-white">"{deleteConfirm.name}"</span> 吗？
+              此操作无法撤销。
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button
+                onClick={() => setDeleteConfirm(null)}
+                variant="secondary"
+              >
+                取消
+              </Button>
+              <Button
+                onClick={() => {
+                  if (deleteConfirm.type === "server") {
+                    confirmRemoveServer();
+                  } else {
+                    confirmRemoveRule();
+                  }
+                }}
+                variant="primary"
+                className="!bg-red-500 hover:!bg-red-600"
+              >
+                删除
               </Button>
             </div>
           </div>
