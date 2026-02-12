@@ -449,6 +449,18 @@ export async function createProfileFromCurrent(envType: EnvType, envName: string
   };
 }
 
+export async function scanClaudeConfigDir(envType: EnvType, envName: string, configDir: string): Promise<ConfigFileInfo[]> {
+  const files: any[] = await invoke("scan_claude_config_dir", { envType, envName, configDir });
+  return files.map((f: any) => ({
+    name: f.name,
+    path: f.path,
+    exists: f.exists,
+    size: f.size,
+    modified: f.modified,
+    description: f.description,
+  }));
+}
+
 // ============== 工具函数 ==============
 
 export function formatBytes(bytes: number): string {

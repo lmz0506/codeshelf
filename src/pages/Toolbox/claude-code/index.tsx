@@ -39,6 +39,7 @@ import {
   getConfigProfiles,
   deleteConfigProfile,
   saveConfigProfile,
+  scanClaudeConfigDir,
 } from "@/services/toolbox";
 import type { ClaudeCodeInfo, ConfigFileInfo, ConfigProfile } from "@/types/toolbox";
 import {
@@ -253,6 +254,35 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     } catch (err) {
       console.error("打开目录失败:", err);
       alert(`打开目录失败: ${err}`);
+    }
+  }
+
+  async function handleUpdateConfigDir() {
+    if (!selectedEnv || !editingConfigDir.trim()) return;
+
+    try {
+      const newConfigFiles = await scanClaudeConfigDir(
+        selectedEnv.envType,
+        selectedEnv.envName,
+        editingConfigDir.trim()
+      );
+
+      // 更新当前环境的配置目录和文件列表
+      const updatedEnv = {
+        ...selectedEnv,
+        configDir: editingConfigDir.trim(),
+        configFiles: newConfigFiles,
+      };
+
+      setInstallations(prev => prev.map(env =>
+        env.envName === selectedEnv.envName ? updatedEnv : env
+      ));
+      setSelectedEnv(updatedEnv);
+      setShowEditConfigDir(false);
+      setSelectedFile(null);
+    } catch (err) {
+      console.error("更新配置目录失败:", err);
+      alert(`更新配置目录失败: ${err}`);
     }
   }
 
@@ -1205,6 +1235,73 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
             <div className="flex justify-end p-4 border-t border-gray-200 dark:border-gray-700">
               <Button onClick={() => setShowFindClaudeHelp(false)} variant="secondary">
                 关闭
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 编辑配置目录弹框 */}
+      {showEditConfigDir && selectedEnv && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-full">
+                <FolderOpen size={20} className="text-blue-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">设置配置目录</h3>
+            </div>
+
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              为 <span className="font-medium">{selectedEnv.envName}</span> 设置 Claude Code 配置文件所在的目录。
+            </p>
+
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1">配置目录路径</label>
+                <input
+                  type="text"
+                  value={editingConfigDir}
+                  onChange={(e) => setEditingConfigDir(e.target.value)}
+                  placeholder={selectedEnv.envType === "wsl" ? "/home/用户名/.claude" : "C:\\Users\\用户名\\.claude"}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                />
+              </div>
+
+              {selectedEnv.envType === "wsl" && (
+                <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-xs text-yellow-700 dark:text-yellow-400">
+                  <strong>WSL 注意：</strong>请输入 Linux 格式的路径，如 <code>/home/username/.claude</code>
+                  <br />
+                  可以在 WSL 终端运行 <code>echo $HOME/.claude</code> 获取路径。
+                </div>
+              )}
+
+              <div className="text-xs text-gray-500">
+                <p className="font-medium mb-1">常见配置目录位置：</p>
+                {selectedEnv.envType === "wsl" ? (
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li><code>~/.claude</code> 或 <code>/home/用户名/.claude</code></li>
+                  </ul>
+                ) : (
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li>Windows: <code>C:\Users\用户名\.claude</code></li>
+                    <li>macOS/Linux: <code>~/.claude</code></li>
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setShowEditConfigDir(false)} variant="secondary">
+                取消
+              </Button>
+              <Button
+                onClick={handleUpdateConfigDir}
+                variant="primary"
+                disabled={!editingConfigDir.trim()}
+              >
+                <Check size={14} className="mr-1" />
+                确定
               </Button>
             </div>
           </div>
