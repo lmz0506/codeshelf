@@ -108,6 +108,9 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   const [showEditConfigDir, setShowEditConfigDir] = useState(false);
   const [editingConfigDir, setEditingConfigDir] = useState("");
 
+  // 缓存 key
+  const CACHE_KEY = "codeshelf_claude_installations";
+
   useEffect(() => {
     loadAll();
   }, []);
@@ -119,12 +122,35 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     }
   }, [selectedEnv]);
 
-  async function loadAll() {
+  async function loadAll(forceRefresh = false) {
     setLoading(true);
     setError(null);
     try {
+      // 尝试从缓存加载
+      if (!forceRefresh) {
+        const cached = sessionStorage.getItem(CACHE_KEY);
+        if (cached) {
+          try {
+            const installs = JSON.parse(cached) as ClaudeCodeInfo[];
+            if (installs.length > 0) {
+              setInstallations(installs);
+              if (!selectedEnv) {
+                setSelectedEnv(installs[0]);
+              }
+              setLoading(false);
+              return;
+            }
+          } catch {
+            // 缓存解析失败，重新检测
+          }
+        }
+      }
+
       const installs = await checkAllClaudeInstallations();
       setInstallations(installs);
+
+      // 保存到缓存
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(installs));
 
       if (installs.length > 0 && !selectedEnv) {
         setSelectedEnv(installs[0]);
@@ -186,12 +212,15 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         const info = await checkClaudeByPath(selected);
         if (info.installed) {
           // 更新当前环境的路径信息
-          setInstallations(prev => prev.map(env =>
+          const updatedInstallations = installations.map(env =>
             env.envName === selectedEnv.envName
               ? { ...env, ...info, envName: env.envName, envType: env.envType }
               : env
-          ));
+          );
+          setInstallations(updatedInstallations);
           setSelectedEnv(prev => prev ? { ...prev, ...info, envName: prev.envName, envType: prev.envType } : null);
+          // 更新缓存
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify(updatedInstallations));
         } else {
           alert("无法识别该路径为有效的 Claude Code 安装");
         }
@@ -464,9 +493,10 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
               </button>
             )}
             <button
-              onClick={loadAll}
+              onClick={() => loadAll(true)}
               disabled={loading}
               className="re-btn flex items-center gap-2"
+              title="重新检测 Claude Code 安装"
             >
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
               <span>刷新</span>
