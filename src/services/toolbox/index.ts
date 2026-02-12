@@ -475,6 +475,53 @@ export async function getWslConfigDir(distro: string): Promise<{ linuxPath: stri
   };
 }
 
+// Claude 安装信息缓存
+export async function getClaudeInstallationsCache(): Promise<ClaudeCodeInfo[] | null> {
+  const result: any = await invoke("get_claude_installations_cache");
+  if (!result) return null;
+  return result.map((info: any) => ({
+    envType: info.env_type as EnvType,
+    envName: info.env_name,
+    installed: info.installed,
+    version: info.version,
+    path: info.path,
+    configDir: info.config_dir,
+    configFiles: (info.config_files || []).map((f: any) => ({
+      name: f.name,
+      path: f.path,
+      exists: f.exists,
+      size: f.size,
+      modified: f.modified,
+      description: f.description,
+    })),
+  }));
+}
+
+export async function saveClaudeInstallationsCache(installs: ClaudeCodeInfo[]): Promise<void> {
+  // 转换为后端格式
+  const data = installs.map(info => ({
+    env_type: info.envType,
+    env_name: info.envName,
+    installed: info.installed,
+    version: info.version,
+    path: info.path,
+    config_dir: info.configDir,
+    config_files: info.configFiles.map(f => ({
+      name: f.name,
+      path: f.path,
+      exists: f.exists,
+      size: f.size,
+      modified: f.modified,
+      description: f.description,
+    })),
+  }));
+  return invoke("save_claude_installations_cache", { installs: data });
+}
+
+export async function clearClaudeInstallationsCache(): Promise<void> {
+  return invoke("clear_claude_installations_cache");
+}
+
 // ============== 工具函数 ==============
 
 export function formatBytes(bytes: number): string {

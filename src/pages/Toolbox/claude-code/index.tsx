@@ -44,6 +44,9 @@ import {
   saveConfigProfile,
   scanClaudeConfigDir,
   getWslConfigDir,
+  getClaudeInstallationsCache,
+  saveClaudeInstallationsCache,
+  clearClaudeInstallationsCache,
 } from "@/services/toolbox";
 import type { ClaudeCodeInfo, ConfigFileInfo, ConfigProfile } from "@/types/toolbox";
 import {
@@ -80,7 +83,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
 
   // 快捷配置
-  const [quickConfigs, setQuickConfigs] = useState<QuickConfigOption[]>(loadQuickConfigs);
+  const [quickConfigs, setQuickConfigs] = useState<QuickConfigOption[]>([]);
   const [showQuickConfigManager, setShowQuickConfigManager] = useState(false);
 
   // 编辑档案
@@ -117,11 +120,10 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   const [wslClaudePath, setWslClaudePath] = useState("");
   const [wslClaudePathError, setWslClaudePathError] = useState<string | null>(null);
 
-  // 缓存 key
-  const CACHE_KEY = "codeshelf_claude_installations";
-
   useEffect(() => {
     loadAll();
+    // 异步加载快捷配置
+    loadQuickConfigs().then(setQuickConfigs);
   }, []);
 
   useEffect(() => {
@@ -143,31 +145,25 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     setLoading(true);
     setError(null);
     try {
-      // 尝试从缓存加载
+      // 尝试从后端缓存加载
       if (!forceRefresh) {
-        const cached = sessionStorage.getItem(CACHE_KEY);
-        if (cached) {
-          try {
-            const installs = JSON.parse(cached) as ClaudeCodeInfo[];
-            if (installs.length > 0) {
-              setInstallations(installs);
-              if (!selectedEnv) {
-                setSelectedEnv(installs[0]);
-              }
-              setLoading(false);
-              return;
-            }
-          } catch {
-            // 缓存解析失败，重新检测
+        const cached = await getClaudeInstallationsCache();
+        if (cached && cached.length > 0) {
+          setInstallations(cached);
+          if (!selectedEnv) {
+            setSelectedEnv(cached[0]);
           }
+          setLoading(false);
+          return;
         }
       }
 
+      // 重新检测
       const installs = await checkAllClaudeInstallations();
       setInstallations(installs);
 
-      // 保存到缓存
-      sessionStorage.setItem(CACHE_KEY, JSON.stringify(installs));
+      // 保存到后端缓存
+      await saveClaudeInstallationsCache(installs);
 
       if (installs.length > 0 && !selectedEnv) {
         setSelectedEnv(installs[0]);
@@ -294,8 +290,8 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         );
         setInstallations(updatedInstallations);
         setSelectedEnv(prev => prev ? { ...prev, ...info, envName: prev.envName, envType: prev.envType } : null);
-        // 更新缓存
-        sessionStorage.setItem(CACHE_KEY, JSON.stringify(updatedInstallations));
+        // 更新后端缓存
+        saveClaudeInstallationsCache(updatedInstallations).catch(console.error);
       } else {
         alert("无法识别该路径为有效的 Claude Code 安装");
       }
@@ -419,8 +415,8 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
       setSelectedEnv(updatedEnv);
       setShowEditConfigDir(false);
       setSelectedFile(null);
-      // 更新缓存
-      sessionStorage.setItem(CACHE_KEY, JSON.stringify(updatedInstallations));
+      // 更新后端缓存
+      saveClaudeInstallationsCache(updatedInstallations).catch(console.error);
     } catch (err) {
       console.error("更新配置目录失败:", err);
       alert(`更新配置目录失败: ${err}`);

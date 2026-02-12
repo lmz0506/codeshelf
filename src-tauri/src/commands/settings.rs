@@ -1,4 +1,4 @@
-// 设置管理模块 - 标签、分类、编辑器、终端、应用设置
+// 设置管理模块 - 标签、分类、编辑器、终端、应用设置、UI状态、通知
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -7,6 +7,7 @@ use crate::storage;
 use crate::storage::schema::{
     LabelsData, CategoriesData, EditorsData, EditorConfig,
     TerminalData, AppSettingsData, VersionedData, current_iso_time,
+    UiStateData, NotificationsData, NotificationData, generate_id,
 };
 
 // ============== 标签管理 ==============
@@ -371,4 +372,142 @@ pub async fn save_app_settings(input: AppSettingsInput) -> Result<AppSettingsDat
         .map_err(|e| format!("保存应用设置失败: {}", e))?;
 
     Ok(settings)
+}
+
+// ============== UI 状态管理 ==============
+
+/// UI 状态输入
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiStateInput {
+    pub recent_detail_project_ids: Option<Vec<String>>,
+}
+
+/// 获取 UI 状态
+#[tauri::command]
+pub async fn get_ui_state() -> Result<UiStateData, String> {
+    if let Ok(config) = storage::get_storage_config() {
+        let path = config.ui_state_file();
+        if path.exists() {
+            let content = fs::read_to_string(&path)
+                .map_err(|e| format!("读取UI状态失败: {}", e))?;
+
+            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(data) = versioned.get("data") {
+                    let ui_state: UiStateData = serde_json::from_value(data.clone())
+                        .unwrap_or_default();
+                    return Ok(ui_state);
+                }
+            }
+        }
+    }
+    Ok(UiStateData::default())
+}
+
+/// 保存 UI 状态
+#[tauri::command]
+pub async fn save_ui_state(input: UiStateInput) -> Result<UiStateData, String> {
+    let mut ui_state = get_ui_state().await?;
+
+    if let Some(recent_ids) = input.recent_detail_project_ids {
+        ui_state.recent_detail_project_ids = recent_ids;
+    }
+
+    let config = storage::get_storage_config()?;
+    config.ensure_dirs()?;
+
+    let data = VersionedData {
+        version: 1,
+        last_updated: current_iso_time(),
+        data: ui_state.clone(),
+    };
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("序列化UI状态失败: {}", e))?;
+    fs::write(config.ui_state_file(), content)
+        .map_err(|e| format!("保存UI状态失败: {}", e))?;
+
+    Ok(ui_state)
+}
+
+// ============== 通知管理 ==============
+
+/// 通知输入
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationInput {
+    pub notification_type: String,
+    pub title: String,
+    pub message: String,
+}
+
+/// 获取所有通知
+#[tauri::command]
+pub async fn get_notifications() -> Result<Vec<NotificationData>, String> {
+    if let Ok(config) = storage::get_storage_config() {
+        let path = config.notifications_file();
+        if path.exists() {
+            let content = fs::read_to_string(&path)
+                .map_err(|e| format!("读取通知失败: {}", e))?;
+
+            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(notifications) = versioned.get("data").and_then(|d| d.get("notifications")) {
+                    let notifications: Vec<NotificationData> = serde_json::from_value(notifications.clone())
+                        .unwrap_or_default();
+                    return Ok(notifications);
+                }
+            }
+        }
+    }
+    Ok(vec![])
+}
+
+/// 保存所有通知
+#[tauri::command]
+pub async fn save_notifications(notifications: Vec<NotificationData>) -> Result<(), String> {
+    let config = storage::get_storage_config()?;
+    config.ensure_dirs()?;
+
+    let data = VersionedData {
+        version: 1,
+        last_updated: current_iso_time(),
+        data: NotificationsData { notifications },
+    };
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("序列化通知失败: {}", e))?;
+    fs::write(config.notifications_file(), content)
+        .map_err(|e| format!("保存通知失败: {}", e))?;
+    Ok(())
+}
+
+/// 添加通知
+#[tauri::command]
+pub async fn add_notification(input: NotificationInput) -> Result<NotificationData, String> {
+    let mut notifications = get_notifications().await?;
+
+    let notification = NotificationData {
+        id: generate_id(),
+        notification_type: input.notification_type,
+        title: input.title,
+        message: input.message,
+        created_at: current_iso_time(),
+    };
+
+    // 添加到开头，保留最多10条
+    notifications.insert(0, notification.clone());
+    notifications.truncate(10);
+
+    save_notifications(notifications).await?;
+    Ok(notification)
+}
+
+/// 删除通知
+#[tauri::command]
+pub async fn remove_notification(id: String) -> Result<(), String> {
+    let mut notifications = get_notifications().await?;
+    notifications.retain(|n| n.id != id);
+    save_notifications(notifications).await
+}
+
+/// 清空所有通知
+#[tauri::command]
+pub async fn clear_notifications() -> Result<(), String> {
+    save_notifications(vec![]).await
 }

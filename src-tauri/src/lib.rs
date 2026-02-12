@@ -35,13 +35,33 @@ pub fn run() {
                 // 不阻止应用启动，只是警告
             }
 
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            // 获取日志目录路径
+            let log_dir = if let Ok(config) = storage::get_storage_config() {
+                config.logs_dir.clone()
+            } else {
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.join("logs")))
+                    .unwrap_or_else(|| std::path::PathBuf::from("logs"))
+            };
+
+            // 确保日志目录存在
+            let _ = std::fs::create_dir_all(&log_dir);
+
+            // 始终启用日志插件（开发和生产环境都启用）
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .target(tauri_plugin_log::Target::new(
+                        tauri_plugin_log::TargetKind::Folder {
+                            path: log_dir,
+                            file_name: Some("app".into()),
+                        }
+                    ))
+                    .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+                    .max_file_size(10 * 1024 * 1024) // 10MB
+                    .build(),
+            )?;
 
             // 创建托盘右键菜单
             let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
@@ -219,6 +239,12 @@ pub fn run() {
             toolbox::claude_code::create_profile_from_current,
             toolbox::claude_code::scan_claude_config_dir,
             toolbox::claude_code::get_wsl_config_dir,
+            // Claude Code - Quick configs & cache commands
+            toolbox::claude_code::get_saved_quick_configs,
+            toolbox::claude_code::save_quick_configs,
+            toolbox::claude_code::get_claude_installations_cache,
+            toolbox::claude_code::save_claude_installations_cache,
+            toolbox::claude_code::clear_claude_installations_cache,
             // Settings commands
             settings::get_labels,
             settings::save_labels,
@@ -237,6 +263,15 @@ pub fn run() {
             settings::save_terminal_config,
             settings::get_app_settings,
             settings::save_app_settings,
+            // Settings - UI State commands
+            settings::get_ui_state,
+            settings::save_ui_state,
+            // Settings - Notification commands
+            settings::get_notifications,
+            settings::save_notifications,
+            settings::add_notification,
+            settings::remove_notification,
+            settings::clear_notifications,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -495,7 +495,7 @@ export const DEFAULT_QUICK_CONFIGS: QuickConfigOption[] = [
   },
 ];
 
-// 本地存储 key
+// 本地存储 key（保留用于迁移检测）
 export const QUICK_CONFIGS_STORAGE_KEY = "claude-code-quick-configs";
 
 // 获取分类图标
@@ -518,16 +518,16 @@ export function getCategoryIcon(category: string) {
   }
 }
 
-// 加载快捷配置
-export function loadQuickConfigs(): QuickConfigOption[] {
+// 加载快捷配置（从后端）
+export async function loadQuickConfigs(): Promise<QuickConfigOption[]> {
   try {
-    const saved = localStorage.getItem(QUICK_CONFIGS_STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
+    const { invoke } = await import("@tauri-apps/api/core");
+    const saved = await invoke<QuickConfigOption[]>("get_saved_quick_configs");
+    if (saved && saved.length > 0) {
       // 合并默认配置，确保新增的配置项也能显示
-      const savedIds = new Set(parsed.map((c: QuickConfigOption) => c.id));
-      const merged = [...parsed];
-      // 添加默认配置中存在但本地存储中不存在的配置
+      const savedIds = new Set(saved.map((c: QuickConfigOption) => c.id));
+      const merged = [...saved];
+      // 添加默认配置中存在但已保存配置中不存在的配置
       DEFAULT_QUICK_CONFIGS.forEach(defaultConfig => {
         if (!savedIds.has(defaultConfig.id)) {
           merged.push(defaultConfig);
@@ -535,15 +535,20 @@ export function loadQuickConfigs(): QuickConfigOption[] {
       });
       return merged;
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    console.error("加载快捷配置失败:", err);
   }
   return DEFAULT_QUICK_CONFIGS;
 }
 
-// 保存快捷配置
-export function saveQuickConfigs(configs: QuickConfigOption[]) {
-  localStorage.setItem(QUICK_CONFIGS_STORAGE_KEY, JSON.stringify(configs));
+// 保存快捷配置（到后端）
+export async function saveQuickConfigs(configs: QuickConfigOption[]): Promise<void> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("save_quick_configs", { configs });
+  } catch (err) {
+    console.error("保存快捷配置失败:", err);
+  }
 }
 
 // 嵌套键操作工具函数

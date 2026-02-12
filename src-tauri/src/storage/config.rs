@@ -94,6 +94,26 @@ impl StorageConfig {
     pub fn migration_file(&self) -> PathBuf {
         self.data_dir.join("migration.json")
     }
+
+    /// 获取UI状态文件路径
+    pub fn ui_state_file(&self) -> PathBuf {
+        self.data_dir.join("ui_state.json")
+    }
+
+    /// 获取通知数据文件路径
+    pub fn notifications_file(&self) -> PathBuf {
+        self.data_dir.join("notifications.json")
+    }
+
+    /// 获取Claude快捷配置文件路径
+    pub fn claude_quick_configs_file(&self) -> PathBuf {
+        self.data_dir.join("claude_quick_configs.json")
+    }
+
+    /// 获取Claude安装信息缓存文件路径
+    pub fn claude_installations_cache_file(&self) -> PathBuf {
+        self.data_dir.join("claude_installations_cache.json")
+    }
 }
 
 /// 获取安装目录

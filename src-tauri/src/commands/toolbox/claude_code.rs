@@ -1,10 +1,16 @@
 // Claude Code 配置管理模块
 
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
 use crate::storage;
+use crate::storage::schema::{
+    ClaudeQuickConfigsData, ClaudeQuickConfigOption, ClaudeInstallationsCacheData,
+    ClaudeCodeInfo as SchemaClaudeCodeInfo, ConfigFileInfo as SchemaConfigFileInfo,
+    VersionedData, current_iso_time,
+};
 
 /// 清理 WSL 命令输出中的特殊字符（\r, \0 等）
 fn clean_wsl_output(output: &[u8]) -> String {
@@ -1319,4 +1325,122 @@ pub async fn scan_claude_config_dir(env_type: EnvType, env_name: String, config_
             Err("WSL 仅在 Windows 上可用".to_string())
         }
     }
+}
+
+// ============== Claude 快捷配置持久化 ==============
+
+/// 获取保存的 Claude 快捷配置
+#[tauri::command]
+pub async fn get_saved_quick_configs() -> Result<Vec<ClaudeQuickConfigOption>, String> {
+    if let Ok(config) = storage::get_storage_config() {
+        let path = config.claude_quick_configs_file();
+        if path.exists() {
+            let content = fs::read_to_string(&path)
+                .map_err(|e| format!("读取快捷配置失败: {}", e))?;
+
+            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(configs) = versioned.get("data").and_then(|d| d.get("configs")) {
+                    let configs: Vec<ClaudeQuickConfigOption> = serde_json::from_value(configs.clone())
+                        .unwrap_or_default();
+                    return Ok(configs);
+                }
+            }
+        }
+    }
+    Ok(vec![])
+}
+
+/// 保存 Claude 快捷配置
+#[tauri::command]
+pub async fn save_quick_configs(configs: Vec<ClaudeQuickConfigOption>) -> Result<(), String> {
+    let config = storage::get_storage_config()?;
+    config.ensure_dirs()?;
+
+    let data = VersionedData {
+        version: 1,
+        last_updated: current_iso_time(),
+        data: ClaudeQuickConfigsData { configs },
+    };
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("序列化快捷配置失败: {}", e))?;
+    fs::write(config.claude_quick_configs_file(), content)
+        .map_err(|e| format!("保存快捷配置失败: {}", e))?;
+    Ok(())
+}
+
+// ============== Claude 安装信息缓存 ==============
+
+/// 获取缓存的 Claude 安装信息
+#[tauri::command]
+pub async fn get_claude_installations_cache() -> Result<Option<Vec<ClaudeCodeInfo>>, String> {
+    if let Ok(config) = storage::get_storage_config() {
+        let path = config.claude_installations_cache_file();
+        if path.exists() {
+            let content = fs::read_to_string(&path)
+                .map_err(|e| format!("读取安装缓存失败: {}", e))?;
+
+            if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(installations) = versioned.get("data").and_then(|d| d.get("installations")) {
+                    let installations: Vec<ClaudeCodeInfo> = serde_json::from_value(installations.clone())
+                        .unwrap_or_default();
+                    return Ok(Some(installations));
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// 保存 Claude 安装信息缓存
+#[tauri::command]
+pub async fn save_claude_installations_cache(installs: Vec<ClaudeCodeInfo>) -> Result<(), String> {
+    let config = storage::get_storage_config()?;
+    config.ensure_dirs()?;
+
+    // 转换为 Schema 类型
+    let schema_installs: Vec<SchemaClaudeCodeInfo> = installs.iter().map(|i| {
+        SchemaClaudeCodeInfo {
+            env_type: match i.env_type {
+                EnvType::Host => "host".to_string(),
+                EnvType::Wsl => "wsl".to_string(),
+            },
+            env_name: i.env_name.clone(),
+            version: i.version.clone(),
+            config_dir: i.config_dir.clone().unwrap_or_default(),
+            config_files: i.config_files.iter().map(|f| {
+                SchemaConfigFileInfo {
+                    name: f.name.clone(),
+                    path: f.path.clone(),
+                    exists: f.exists,
+                }
+            }).collect(),
+        }
+    }).collect();
+
+    let data = VersionedData {
+        version: 1,
+        last_updated: current_iso_time(),
+        data: ClaudeInstallationsCacheData {
+            installations: schema_installs,
+            cached_at: current_iso_time(),
+        },
+    };
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("序列化安装缓存失败: {}", e))?;
+    fs::write(config.claude_installations_cache_file(), content)
+        .map_err(|e| format!("保存安装缓存失败: {}", e))?;
+    Ok(())
+}
+
+/// 清除 Claude 安装信息缓存
+#[tauri::command]
+pub async fn clear_claude_installations_cache() -> Result<(), String> {
+    if let Ok(config) = storage::get_storage_config() {
+        let path = config.claude_installations_cache_file();
+        if path.exists() {
+            fs::remove_file(&path)
+                .map_err(|e| format!("删除缓存文件失败: {}", e))?;
+        }
+    }
+    Ok(())
 }

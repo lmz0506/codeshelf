@@ -283,6 +283,91 @@ impl Default for AppSettingsData {
     }
 }
 
+// ============== UI 状态数据 ==============
+
+/// UI 状态文件结构
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct UiStateData {
+    pub recent_detail_project_ids: Vec<String>,
+}
+
+// ============== 通知数据 ==============
+
+/// 通知数据文件结构
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct NotificationsData {
+    pub notifications: Vec<NotificationData>,
+}
+
+/// 单条通知
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct NotificationData {
+    pub id: String,
+    pub notification_type: String, // "info" | "success" | "warning" | "error"
+    pub title: String,
+    pub message: String,
+    pub created_at: String,
+}
+
+// ============== Claude 快捷配置数据 ==============
+
+/// Claude 快捷配置文件结构
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ClaudeQuickConfigsData {
+    pub configs: Vec<ClaudeQuickConfigOption>,
+}
+
+/// Claude 快捷配置选项
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeQuickConfigOption {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub config_key: String,
+    pub value_type: String, // "string" | "boolean" | "number" | "select" | "model"
+    pub default_value: serde_json::Value,
+    pub options: Option<Vec<ClaudeConfigSelectOption>>,
+    pub placeholder: Option<String>,
+    pub allow_empty: Option<bool>,
+}
+
+/// 配置选项
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ClaudeConfigSelectOption {
+    pub label: String,
+    pub value: serde_json::Value,
+}
+
+// ============== Claude 安装信息缓存数据 ==============
+
+/// Claude 安装信息缓存文件结构
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ClaudeInstallationsCacheData {
+    pub installations: Vec<ClaudeCodeInfo>,
+    pub cached_at: String,
+}
+
+/// Claude Code 安装信息
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeCodeInfo {
+    pub env_type: String,  // "host" | "wsl"
+    pub env_name: String,
+    pub version: Option<String>,
+    pub config_dir: String,
+    pub config_files: Vec<ConfigFileInfo>,
+}
+
+/// 配置文件信息
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ConfigFileInfo {
+    pub name: String,
+    pub path: String,
+    pub exists: bool,
+}
+
 // ============== 工具函数 ==============
 
 /// 获取当前时间字符串

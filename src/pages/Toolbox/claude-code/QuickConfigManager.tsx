@@ -45,19 +45,22 @@ export function QuickConfigManager({
       ? [...quickConfigs, { ...config, id: `custom_${Date.now()}` }]
       : quickConfigs.map(c => c.id === config.id ? config : c);
     onConfigsChange(newConfigs);
-    saveQuickConfigs(newConfigs);
+    // 异步保存到后端
+    saveQuickConfigs(newConfigs).catch(console.error);
     setEditingConfig(null);
   }
 
   function handleDeleteConfig(id: string) {
     const newConfigs = quickConfigs.filter(c => c.id !== id);
     onConfigsChange(newConfigs);
-    saveQuickConfigs(newConfigs);
+    // 异步保存到后端
+    saveQuickConfigs(newConfigs).catch(console.error);
   }
 
   function handleReset() {
     onConfigsChange(DEFAULT_QUICK_CONFIGS);
-    saveQuickConfigs(DEFAULT_QUICK_CONFIGS);
+    // 异步保存到后端
+    saveQuickConfigs(DEFAULT_QUICK_CONFIGS).catch(console.error);
   }
 
   return (
