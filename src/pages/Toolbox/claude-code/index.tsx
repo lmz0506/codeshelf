@@ -115,6 +115,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   useEffect(() => {
     if (selectedEnv) {
       loadCurrentSettings();
+      loadProfiles();
     }
   }, [selectedEnv]);
 
@@ -122,15 +123,8 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     setLoading(true);
     setError(null);
     try {
-      const [installs, profs] = await Promise.all([
-        checkAllClaudeInstallations(),
-        getConfigProfiles(),
-      ]);
+      const installs = await checkAllClaudeInstallations();
       setInstallations(installs);
-      setProfiles(profs);
-
-      const active = profs.find(p => (p.settings as Record<string, unknown>)?.__active === true);
-      setActiveProfileId(active?.id || null);
 
       if (installs.length > 0 && !selectedEnv) {
         setSelectedEnv(installs[0]);
@@ -140,6 +134,19 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
       setError(String(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadProfiles() {
+    if (!selectedEnv) return;
+    try {
+      const profs = await getConfigProfiles(selectedEnv.envType, selectedEnv.envName);
+      setProfiles(profs);
+
+      const active = profs.find(p => (p.settings as Record<string, unknown>)?.__active === true);
+      setActiveProfileId(active?.id || null);
+    } catch (err) {
+      console.error("加载配置档案失败:", err);
     }
   }
 
@@ -317,12 +324,12 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         } else {
           delete pSettings.__active;
         }
-        await saveConfigProfile(p.name, p.description, pSettings);
+        await saveConfigProfile(selectedEnv.envType, selectedEnv.envName, p.name, p.description, pSettings);
       }
 
       setActiveProfileId(profile.id);
       await loadCurrentSettings();
-      await loadAll();
+      await loadProfiles();
     } catch (err) {
       console.error("启用档案失败:", err);
       alert(`启用配置档案失败: ${err}`);
@@ -330,7 +337,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   }
 
   async function handleSaveProfile(content: string) {
-    if (!editingProfile) return;
+    if (!editingProfile || !selectedEnv) return;
 
     try {
       const settings = JSON.parse(content);
@@ -338,9 +345,9 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         settings.__active = true;
       }
 
-      await saveConfigProfile(editingProfile.name, editingProfile.description, settings);
+      await saveConfigProfile(selectedEnv.envType, selectedEnv.envName, editingProfile.name, editingProfile.description, settings);
 
-      if (activeProfileId === editingProfile.id && selectedEnv) {
+      if (activeProfileId === editingProfile.id) {
         const settingsFile = selectedEnv.configFiles.find(f => f.name === "settings.json");
         if (settingsFile) {
           const cleanSettings = { ...settings };
@@ -356,7 +363,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
       }
 
       setEditingProfile(null);
-      await loadAll();
+      await loadProfiles();
     } catch (err) {
       console.error("保存档案失败:", err);
       alert(`保存配置档案失败: ${err}`);
@@ -364,7 +371,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   }
 
   async function handleCreateProfile() {
-    if (!newProfileName.trim()) return;
+    if (!newProfileName.trim() || !selectedEnv) return;
 
     // 检查重名
     const trimmedName = newProfileName.trim();
@@ -392,14 +399,14 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         });
       }
 
-      const profile = await saveConfigProfile(trimmedName, newProfileDesc.trim() || undefined, settings);
+      const profile = await saveConfigProfile(selectedEnv.envType, selectedEnv.envName, trimmedName, newProfileDesc.trim() || undefined, settings);
 
       setShowCreateProfile(false);
       setNewProfileName("");
       setNewProfileDesc("");
       setNewProfileSource("empty");
       setProfileNameError(null);
-      await loadAll();
+      await loadProfiles();
 
       if (profile) {
         setEditingProfile(profile);
@@ -413,12 +420,12 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   }
 
   async function confirmDeleteProfile() {
-    if (!deleteConfirmProfile) return;
+    if (!deleteConfirmProfile || !selectedEnv) return;
 
     try {
-      await deleteConfigProfile(deleteConfirmProfile.id);
+      await deleteConfigProfile(selectedEnv.envType, selectedEnv.envName, deleteConfirmProfile.id);
       setDeleteConfirmProfile(null);
-      await loadAll();
+      await loadProfiles();
     } catch (err) {
       console.error("删除档案失败:", err);
       alert(`删除配置档案失败: ${err}`);
@@ -487,13 +494,24 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
               <div className="re-card p-3 flex-shrink-0 space-y-3">
                 {/* 环境选择器 */}
                 <div className="flex items-center gap-4 flex-wrap">
-                  <span className="text-sm font-medium text-gray-500">环境:</span>
+                  <span className="text-sm font-medium text-gray-500 flex items-center gap-1">
+                    环境:
+                    <button
+                      onClick={() => setShowFindClaudeHelp(true)}
+                      className="p-0.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-400 hover:text-blue-500"
+                      title="如何查找 Claude Code"
+                    >
+                      <HelpCircle size={14} />
+                    </button>
+                  </span>
                   {installations.map((env) => (
                     <button
                       key={`${env.envType}-${env.envName}`}
                       onClick={() => {
                         setSelectedEnv(env);
                         setSelectedFile(null);
+                        setProfiles([]);
+                        setActiveProfileId(null);
                       }}
                       className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-sm ${
                         selectedEnv?.envName === env.envName

@@ -405,8 +405,8 @@ export async function applyQuickConfig(envType: EnvType, envName: string, config
   return invoke("apply_quick_config", { envType, envName, configPath, options });
 }
 
-export async function getConfigProfiles(): Promise<ConfigProfile[]> {
-  const profiles: any[] = await invoke("get_config_profiles");
+export async function getConfigProfiles(envType: EnvType, envName: string): Promise<ConfigProfile[]> {
+  const profiles: any[] = await invoke("get_config_profiles", { envType, envName });
   return profiles.map((p: any) => ({
     id: p.id,
     name: p.name,
@@ -417,8 +417,8 @@ export async function getConfigProfiles(): Promise<ConfigProfile[]> {
   }));
 }
 
-export async function saveConfigProfile(name: string, description: string | undefined, settings: Record<string, unknown>): Promise<ConfigProfile> {
-  const profile: any = await invoke("save_config_profile", { name, description, settings });
+export async function saveConfigProfile(envType: EnvType, envName: string, name: string, description: string | undefined, settings: Record<string, unknown>): Promise<ConfigProfile> {
+  const profile: any = await invoke("save_config_profile", { envType, envName, name, description, settings });
   return {
     id: profile.id,
     name: profile.name,
@@ -429,8 +429,8 @@ export async function saveConfigProfile(name: string, description: string | unde
   };
 }
 
-export async function deleteConfigProfile(profileId: string): Promise<void> {
-  return invoke("delete_config_profile", { profileId });
+export async function deleteConfigProfile(envType: EnvType, envName: string, profileId: string): Promise<void> {
+  return invoke("delete_config_profile", { envType, envName, profileId });
 }
 
 export async function applyConfigProfile(envType: EnvType, envName: string, configPath: string, profileId: string): Promise<void> {

@@ -972,8 +972,8 @@ pub async fn apply_quick_config(
 
 /// 获取保存的配置档案列表
 #[tauri::command]
-pub async fn get_config_profiles() -> Result<Vec<ConfigProfile>, String> {
-    let profiles_path = get_profiles_storage_path();
+pub async fn get_config_profiles(env_type: EnvType, env_name: String) -> Result<Vec<ConfigProfile>, String> {
+    let profiles_path = get_profiles_storage_path(&env_type, &env_name);
 
     if !profiles_path.exists() {
         return Ok(vec![]);
@@ -989,11 +989,13 @@ pub async fn get_config_profiles() -> Result<Vec<ConfigProfile>, String> {
 /// 保存配置档案（如果名称已存在则更新，否则新建）
 #[tauri::command]
 pub async fn save_config_profile(
+    env_type: EnvType,
+    env_name: String,
     name: String,
     description: Option<String>,
     settings: serde_json::Value,
 ) -> Result<ConfigProfile, String> {
-    let mut profiles = get_config_profiles().await?;
+    let mut profiles = get_config_profiles(env_type.clone(), env_name.clone()).await?;
 
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -1004,7 +1006,7 @@ pub async fn save_config_profile(
         existing.settings = settings;
         existing.updated_at = now;
         let profile = existing.clone();
-        save_profiles(&profiles)?;
+        save_profiles(&env_type, &env_name, &profiles)?;
         return Ok(profile);
     }
 
@@ -1022,17 +1024,17 @@ pub async fn save_config_profile(
     };
 
     profiles.push(profile.clone());
-    save_profiles(&profiles)?;
+    save_profiles(&env_type, &env_name, &profiles)?;
 
     Ok(profile)
 }
 
 /// 删除配置档案
 #[tauri::command]
-pub async fn delete_config_profile(profile_id: String) -> Result<(), String> {
-    let mut profiles = get_config_profiles().await?;
+pub async fn delete_config_profile(env_type: EnvType, env_name: String, profile_id: String) -> Result<(), String> {
+    let mut profiles = get_config_profiles(env_type.clone(), env_name.clone()).await?;
     profiles.retain(|p| p.id != profile_id);
-    save_profiles(&profiles)
+    save_profiles(&env_type, &env_name, &profiles)
 }
 
 /// 应用配置档案
@@ -1043,7 +1045,7 @@ pub async fn apply_config_profile(
     config_path: String,
     profile_id: String,
 ) -> Result<(), String> {
-    let profiles = get_config_profiles().await?;
+    let profiles = get_config_profiles(env_type.clone(), env_name.clone()).await?;
 
     let profile = profiles.iter()
         .find(|p| p.id == profile_id)
@@ -1055,16 +1057,27 @@ pub async fn apply_config_profile(
     write_claude_config_file(env_type, env_name, config_path, content).await
 }
 
-/// 获取配置档案存储路径
-fn get_profiles_storage_path() -> PathBuf {
+/// 获取配置档案存储路径（按环境隔离）
+fn get_profiles_storage_path(env_type: &EnvType, env_name: &str) -> PathBuf {
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."));
-    config_dir.join("codeshelf").join("claude_profiles.json")
+
+    // 根据环境类型和名称生成唯一的文件名
+    let env_suffix = match env_type {
+        EnvType::Host => "host".to_string(),
+        EnvType::Wsl => {
+            // 从 "WSL: Ubuntu" 中提取 "ubuntu"
+            let distro = env_name.strip_prefix("WSL: ").unwrap_or(env_name);
+            format!("wsl_{}", distro.to_lowercase().replace(' ', "_"))
+        }
+    };
+
+    config_dir.join("codeshelf").join(format!("claude_profiles_{}.json", env_suffix))
 }
 
 /// 保存配置档案到文件
-fn save_profiles(profiles: &[ConfigProfile]) -> Result<(), String> {
-    let path = get_profiles_storage_path();
+fn save_profiles(env_type: &EnvType, env_name: &str, profiles: &[ConfigProfile]) -> Result<(), String> {
+    let path = get_profiles_storage_path(env_type, env_name);
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -1087,12 +1100,12 @@ pub async fn create_profile_from_current(
     profile_name: String,
     description: Option<String>,
 ) -> Result<ConfigProfile, String> {
-    let content = read_claude_config_file(env_type, env_name, config_path).await?;
+    let content = read_claude_config_file(env_type.clone(), env_name.clone(), config_path).await?;
 
     let settings: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| format!("解析配置失败: {}", e))?;
 
-    save_config_profile(profile_name, description, settings).await
+    save_config_profile(env_type, env_name, profile_name, description, settings).await
 }
 
 /// 扫描指定配置目录的配置文件
