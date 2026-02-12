@@ -46,6 +46,22 @@ export function ProfileEditor({
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // 自定义下拉框状态
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭下拉框
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   // 解析当前配置值
   const editingValues = useMemo(() => {
     try {
@@ -261,28 +277,83 @@ export function ProfileEditor({
               快捷配置
             </h4>
 
-            {/* 下拉选择器 - 固定高度防止溢出 */}
-            <div className="flex items-center gap-2">
-              <select
-                value={selectedConfigId || ""}
-                onChange={(e) => setSelectedConfigId(e.target.value || null)}
-                className="flex-1 px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            {/* 自定义下拉选择器 */}
+            <div className="relative" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">选择要配置的项...</option>
-                {Object.entries(groupedOptions).map(([category, options]) => (
-                  <optgroup key={category} label={category}>
-                    {options.map((opt) => {
-                      const val = editingValues[opt.id];
-                      const hasValue = val !== "" && val !== undefined && val !== null;
+                <span className={selectedConfigId ? "text-gray-900 dark:text-white" : "text-gray-400"}>
+                  {selectedConfigId
+                    ? quickConfigs.find(c => c.id === selectedConfigId)?.name || "选择要配置的项..."
+                    : "选择要配置的项..."}
+                </span>
+                <ChevronDown size={16} className={`text-gray-400 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {/* 下拉菜单 */}
+              {dropdownOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-[300px] overflow-hidden flex flex-col">
+                  {/* 搜索框 */}
+                  <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                    <div className="relative">
+                      <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="搜索配置项..."
+                        className="w-full pl-7 pr-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  {/* 选项列表 */}
+                  <div className="flex-1 overflow-y-auto">
+                    {Object.entries(groupedOptions).map(([category, options]) => {
+                      const filteredOptions = options.filter(opt =>
+                        !searchTerm || opt.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        opt.description.toLowerCase().includes(searchTerm.toLowerCase())
+                      );
+                      if (filteredOptions.length === 0) return null;
+
+                      const CategoryIcon = getCategoryIcon(category);
                       return (
-                        <option key={opt.id} value={opt.id}>
-                          {opt.name} {hasValue ? "✓" : ""}
-                        </option>
+                        <div key={category}>
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-50 dark:bg-gray-900 flex items-center gap-1.5 sticky top-0">
+                            <CategoryIcon size={12} />
+                            {category}
+                          </div>
+                          {filteredOptions.map((opt) => {
+                            const val = editingValues[opt.id];
+                            const hasValue = val !== "" && val !== undefined && val !== null;
+                            const isSelected = selectedConfigId === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedConfigId(opt.id);
+                                  setDropdownOpen(false);
+                                  setSearchTerm("");
+                                }}
+                                className={`w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                                  isSelected ? "bg-blue-50 dark:bg-blue-900/20" : ""
+                                }`}
+                              >
+                                <span className="truncate">{opt.name}</span>
+                                {hasValue && <Check size={14} className="text-green-500 flex-shrink-0" />}
+                              </button>
+                            );
+                          })}
+                        </div>
                       );
                     })}
-                  </optgroup>
-                ))}
-              </select>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 选中的配置项编辑 */}

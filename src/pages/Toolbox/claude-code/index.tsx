@@ -27,7 +27,6 @@ import {
   Lock,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { platform } from "@tauri-apps/plugin-os";
 import { ToolPanelHeader } from "../index";
 import { Button } from "@/components/ui";
 import {
@@ -159,16 +158,9 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     if (!selectedEnv) return;
 
     try {
-      const currentPlatform = await platform();
-      const isWindows = currentPlatform === "windows";
-
       const selected = await open({
         title: "选择 Claude 可执行文件",
         multiple: false,
-        filters: [{
-          name: "可执行文件",
-          extensions: isWindows ? ["exe", "cmd", "bat"] : [],
-        }],
       });
 
       if (selected && typeof selected === "string") {
@@ -551,13 +543,14 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
             {selectedEnv && (
               <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
                 {/* 左侧：配置文件列表 */}
-                <div className="w-40 flex-shrink-0 re-card p-3 flex flex-col overflow-hidden">
+                <div className="w-40 flex-shrink-0 re-card p-3 flex flex-col">
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-2 text-sm flex-shrink-0">配置文件</h3>
                   <div className="flex-1 overflow-y-auto space-y-1">
                     {selectedEnv.configFiles.map((file) => (
                       <div key={file.path} className="group relative">
                         <button
                           onClick={() => loadFile(file)}
+                          title={`${file.name}\n${file.description || "配置文件"}${file.exists && file.size !== undefined ? `\n大小: ${(file.size / 1024).toFixed(1)} KB` : ""}`}
                           className={`w-full text-left p-2 rounded-lg border transition-colors ${
                             selectedFile?.path === file.path
                               ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
@@ -577,16 +570,6 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                             </span>
                           </div>
                         </button>
-                        {/* 悬浮提示 */}
-                        <div className="absolute left-full top-0 ml-2 z-50 hidden group-hover:block pointer-events-none">
-                          <div className="bg-gray-900 text-white text-xs rounded-lg p-2 shadow-lg max-w-[200px] whitespace-normal">
-                            <div className="font-medium mb-1">{file.name}</div>
-                            <div className="text-gray-300">{file.description || "配置文件"}</div>
-                            {file.exists && file.size !== undefined && (
-                              <div className="text-gray-400 mt-1">大小: {(file.size / 1024).toFixed(1)} KB</div>
-                            )}
-                          </div>
-                        </div>
                       </div>
                     ))}
                   </div>
