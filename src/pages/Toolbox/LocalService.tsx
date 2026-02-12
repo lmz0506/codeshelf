@@ -149,6 +149,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
     setFormName(server.name);
     setFormPort(server.port.toString());
     setFormRootDir(server.rootDir);
+    setFormUrlPrefix(server.urlPrefix || "/");
     setFormCors(server.cors);
     setFormGzip(server.gzip);
     setFormProxies(server.proxies || []);
@@ -193,6 +194,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
       rootDir: formRootDir.trim(),
       cors: formCors,
       gzip: formGzip,
+      urlPrefix: formUrlPrefix.trim() || undefined,
       proxies: validProxies.length > 0 ? validProxies : undefined,
     };
 
