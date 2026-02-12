@@ -598,6 +598,8 @@ pub async fn open_download_folder(task_id: String) -> Result<(), String> {
 /// 删除下载任务（可选删除文件）
 #[tauri::command]
 pub async fn remove_download_task(task_id: String, delete_file: Option<bool>) -> Result<(), String> {
+    ensure_tasks_loaded().await;
+
     let delete_file = delete_file.unwrap_or(false);
 
     // 先取消下载（如果正在下载）
@@ -630,6 +632,11 @@ pub async fn remove_download_task(task_id: String, delete_file: Option<bool>) ->
     {
         let mut flags = DOWNLOAD_CANCELLED.lock().await;
         flags.remove(&task_id);
+    }
+
+    // 持久化保存
+    if let Err(e) = save_tasks_to_file().await {
+        log::error!("保存下载任务失败: {}", e);
     }
 
     Ok(())
