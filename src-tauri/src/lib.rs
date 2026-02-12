@@ -210,6 +210,7 @@ pub fn run() {
             toolbox::claude_code::delete_config_profile,
             toolbox::claude_code::apply_config_profile,
             toolbox::claude_code::create_profile_from_current,
+            toolbox::claude_code::scan_claude_config_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

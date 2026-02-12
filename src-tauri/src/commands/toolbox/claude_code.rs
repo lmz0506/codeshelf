@@ -1094,3 +1094,23 @@ pub async fn create_profile_from_current(
 
     save_config_profile(profile_name, description, settings).await
 }
+
+/// 扫描指定配置目录的配置文件
+#[tauri::command]
+pub async fn scan_claude_config_dir(env_type: EnvType, env_name: String, config_dir: String) -> Result<Vec<ConfigFileInfo>, String> {
+    match env_type {
+        EnvType::Host => {
+            let path = PathBuf::from(&config_dir);
+            Ok(scan_config_files(&path))
+        }
+        #[cfg(target_os = "windows")]
+        EnvType::Wsl => {
+            let distro = env_name.strip_prefix("WSL: ").unwrap_or(&env_name);
+            Ok(scan_wsl_config_files(distro, &config_dir))
+        }
+        #[cfg(not(target_os = "windows"))]
+        EnvType::Wsl => {
+            Err("WSL 仅在 Windows 上可用".to_string())
+        }
+    }
+}

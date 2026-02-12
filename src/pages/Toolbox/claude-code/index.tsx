@@ -92,6 +92,9 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   // 删除确认
   const [deleteConfirmProfile, setDeleteConfirmProfile] = useState<ConfigProfile | null>(null);
 
+  // 启用确认
+  const [activateConfirmProfile, setActivateConfirmProfile] = useState<ConfigProfile | null>(null);
+
   // 复制提示
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
@@ -99,6 +102,10 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
   // 帮助弹框
   const [showFindClaudeHelp, setShowFindClaudeHelp] = useState(false);
+
+  // 编辑配置目录
+  const [showEditConfigDir, setShowEditConfigDir] = useState(false);
+  const [editingConfigDir, setEditingConfigDir] = useState("");
 
   useEffect(() => {
     loadAll();
@@ -541,9 +548,30 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                         >
                           {copiedText === "configDir" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
                         </button>
+                        <button
+                          onClick={() => {
+                            setEditingConfigDir(selectedEnv.configDir || "");
+                            setShowEditConfigDir(true);
+                          }}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0"
+                          title="修改配置目录"
+                        >
+                          <Edit3 size={12} className="text-gray-400" />
+                        </button>
                       </>
                     ) : (
-                      <span className="text-gray-300">-</span>
+                      <>
+                        <span className="text-gray-300">-</span>
+                        <button
+                          onClick={() => {
+                            setEditingConfigDir("");
+                            setShowEditConfigDir(true);
+                          }}
+                          className="text-xs text-blue-500 hover:underline"
+                        >
+                          设置
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -678,7 +706,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                                   <div className="flex items-center justify-end gap-1 mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
                                     {!isActive && (
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); handleActivateProfile(profile); }}
+                                        onClick={(e) => { e.stopPropagation(); setActivateConfirmProfile(profile); }}
                                         className="p-1.5 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-600 text-xs flex items-center gap-1"
                                         title="启用"
                                       >
@@ -984,6 +1012,43 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
             <div className="flex justify-end p-4 border-t border-gray-200 dark:border-gray-700">
               <Button onClick={() => setShowConfigReference(false)} variant="secondary">
                 关闭
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 启用确认弹框 */}
+      {activateConfirmProfile && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-full">
+                <Power size={20} className="text-green-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">确认启用</h3>
+            </div>
+
+            <p className="text-gray-600 dark:text-gray-400 mb-2">
+              确定要启用配置档案 <span className="font-medium text-gray-900 dark:text-white">"{activateConfirmProfile.name}"</span> 吗？
+            </p>
+            <p className="text-xs text-gray-500 mb-6">
+              这将把该档案的配置写入到当前环境的 settings.json 文件中。
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setActivateConfirmProfile(null)} variant="secondary">
+                取消
+              </Button>
+              <Button
+                onClick={() => {
+                  handleActivateProfile(activateConfirmProfile);
+                  setActivateConfirmProfile(null);
+                }}
+                variant="primary"
+              >
+                <Power size={14} className="mr-1" />
+                启用
               </Button>
             </div>
           </div>
