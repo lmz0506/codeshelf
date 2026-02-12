@@ -10,6 +10,26 @@ use crate::storage::schema::{
     UiStateData, NotificationsData, NotificationData, generate_id,
 };
 
+// ============== 通用格式兼容函数 ==============
+
+/// 从 JSON 中获取数据，兼容两种格式：
+/// 1. 新格式: { "data": { "key": value } }
+/// 2. 旧格式: { "key": value }
+fn get_json_value<'a>(versioned: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+    // 先尝试新格式 data.key
+    versioned.get("data").and_then(|d| d.get(key))
+        // 再尝试旧格式 key
+        .or_else(|| versioned.get(key))
+}
+
+/// 从 JSON 中获取 data 对象，兼容两种格式
+fn get_json_data(versioned: &serde_json::Value) -> Option<&serde_json::Value> {
+    // 先尝试新格式 data
+    versioned.get("data")
+        // 旧格式：整个对象就是 data（排除 version 和 last_updated）
+        .or_else(|| Some(versioned))
+}
+
 // ============== 标签管理 ==============
 
 /// 获取所有标签
@@ -22,7 +42,7 @@ pub async fn get_labels() -> Result<Vec<String>, String> {
                 .map_err(|e| format!("读取标签文件失败: {}", e))?;
 
             if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(labels) = versioned.get("data").and_then(|d| d.get("labels")) {
+                if let Some(labels) = get_json_value(&versioned, "labels") {
                     let labels: Vec<String> = serde_json::from_value(labels.clone())
                         .unwrap_or_default();
                     return Ok(labels);
@@ -83,7 +103,7 @@ pub async fn get_categories() -> Result<Vec<String>, String> {
                 .map_err(|e| format!("读取分类文件失败: {}", e))?;
 
             if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(categories) = versioned.get("data").and_then(|d| d.get("categories")) {
+                if let Some(categories) = get_json_value(&versioned, "categories") {
                     let categories: Vec<String> = serde_json::from_value(categories.clone())
                         .unwrap_or_default();
                     return Ok(categories);
@@ -153,7 +173,7 @@ pub async fn get_editors() -> Result<Vec<EditorConfig>, String> {
                 .map_err(|e| format!("读取编辑器配置失败: {}", e))?;
 
             if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(editors) = versioned.get("data").and_then(|d| d.get("editors")) {
+                if let Some(editors) = get_json_value(&versioned, "editors") {
                     let editors: Vec<EditorConfig> = serde_json::from_value(editors.clone())
                         .unwrap_or_default();
                     return Ok(editors);
@@ -275,10 +295,17 @@ pub async fn get_terminal_config() -> Result<TerminalData, String> {
                 .map_err(|e| format!("读取终端配置失败: {}", e))?;
 
             if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
+                // 尝试新格式 data 对象
                 if let Some(data) = versioned.get("data") {
-                    let terminal: TerminalData = serde_json::from_value(data.clone())
-                        .unwrap_or_default();
-                    return Ok(terminal);
+                    if let Ok(terminal) = serde_json::from_value::<TerminalData>(data.clone()) {
+                        return Ok(terminal);
+                    }
+                }
+                // 尝试旧格式：直接从顶层读取字段
+                if versioned.get("terminal_type").is_some() {
+                    if let Ok(terminal) = serde_json::from_value::<TerminalData>(versioned.clone()) {
+                        return Ok(terminal);
+                    }
                 }
             }
         }
@@ -329,10 +356,17 @@ pub async fn get_app_settings() -> Result<AppSettingsData, String> {
                 .map_err(|e| format!("读取应用设置失败: {}", e))?;
 
             if let Ok(versioned) = serde_json::from_str::<serde_json::Value>(&content) {
+                // 尝试新格式 data 对象
                 if let Some(data) = versioned.get("data") {
-                    let settings: AppSettingsData = serde_json::from_value(data.clone())
-                        .unwrap_or_default();
-                    return Ok(settings);
+                    if let Ok(settings) = serde_json::from_value::<AppSettingsData>(data.clone()) {
+                        return Ok(settings);
+                    }
+                }
+                // 尝试旧格式：直接从顶层读取字段
+                if versioned.get("theme").is_some() {
+                    if let Ok(settings) = serde_json::from_value::<AppSettingsData>(versioned.clone()) {
+                        return Ok(settings);
+                    }
                 }
             }
         }
