@@ -84,10 +84,31 @@ pub async fn check_all_claude_installations() -> Result<Vec<ClaudeCodeInfo>, Str
 /// 根据指定路径检查 Claude Code 安装
 #[tauri::command]
 pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo, String> {
+    // 调试日志
+    println!("[DEBUG] check_claude_by_path called with: {:?}", claude_path);
+    println!("[DEBUG] Path length: {}", claude_path.len());
+    println!("[DEBUG] Path bytes (first 50): {:?}", &claude_path.as_bytes()[..std::cmp::min(50, claude_path.len())]);
+
     // 检查是否是 WSL 路径 (\\wsl.localhost\ 或 \\wsl$\)
     #[cfg(target_os = "windows")]
     {
-        if claude_path.starts_with("\\\\wsl.localhost\\") || claude_path.starts_with("\\\\wsl$\\") {
+        // 标准化路径检测 - 支持多种 WSL 路径格式
+        // 移除可能的 \\?\ 前缀
+        let clean_path = claude_path.trim_start_matches("\\\\?\\");
+        let normalized = clean_path.to_lowercase();
+
+        println!("[DEBUG] Normalized path: {:?}", normalized);
+
+        let is_wsl_path = normalized.starts_with("\\\\wsl.localhost\\")
+            || normalized.starts_with("\\\\wsl$\\")
+            || normalized.starts_with("\\\\wsl.localhost/")
+            || normalized.starts_with("\\\\wsl$/")
+            || normalized.contains("\\wsl.localhost\\")
+            || normalized.contains("\\wsl$\\");
+
+        println!("[DEBUG] Is WSL path: {}", is_wsl_path);
+
+        if is_wsl_path {
             return check_claude_by_wsl_unc_path(&claude_path).await;
         }
     }
@@ -96,7 +117,12 @@ pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo,
 
     // 检查路径是否存在
     if !path.exists() {
-        return Err(format!("路径不存在。\n请检查路径是否正确，然后重试。"));
+        return Err(format!(
+            "路径不存在。\n\n收到的路径: {}\n路径长度: {}\n前20字节: {:?}\n\n请检查路径是否正确，然后重试。",
+            claude_path,
+            claude_path.len(),
+            &claude_path.as_bytes()[..std::cmp::min(20, claude_path.len())]
+        ));
     }
 
     let mut info = ClaudeCodeInfo {
@@ -159,11 +185,31 @@ pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo,
 /// 通过 WSL UNC 路径检查 Claude Code 安装
 #[cfg(target_os = "windows")]
 async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, String> {
+    println!("[DEBUG] check_claude_by_wsl_unc_path called with: {:?}", unc_path);
+
+    // 清理路径 - 移除可能的 \\?\ 前缀
+    let clean_path = unc_path.trim_start_matches("\\\\?\\");
+    println!("[DEBUG] Clean path: {:?}", clean_path);
+
     // 解析 UNC 路径: \\wsl.localhost\Ubuntu\usr\bin\claude 或 \\wsl$\Ubuntu\usr\bin\claude
-    let path_without_prefix = unc_path
-        .strip_prefix("\\\\wsl.localhost\\")
-        .or_else(|| unc_path.strip_prefix("\\\\wsl$\\"))
-        .ok_or_else(|| "无效的 WSL 路径格式".to_string())?;
+    // 标准化处理 - 移除前缀（不区分大小写）
+    let lower_path = clean_path.to_lowercase();
+
+    // 找到 wsl.localhost 或 wsl$ 的位置
+    let (prefix_end, distro_start) = if let Some(pos) = lower_path.find("wsl.localhost\\") {
+        (pos + 14, pos + 14) // "wsl.localhost\" 长度为 14
+    } else if let Some(pos) = lower_path.find("wsl.localhost/") {
+        (pos + 14, pos + 14)
+    } else if let Some(pos) = lower_path.find("wsl$\\") {
+        (pos + 5, pos + 5) // "wsl$\" 长度为 5
+    } else if let Some(pos) = lower_path.find("wsl$/") {
+        (pos + 5, pos + 5)
+    } else {
+        return Err("无效的 WSL 路径格式".to_string());
+    };
+
+    let path_without_prefix = &clean_path[distro_start..];
+    println!("[DEBUG] Path without prefix: {:?}", path_without_prefix);
 
     // 找到第一个 \ 来分割 distro 和路径
     let parts: Vec<&str> = path_without_prefix.splitn(2, '\\').collect();
@@ -173,6 +219,8 @@ async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, 
 
     let distro = parts[0];
     let linux_path = format!("/{}", parts[1].replace('\\', "/"));
+
+    println!("[DEBUG] Distro: {:?}, Linux path: {:?}", distro, linux_path);
 
     let mut info = ClaudeCodeInfo {
         env_type: EnvType::Wsl,
@@ -185,10 +233,15 @@ async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, 
     };
 
     // 检查文件是否存在
+    println!("[DEBUG] Running: wsl -d {} -- test -f {}", distro, linux_path);
     let check_output = Command::new("wsl")
         .args(["-d", distro, "--", "test", "-f", &linux_path])
         .output()
         .map_err(|e| format!("执行 WSL 命令失败: {}", e))?;
+
+    println!("[DEBUG] WSL test command status: {:?}", check_output.status);
+    println!("[DEBUG] WSL test stdout: {:?}", String::from_utf8_lossy(&check_output.stdout));
+    println!("[DEBUG] WSL test stderr: {:?}", String::from_utf8_lossy(&check_output.stderr));
 
     if !check_output.status.success() {
         return Err(format!("WSL 中路径不存在: {}", linux_path));

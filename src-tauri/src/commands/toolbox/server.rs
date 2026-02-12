@@ -204,6 +204,13 @@ async fn run_server(
     // 构建路由
     let mut app = Router::new();
 
+    // 计算 URL 前缀（用于代理规则）
+    let url_prefix_clean = if config.url_prefix == "/" {
+        "".to_string()
+    } else {
+        format!("/{}", config.url_prefix.trim_matches('/'))
+    };
+
     // 添加多个 API 代理规则
     for proxy in &config.proxies {
         let client = reqwest::Client::builder()
@@ -218,14 +225,27 @@ async fn run_server(
 
         // 确保前缀格式正确（以 / 开头，不以 / 结尾）
         let clean_prefix = proxy.prefix.trim_matches('/');
-        let route_path = if clean_prefix.is_empty() {
-            "/*path".to_string()
-        } else {
-            format!("/{}/*path", clean_prefix)
-        };
-        app = app.route(&route_path, any(proxy_handler).with_state(proxy_state));
 
-        log::info!("代理规则: /{} -> {}", clean_prefix, proxy.target);
+        // 代理路由需要考虑 URL 前缀
+        let route_path = if clean_prefix.is_empty() {
+            format!("{}/*path", url_prefix_clean)
+        } else {
+            format!("{}/{}/*path", url_prefix_clean, clean_prefix)
+        };
+
+        // 同时添加带和不带尾部斜杠的路由
+        let route_path_exact = if clean_prefix.is_empty() {
+            url_prefix_clean.clone()
+        } else {
+            format!("{}/{}", url_prefix_clean, clean_prefix)
+        };
+
+        app = app.route(&route_path, any(proxy_handler).with_state(proxy_state.clone()));
+        if !route_path_exact.is_empty() {
+            app = app.route(&route_path_exact, any(proxy_handler).with_state(proxy_state));
+        }
+
+        log::info!("代理规则: {} -> {}", route_path, proxy.target);
     }
 
     // 根据 URL 前缀配置静态文件服务
@@ -233,10 +253,9 @@ async fn run_server(
         // 无前缀，直接在根路径提供服务
         app = app.fallback_service(serve_dir);
     } else {
-        // 有前缀，需要在特定路径提供服务
+        // 有前缀，使用 nest_service 挂载静态文件服务
         let prefix = config.url_prefix.trim_matches('/');
-        let nested_router = Router::new().fallback_service(serve_dir);
-        app = app.nest(&format!("/{}", prefix), nested_router);
+        app = app.nest_service(&format!("/{}", prefix), serve_dir);
 
         // 根路径重定向到前缀路径
         let redirect_prefix = config.url_prefix.clone();
