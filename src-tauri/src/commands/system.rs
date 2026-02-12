@@ -688,7 +688,7 @@ pub async fn clear_logs(app_handle: tauri::AppHandle) -> Result<String, String> 
 
     // 优先使用新的日志路径
     let log_dir = if let Ok(config) = storage::get_storage_config() {
-        config.logs_dir
+        config.logs_dir.clone()
     } else {
         let path_resolver = app_handle.path();
         path_resolver.app_log_dir()
