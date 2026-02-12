@@ -576,19 +576,28 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         })),
       };
 
+      const defaultFileName = `claude-profiles-${selectedEnv?.envName?.replace(/[^a-zA-Z0-9]/g, "_") || "export"}.json`;
+      console.log("[DEBUG] Export default filename:", defaultFileName);
+
       const filePath = await save({
         title: "导出配置档案",
-        defaultPath: `claude-profiles-${selectedEnv?.envName?.replace(/[^a-zA-Z0-9]/g, "_") || "export"}.json`,
+        defaultPath: defaultFileName,
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
 
+      console.log("[DEBUG] Save dialog returned:", filePath);
+
       if (filePath) {
-        await writeTextFile(filePath, JSON.stringify(exportData, null, 2));
+        const content = JSON.stringify(exportData, null, 2);
+        console.log("[DEBUG] Writing to file:", filePath, "content length:", content.length);
+        await writeTextFile(filePath, content);
         alert(`成功导出 ${profiles.length} 个配置档案`);
       }
+      // 用户取消时 filePath 为 null，不显示错误
     } catch (err) {
       console.error("导出失败:", err);
-      alert(`导出配置档案失败: ${err}`);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      alert(`导出配置档案失败: ${errorMsg}`);
     }
   }
 
