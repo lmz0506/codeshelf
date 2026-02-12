@@ -113,7 +113,7 @@ fn migrate_projects(config: &StorageConfig) -> Result<(), String> {
                 },
             };
 
-            let new_content = serde_json::to_string_pretty(&new_data)
+            let new_content = serde_json::to_string(&new_data)
                 .map_err(|e| format!("序列化新项目数据失败: {}", e))?;
 
             fs::write(&new_file, new_content)
@@ -153,7 +153,7 @@ fn migrate_stats_cache(config: &StorageConfig) -> Result<(), String> {
                 data: old_cache,
             };
 
-            let new_content = serde_json::to_string_pretty(&new_data)
+            let new_content = serde_json::to_string(&new_data)
                 .map_err(|e| format!("序列化新统计缓存失败: {}", e))?;
 
             fs::write(&new_file, new_content)
@@ -214,7 +214,7 @@ fn migrate_claude_profiles(config: &StorageConfig) -> Result<(), String> {
         data: all_profiles,
     };
 
-    let new_content = serde_json::to_string_pretty(&new_data)
+    let new_content = serde_json::to_string(&new_data)
         .map_err(|e| format!("序列化 Claude 配置档案失败: {}", e))?;
 
     fs::write(&new_file, new_content)
@@ -278,7 +278,7 @@ fn create_empty_projects_file(path: &Path) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: ProjectsData::default(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }
@@ -292,7 +292,7 @@ fn create_empty_stats_cache_file(path: &Path) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: StatsCacheData::default(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }
@@ -306,7 +306,7 @@ fn create_empty_claude_profiles_file(path: &Path) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: ClaudeProfilesData::default(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }
@@ -320,7 +320,7 @@ fn create_empty_download_tasks_file(path: &Path) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: DownloadTasksData::default(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }
@@ -334,7 +334,7 @@ fn create_empty_forward_rules_file(path: &Path) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: ForwardRulesData::default(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }
@@ -348,7 +348,7 @@ fn create_empty_server_configs_file(path: &Path) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: ServerConfigsData::default(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }
@@ -376,7 +376,7 @@ fn create_empty_labels_file(path: &Path) -> Result<(), String> {
             ],
         },
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }
@@ -398,7 +398,7 @@ fn create_empty_categories_file(path: &Path) -> Result<(), String> {
             ],
         },
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }
@@ -412,7 +412,7 @@ fn create_empty_editors_file(path: &Path) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: EditorsData::default(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }
@@ -426,7 +426,7 @@ fn create_empty_terminal_file(path: &Path) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: TerminalData::default(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }
@@ -440,7 +440,7 @@ fn create_empty_app_settings_file(path: &Path) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: AppSettingsData::default(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
 }

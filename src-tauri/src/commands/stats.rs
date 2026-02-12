@@ -109,7 +109,7 @@ fn load_stats_from_file() -> Result<PersistedStatsCache, String> {
 /// 保存统计缓存到文件
 fn save_stats_to_file(cache: &PersistedStatsCache) -> Result<(), String> {
     let path = get_stats_cache_path();
-    let content = serde_json::to_string_pretty(cache)
+    let content = serde_json::to_string(cache)
         .map_err(|e| format!("Failed to serialize stats: {}", e))?;
 
     fs::write(&path, content)

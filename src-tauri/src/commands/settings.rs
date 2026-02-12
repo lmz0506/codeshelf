@@ -44,7 +44,7 @@ pub async fn save_labels(labels: Vec<String>) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: LabelsData { labels },
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化标签失败: {}", e))?;
     fs::write(config.labels_file(), content)
         .map_err(|e| format!("保存标签失败: {}", e))?;
@@ -105,7 +105,7 @@ pub async fn save_categories(categories: Vec<String>) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: CategoriesData { categories },
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化分类失败: {}", e))?;
     fs::write(config.categories_file(), content)
         .map_err(|e| format!("保存分类失败: {}", e))?;
@@ -174,7 +174,7 @@ async fn save_editors_internal(editors: &[EditorConfig]) -> Result<(), String> {
         last_updated: current_iso_time(),
         data: EditorsData { editors: editors.to_vec() },
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化编辑器配置失败: {}", e))?;
     fs::write(config.editors_file(), content)
         .map_err(|e| format!("保存编辑器配置失败: {}", e))?;
@@ -301,7 +301,7 @@ pub async fn save_terminal_config(input: TerminalConfigInput) -> Result<(), Stri
             terminal_path: input.terminal_path,
         },
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化终端配置失败: {}", e))?;
     fs::write(config.terminal_file(), content)
         .map_err(|e| format!("保存终端配置失败: {}", e))?;
@@ -366,7 +366,7 @@ pub async fn save_app_settings(input: AppSettingsInput) -> Result<AppSettingsDat
         last_updated: current_iso_time(),
         data: settings.clone(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化应用设置失败: {}", e))?;
     fs::write(config.app_settings_file(), content)
         .map_err(|e| format!("保存应用设置失败: {}", e))?;
@@ -420,7 +420,7 @@ pub async fn save_ui_state(input: UiStateInput) -> Result<UiStateData, String> {
         last_updated: current_iso_time(),
         data: ui_state.clone(),
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化UI状态失败: {}", e))?;
     fs::write(config.ui_state_file(), content)
         .map_err(|e| format!("保存UI状态失败: {}", e))?;
@@ -470,7 +470,7 @@ pub async fn save_notifications(notifications: Vec<NotificationData>) -> Result<
         last_updated: current_iso_time(),
         data: NotificationsData { notifications },
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化通知失败: {}", e))?;
     fs::write(config.notifications_file(), content)
         .map_err(|e| format!("保存通知失败: {}", e))?;

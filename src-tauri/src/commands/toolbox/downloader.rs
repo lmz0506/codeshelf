@@ -98,7 +98,7 @@ async fn save_tasks_to_file() -> Result<(), String> {
         }
     });
 
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化下载任务失败: {}", e))?;
 
     let path = config.download_tasks_file();

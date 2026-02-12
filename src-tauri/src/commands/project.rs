@@ -82,7 +82,7 @@ fn load_projects_from_file() -> Result<Vec<Project>, String> {
 // 保存项目到文件
 fn save_projects_to_file(projects: &[Project]) -> Result<(), String> {
     let path = get_data_file_path();
-    let content = serde_json::to_string_pretty(projects)
+    let content = serde_json::to_string(projects)
         .map_err(|e| format!("Failed to serialize projects: {}", e))?;
 
     fs::write(&path, content)
