@@ -142,11 +142,11 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   }, [selectedEnv]);
 
   async function loadAll(forceRefresh = false) {
-    setLoading(true);
     setError(null);
-    try {
-      // 尝试从后端缓存加载
-      if (!forceRefresh) {
+
+    // 非强制刷新时，先尝试从缓存加载（不显示 loading）
+    if (!forceRefresh) {
+      try {
         const cached = await getClaudeInstallationsCache();
         if (cached && cached.length > 0) {
           setInstallations(cached);
@@ -156,9 +156,14 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
           setLoading(false);
           return;
         }
+      } catch (err) {
+        console.error("读取缓存失败:", err);
       }
+    }
 
-      // 重新检测
+    // 没有缓存或强制刷新时，显示 loading 并重新检测
+    setLoading(true);
+    try {
       const installs = await checkAllClaudeInstallations();
       setInstallations(installs);
 

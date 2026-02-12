@@ -24,6 +24,14 @@ pub struct Project {
     pub last_opened: Option<String>,
 }
 
+/// 项目数据文件格式（带版本信息）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectsFile {
+    pub version: u32,
+    pub last_updated: String,
+    pub projects: Vec<Project>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateProjectInput {
     pub name: String,
@@ -70,6 +78,13 @@ fn load_projects_from_file() -> Result<Vec<Project>, String> {
     let content = fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read projects file: {}", e))?;
 
+    // 尝试解析带版本信息的格式
+    if let Ok(projects_file) = serde_json::from_str::<ProjectsFile>(&content) {
+        log::info!("从文件加载了 {} 个项目", projects_file.projects.len());
+        return Ok(projects_file.projects);
+    }
+
+    // 兼容旧格式：直接是项目数组
     let projects: Vec<Project> = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse projects file: {}", e))?;
 
@@ -79,7 +94,15 @@ fn load_projects_from_file() -> Result<Vec<Project>, String> {
 // 保存项目到文件
 fn save_projects_to_file(projects: &[Project]) -> Result<(), String> {
     let path = get_data_file_path();
-    let content = serde_json::to_string(projects)
+
+    // 使用带版本信息的格式保存
+    let projects_file = ProjectsFile {
+        version: 1,
+        last_updated: chrono::Utc::now().to_rfc3339(),
+        projects: projects.to_vec(),
+    };
+
+    let content = serde_json::to_string(&projects_file)
         .map_err(|e| format!("Failed to serialize projects: {}", e))?;
 
     fs::write(&path, content)
