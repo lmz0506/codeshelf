@@ -144,6 +144,11 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   async function loadAll(forceRefresh = false) {
     setError(null);
 
+    // 强制刷新时，先清除缓存
+    if (forceRefresh) {
+      await clearClaudeInstallationsCache().catch(console.error);
+    }
+
     // 非强制刷新时，先尝试从缓存加载（不显示 loading）
     if (!forceRefresh) {
       try {
