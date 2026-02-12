@@ -156,9 +156,50 @@ export interface ServerConfigInput {
   proxies?: ProxyConfig[];
 }
 
+// ============== Claude Code 配置 ==============
+
+export type EnvType = "host" | "wsl";
+
+export interface ClaudeCodeInfo {
+  envType: EnvType;
+  envName: string;
+  installed: boolean;
+  version?: string;
+  path?: string;
+  configDir?: string;
+  configFiles: ConfigFileInfo[];
+}
+
+export interface ConfigFileInfo {
+  name: string;
+  path: string;
+  exists: boolean;
+  size: number;
+  modified?: string;
+  description: string;
+}
+
+export interface QuickConfigOption {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  configKey: string;
+  configValue: unknown;
+}
+
+export interface ConfigProfile {
+  id: string;
+  name: string;
+  description?: string;
+  settings: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ============== 工具箱页面状态 ==============
 
-export type ToolType = "monitor" | "downloader" | "server";
+export type ToolType = "monitor" | "downloader" | "server" | "claude";
 
 export interface ToolInfo {
   id: ToolType;

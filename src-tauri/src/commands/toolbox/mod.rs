@@ -1,10 +1,11 @@
-// 工具箱模块 - 包含端口扫描、文件下载、进程管理、端口转发、静态服务功能
+// 工具箱模块 - 包含端口扫描、文件下载、进程管理、端口转发、静态服务、Claude Code 配置功能
 
 pub mod scanner;
 pub mod downloader;
 pub mod process;
 pub mod forwarder;
 pub mod server;
+pub mod claude_code;
 
 use serde::{Deserialize, Serialize};
 

@@ -4,6 +4,7 @@ import {
   Activity,
   Download,
   Server,
+  Terminal,
   Minus,
   X,
   ChevronLeft,
@@ -16,6 +17,7 @@ import type { ToolType } from "@/types/toolbox";
 import { FileDownloader } from "./FileDownloader";
 import { LocalService } from "./LocalService";
 import { SystemMonitor } from "./SystemMonitor";
+import { ClaudeCodeManager } from "./ClaudeCodeManager";
 
 const tools = [
   {
@@ -38,6 +40,13 @@ const tools = [
     description: "统一管理 Web 静态服务和端口转发，支持 CORS、gzip 和多代理规则",
     icon: Server,
     color: "bg-orange-500",
+  },
+  {
+    id: "claude" as ToolType,
+    name: "Claude Code",
+    description: "管理 Claude Code 配置文件，检查安装状态，编辑全局设置",
+    icon: Terminal,
+    color: "bg-purple-500",
   },
 ];
 
@@ -62,6 +71,8 @@ export function ToolboxPage() {
         return <FileDownloader onBack={() => setActiveTool(null)} />;
       case "server":
         return <LocalService onBack={() => setActiveTool(null)} />;
+      case "claude":
+        return <ClaudeCodeManager onBack={() => setActiveTool(null)} />;
       default:
         return null;
     }

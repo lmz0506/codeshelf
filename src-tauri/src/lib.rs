@@ -197,6 +197,18 @@ pub fn run() {
             toolbox::server::get_servers,
             toolbox::server::get_server,
             toolbox::server::update_server,
+            // Toolbox - Claude Code commands
+            toolbox::claude_code::check_all_claude_installations,
+            toolbox::claude_code::read_claude_config_file,
+            toolbox::claude_code::write_claude_config_file,
+            toolbox::claude_code::open_claude_config_dir,
+            toolbox::claude_code::get_quick_config_options,
+            toolbox::claude_code::apply_quick_config,
+            toolbox::claude_code::get_config_profiles,
+            toolbox::claude_code::save_config_profile,
+            toolbox::claude_code::delete_config_profile,
+            toolbox::claude_code::apply_config_profile,
+            toolbox::claude_code::create_profile_from_current,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

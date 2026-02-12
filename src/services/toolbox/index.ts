@@ -333,6 +333,102 @@ function transformServerConfig(server: any): ServerConfig {
   };
 }
 
+// ============== Claude Code 配置服务 ==============
+
+import type { ClaudeCodeInfo, EnvType, QuickConfigOption, ConfigProfile } from "@/types/toolbox";
+
+export async function checkAllClaudeInstallations(): Promise<ClaudeCodeInfo[]> {
+  const infos: any[] = await invoke("check_all_claude_installations");
+  return infos.map((info: any) => ({
+    envType: info.env_type as EnvType,
+    envName: info.env_name,
+    installed: info.installed,
+    version: info.version,
+    path: info.path,
+    configDir: info.config_dir,
+    configFiles: (info.config_files || []).map((f: any) => ({
+      name: f.name,
+      path: f.path,
+      exists: f.exists,
+      size: f.size,
+      modified: f.modified,
+      description: f.description,
+    })),
+  }));
+}
+
+export async function readClaudeConfigFile(envType: EnvType, envName: string, path: string): Promise<string> {
+  return invoke("read_claude_config_file", { envType, envName, path });
+}
+
+export async function writeClaudeConfigFile(envType: EnvType, envName: string, path: string, content: string): Promise<void> {
+  return invoke("write_claude_config_file", { envType, envName, path, content });
+}
+
+export async function openClaudeConfigDir(envType: EnvType, envName: string, configDir: string): Promise<void> {
+  return invoke("open_claude_config_dir", { envType, envName, configDir });
+}
+
+export async function getQuickConfigOptions(): Promise<QuickConfigOption[]> {
+  const options: any[] = await invoke("get_quick_config_options");
+  return options.map((opt: any) => ({
+    id: opt.id,
+    name: opt.name,
+    description: opt.description,
+    category: opt.category,
+    configKey: opt.config_key,
+    configValue: opt.config_value,
+  }));
+}
+
+export async function applyQuickConfig(envType: EnvType, envName: string, configPath: string, options: string[]): Promise<void> {
+  return invoke("apply_quick_config", { envType, envName, configPath, options });
+}
+
+export async function getConfigProfiles(): Promise<ConfigProfile[]> {
+  const profiles: any[] = await invoke("get_config_profiles");
+  return profiles.map((p: any) => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    settings: p.settings,
+    createdAt: p.created_at,
+    updatedAt: p.updated_at,
+  }));
+}
+
+export async function saveConfigProfile(name: string, description: string | undefined, settings: Record<string, unknown>): Promise<ConfigProfile> {
+  const profile: any = await invoke("save_config_profile", { name, description, settings });
+  return {
+    id: profile.id,
+    name: profile.name,
+    description: profile.description,
+    settings: profile.settings,
+    createdAt: profile.created_at,
+    updatedAt: profile.updated_at,
+  };
+}
+
+export async function deleteConfigProfile(profileId: string): Promise<void> {
+  return invoke("delete_config_profile", { profileId });
+}
+
+export async function applyConfigProfile(envType: EnvType, envName: string, configPath: string, profileId: string): Promise<void> {
+  return invoke("apply_config_profile", { envType, envName, configPath, profileId });
+}
+
+export async function createProfileFromCurrent(envType: EnvType, envName: string, configPath: string, profileName: string, description?: string): Promise<ConfigProfile> {
+  const profile: any = await invoke("create_profile_from_current", { envType, envName, configPath, profileName, description });
+  return {
+    id: profile.id,
+    name: profile.name,
+    description: profile.description,
+    settings: profile.settings,
+    createdAt: profile.created_at,
+    updatedAt: profile.updated_at,
+  };
+}
+
 // ============== 工具函数 ==============
 
 export function formatBytes(bytes: number): string {
