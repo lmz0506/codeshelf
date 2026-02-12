@@ -84,11 +84,19 @@ pub async fn check_all_claude_installations() -> Result<Vec<ClaudeCodeInfo>, Str
 /// 根据指定路径检查 Claude Code 安装
 #[tauri::command]
 pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo, String> {
+    // 检查是否是 WSL 路径 (\\wsl.localhost\ 或 \\wsl$\)
+    #[cfg(target_os = "windows")]
+    {
+        if claude_path.starts_with("\\\\wsl.localhost\\") || claude_path.starts_with("\\\\wsl$\\") {
+            return check_claude_by_wsl_unc_path(&claude_path).await;
+        }
+    }
+
     let path = PathBuf::from(&claude_path);
 
     // 检查路径是否存在
     if !path.exists() {
-        return Err(format!("指定的路径不存在: {}", claude_path));
+        return Err(format!("路径不存在。\n请检查路径是否正确，然后重试。"));
     }
 
     let mut info = ClaudeCodeInfo {
@@ -148,6 +156,85 @@ pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo,
     Ok(info)
 }
 
+/// 通过 WSL UNC 路径检查 Claude Code 安装
+#[cfg(target_os = "windows")]
+async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, String> {
+    // 解析 UNC 路径: \\wsl.localhost\Ubuntu\usr\bin\claude 或 \\wsl$\Ubuntu\usr\bin\claude
+    let path_without_prefix = unc_path
+        .strip_prefix("\\\\wsl.localhost\\")
+        .or_else(|| unc_path.strip_prefix("\\\\wsl$\\"))
+        .ok_or_else(|| "无效的 WSL 路径格式".to_string())?;
+
+    // 找到第一个 \ 来分割 distro 和路径
+    let parts: Vec<&str> = path_without_prefix.splitn(2, '\\').collect();
+    if parts.len() < 2 {
+        return Err("无效的 WSL 路径格式：无法解析发行版名称".to_string());
+    }
+
+    let distro = parts[0];
+    let linux_path = format!("/{}", parts[1].replace('\\', "/"));
+
+    let mut info = ClaudeCodeInfo {
+        env_type: EnvType::Wsl,
+        env_name: format!("WSL: {}", distro),
+        installed: false,
+        version: None,
+        path: Some(linux_path.clone()),
+        config_dir: None,
+        config_files: vec![],
+    };
+
+    // 检查文件是否存在
+    let check_output = Command::new("wsl")
+        .args(["-d", distro, "--", "test", "-f", &linux_path])
+        .output()
+        .map_err(|e| format!("执行 WSL 命令失败: {}", e))?;
+
+    if !check_output.status.success() {
+        return Err(format!("WSL 中路径不存在: {}", linux_path));
+    }
+
+    info.installed = true;
+
+    // 获取版本
+    for arg in &["-version", "--version", "-v"] {
+        if let Ok(output) = Command::new("wsl")
+            .args(["-d", distro, "--", &linux_path, arg])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+            if !stdout.is_empty() {
+                info.version = Some(parse_version(&stdout));
+                break;
+            }
+            if !stderr.is_empty() && (stderr.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) || stderr.contains("claude")) {
+                info.version = Some(parse_version(&stderr));
+                break;
+            }
+        }
+    }
+
+    if info.version.is_none() {
+        info.version = Some("未知版本".to_string());
+    }
+
+    // 获取配置目录
+    if let Ok(output) = Command::new("wsl")
+        .args(["-d", distro, "--", "bash", "-c", "echo $HOME/.claude"])
+        .output()
+    {
+        if output.status.success() {
+            let config_dir = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            info.config_dir = Some(config_dir.clone());
+            info.config_files = scan_wsl_config_files(distro, &config_dir);
+        }
+    }
+
+    Ok(info)
+}
+
 /// 检查主机上的 Claude Code
 async fn check_host_claude() -> ClaudeCodeInfo {
     let mut info = ClaudeCodeInfo {
@@ -191,15 +278,29 @@ async fn check_host_claude() -> ClaudeCodeInfo {
 
 /// 获取主机上的 Claude 版本
 fn get_claude_version_host() -> Option<String> {
-    // 尝试 -version (单横杠，Claude Code 实际使用的格式)
-    if let Ok(output) = Command::new("claude").arg("-version").output() {
-        if output.status.success() {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !version.is_empty() {
-                return Some(parse_version(&version));
+    // 尝试从 npm 获取版本 (最可靠的方式)
+    #[cfg(target_os = "windows")]
+    {
+        // Windows 上优先尝试 npm list
+        if let Ok(output) = Command::new("cmd")
+            .args(["/c", "npm", "list", "-g", "@anthropic-ai/claude-code", "--depth=0"])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(version) = extract_npm_version(&stdout) {
+                return Some(version);
             }
         }
-        // 检查 stderr
+    }
+
+    // 尝试 -version (单横杠，Claude Code 实际使用的格式)
+    if let Ok(output) = Command::new("claude").arg("-version").output() {
+        // 检查 stdout
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stdout.is_empty() {
+            return Some(parse_version(&stdout));
+        }
+        // 检查 stderr (一些版本会输出到 stderr)
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if !stderr.is_empty() && (stderr.contains("claude") || stderr.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)) {
             return Some(parse_version(&stderr));
@@ -208,13 +309,10 @@ fn get_claude_version_host() -> Option<String> {
 
     // 尝试 --version (双横杠)
     if let Ok(output) = Command::new("claude").arg("--version").output() {
-        if output.status.success() {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !version.is_empty() {
-                return Some(parse_version(&version));
-            }
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stdout.is_empty() {
+            return Some(parse_version(&stdout));
         }
-        // 检查 stderr
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if !stderr.is_empty() && stderr.contains("claude") {
             return Some(parse_version(&stderr));
@@ -223,32 +321,17 @@ fn get_claude_version_host() -> Option<String> {
 
     // 尝试 -v
     if let Ok(output) = Command::new("claude").arg("-v").output() {
-        if output.status.success() {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !version.is_empty() {
-                return Some(parse_version(&version));
-            }
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stdout.is_empty() {
+            return Some(parse_version(&stdout));
         }
     }
 
     // 尝试 -V
     if let Ok(output) = Command::new("claude").arg("-V").output() {
-        if output.status.success() {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !version.is_empty() {
-                return Some(parse_version(&version));
-            }
-        }
-    }
-
-    // 尝试从 npm 获取版本
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(output) = Command::new("npm").args(["list", "-g", "@anthropic-ai/claude-code", "--depth=0"]).output() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(version) = extract_npm_version(&stdout) {
-                return Some(version);
-            }
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stdout.is_empty() {
+            return Some(parse_version(&stdout));
         }
     }
 
