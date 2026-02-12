@@ -458,3 +458,101 @@ fn save_migration_data(path: &Path, data: &MigrationData) -> Result<(), String> 
         .map_err(|e| format!("序列化迁移数据失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入迁移文件失败: {}", e))
 }
+
+fn create_empty_ui_state_file(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        return Ok(());
+    }
+    let data = VersionedData {
+        version: CURRENT_VERSION,
+        last_updated: current_iso_time(),
+        data: UiStateData::default(),
+    };
+    let content = serde_json::to_string(&data)
+        .map_err(|e| format!("序列化失败: {}", e))?;
+    fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
+}
+
+fn create_empty_notifications_file(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        return Ok(());
+    }
+    let data = VersionedData {
+        version: CURRENT_VERSION,
+        last_updated: current_iso_time(),
+        data: NotificationsData::default(),
+    };
+    let content = serde_json::to_string(&data)
+        .map_err(|e| format!("序列化失败: {}", e))?;
+    fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
+}
+
+fn create_empty_claude_quick_configs_file(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        return Ok(());
+    }
+    let data = VersionedData {
+        version: CURRENT_VERSION,
+        last_updated: current_iso_time(),
+        data: ClaudeQuickConfigsData::default(),
+    };
+    let content = serde_json::to_string(&data)
+        .map_err(|e| format!("序列化失败: {}", e))?;
+    fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
+}
+
+fn create_empty_claude_installations_cache_file(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        return Ok(());
+    }
+    let data = VersionedData {
+        version: CURRENT_VERSION,
+        last_updated: current_iso_time(),
+        data: ClaudeInstallationsCacheData::default(),
+    };
+    let content = serde_json::to_string(&data)
+        .map_err(|e| format!("序列化失败: {}", e))?;
+    fs::write(path, content).map_err(|e| format!("写入文件失败: {}", e))
+}
+
+/// 确保所有数据文件都存在，不存在则创建默认文件
+/// 每次启动时调用，防止文件被意外删除导致程序异常
+pub fn ensure_all_data_files(config: &StorageConfig) -> Result<(), String> {
+    // 确保目录存在
+    config.ensure_dirs()?;
+
+    // 项目数据
+    create_empty_projects_file(&config.projects_file())?;
+
+    // 统计缓存
+    create_empty_stats_cache_file(&config.stats_cache_file())?;
+
+    // Claude 配置档案
+    create_empty_claude_profiles_file(&config.claude_profiles_file())?;
+
+    // 工具箱数据
+    create_empty_download_tasks_file(&config.download_tasks_file())?;
+    create_empty_forward_rules_file(&config.forward_rules_file())?;
+    create_empty_server_configs_file(&config.server_configs_file())?;
+
+    // 设置数据
+    create_empty_labels_file(&config.labels_file())?;
+    create_empty_categories_file(&config.categories_file())?;
+    create_empty_editors_file(&config.editors_file())?;
+    create_empty_terminal_file(&config.terminal_file())?;
+    create_empty_app_settings_file(&config.app_settings_file())?;
+
+    // UI 状态
+    create_empty_ui_state_file(&config.ui_state_file())?;
+
+    // 通知
+    create_empty_notifications_file(&config.notifications_file())?;
+
+    // Claude 快捷配置
+    create_empty_claude_quick_configs_file(&config.claude_quick_configs_file())?;
+
+    // Claude 安装信息缓存
+    create_empty_claude_installations_cache_file(&config.claude_installations_cache_file())?;
+
+    Ok(())
+}
