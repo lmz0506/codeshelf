@@ -272,8 +272,6 @@ pub fn run() {
             settings::add_notification,
             settings::remove_notification,
             settings::clear_notifications,
-            // Settings - Migration commands
-            settings::get_migration_result,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

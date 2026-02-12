@@ -69,26 +69,16 @@ fn load_servers_from_file() -> Result<HashMap<String, ServerConfig>, String> {
     let content = fs::read_to_string(&path)
         .map_err(|e| format!("读取服务配置失败: {}", e))?;
 
-    let versioned: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("解析服务配置失败: {}", e))?;
-
-    // VersionedData 使用 flatten，servers 在顶层
-    let servers_arr = match versioned.get("servers").and_then(|s| s.as_array()) {
-        Some(arr) => arr,
-        None => {
-            log::info!("服务配置为空，返回空列表");
-            return Ok(HashMap::new());
-        }
-    };
+    // 直接解析为服务配置数组
+    let servers_arr: Vec<ServerConfig> = serde_json::from_str(&content)
+        .unwrap_or_default();
 
     let mut servers = HashMap::new();
-    for server_val in servers_arr {
-        if let Ok(mut server) = serde_json::from_value::<ServerConfig>(server_val.clone()) {
-            // 重启后默认停止
-            server.status = "stopped".to_string();
-            log::info!("加载服务: {} (端口 {})", server.name, server.port);
-            servers.insert(server.id.clone(), server);
-        }
+    for mut server in servers_arr {
+        // 重启后默认停止
+        server.status = "stopped".to_string();
+        log::info!("加载服务: {} (端口 {})", server.name, server.port);
+        servers.insert(server.id.clone(), server);
     }
 
     log::info!("共加载 {} 个服务配置", servers.len());
@@ -104,7 +94,7 @@ async fn save_servers_to_file() -> Result<(), String> {
 
     let servers = SERVERS.lock().await;
 
-    // 只保存持久化需要的字段
+    // 只保存持久化需要的字段，直接保存为数组
     let servers_data: Vec<serde_json::Value> = servers.values().map(|s| {
         serde_json::json!({
             "id": s.id,
@@ -121,14 +111,7 @@ async fn save_servers_to_file() -> Result<(), String> {
         })
     }).collect();
 
-    // 使用与 VersionedData flatten 一致的格式
-    let data = serde_json::json!({
-        "version": 1,
-        "last_updated": chrono::Utc::now().to_rfc3339(),
-        "servers": servers_data
-    });
-
-    let content = serde_json::to_string(&data)
+    let content = serde_json::to_string_pretty(&servers_data)
         .map_err(|e| format!("序列化服务配置失败: {}", e))?;
 
     let path = config.server_configs_file();

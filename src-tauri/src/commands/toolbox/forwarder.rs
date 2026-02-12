@@ -56,43 +56,33 @@ fn load_rules_from_file() -> Result<HashMap<String, ForwardRule>, String> {
     let content = fs::read_to_string(&path)
         .map_err(|e| format!("读取转发规则失败: {}", e))?;
 
-    let versioned: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("解析转发规则失败: {}", e))?;
-
-    // VersionedData 使用 flatten，rules 在顶层
-    let rules_arr = match versioned.get("rules").and_then(|r| r.as_array()) {
-        Some(arr) => arr,
-        None => {
-            log::info!("转发规则为空，返回空列表");
-            return Ok(HashMap::new());
-        }
-    };
+    // 直接解析为规则数组
+    let rules_arr: Vec<serde_json::Value> = serde_json::from_str(&content)
+        .unwrap_or_default();
 
     let mut rules = HashMap::new();
     for rule_val in rules_arr {
-        if let Ok(rule) = serde_json::from_value::<serde_json::Value>(rule_val.clone()) {
-            let id = rule.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            let name = rule.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            let local_port = rule.get("local_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
-            let remote_host = rule.get("remote_host").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            let remote_port = rule.get("remote_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
-            let created_at = rule.get("created_at").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let id = rule_val.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let name = rule_val.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let local_port = rule_val.get("local_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+        let remote_host = rule_val.get("remote_host").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let remote_port = rule_val.get("remote_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+        let created_at = rule_val.get("created_at").and_then(|v| v.as_str()).unwrap_or_default().to_string();
 
-            if !id.is_empty() {
-                log::info!("加载转发规则: {} ({}:{} -> {}:{})", name, "localhost", local_port, remote_host, remote_port);
-                rules.insert(id.clone(), ForwardRule {
-                    id,
-                    name,
-                    local_port,
-                    remote_host,
-                    remote_port,
-                    status: "stopped".to_string(),
-                    connections: 0,
-                    bytes_in: 0,
-                    bytes_out: 0,
-                    created_at,
-                });
-            }
+        if !id.is_empty() {
+            log::info!("加载转发规则: {} ({}:{} -> {}:{})", name, "localhost", local_port, remote_host, remote_port);
+            rules.insert(id.clone(), ForwardRule {
+                id,
+                name,
+                local_port,
+                remote_host,
+                remote_port,
+                status: "stopped".to_string(),
+                connections: 0,
+                bytes_in: 0,
+                bytes_out: 0,
+                created_at,
+            });
         }
     }
 
@@ -109,7 +99,7 @@ async fn save_rules_to_file() -> Result<(), String> {
 
     let rules = FORWARD_RULES.lock().await;
 
-    // 只保存持久化需要的字段
+    // 只保存持久化需要的字段，直接保存为数组
     let rules_data: Vec<serde_json::Value> = rules.values().map(|r| {
         serde_json::json!({
             "id": r.id,
@@ -121,14 +111,7 @@ async fn save_rules_to_file() -> Result<(), String> {
         })
     }).collect();
 
-    // 使用与 VersionedData flatten 一致的格式
-    let data = serde_json::json!({
-        "version": 1,
-        "last_updated": chrono::Utc::now().to_rfc3339(),
-        "rules": rules_data
-    });
-
-    let content = serde_json::to_string(&data)
+    let content = serde_json::to_string_pretty(&rules_data)
         .map_err(|e| format!("序列化转发规则失败: {}", e))?;
 
     let path = config.forward_rules_file();

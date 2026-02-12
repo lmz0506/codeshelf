@@ -7,9 +7,7 @@ use std::process::Command;
 
 use crate::storage;
 use crate::storage::schema::{
-    ClaudeQuickConfigsData, ClaudeQuickConfigOption, ClaudeInstallationsCacheData,
-    ClaudeCodeInfo as SchemaClaudeCodeInfo, ConfigFileInfo as SchemaConfigFileInfo,
-    VersionedData, current_iso_time,
+    ClaudeQuickConfig, ClaudeInstallation, ConfigFileInfo as SchemaConfigFileInfo,
 };
 
 /// 清理 WSL 命令输出中的特殊字符（\r, \0 等）
