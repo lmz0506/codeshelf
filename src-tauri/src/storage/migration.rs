@@ -53,6 +53,9 @@ pub fn run_migrations(config: &StorageConfig) -> Result<(), String> {
         save_migration_data(&migration_file, &migration_data)?;
     }
 
+    // 每次启动都检查并初始化缺失的数据文件
+    ensure_all_data_files(config)?;
+
     // 未来版本迁移...
     // if migration_data.last_migration_version < 2 {
     //     migrate_v1_to_v2(config)?;
@@ -451,7 +454,7 @@ fn save_migration_data(path: &Path, data: &MigrationData) -> Result<(), String> 
         last_updated: current_iso_time(),
         data: data.clone(),
     };
-    let content = serde_json::to_string_pretty(&versioned)
+    let content = serde_json::to_string(&versioned)
         .map_err(|e| format!("序列化迁移数据失败: {}", e))?;
     fs::write(path, content).map_err(|e| format!("写入迁移文件失败: {}", e))
 }

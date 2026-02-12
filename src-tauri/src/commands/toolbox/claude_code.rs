@@ -1232,7 +1232,7 @@ fn save_profiles(env_type: &EnvType, env_name: &str, profiles: &[ConfigProfile])
             .map_err(|e| format!("创建目录失败: {}", e))?;
     }
 
-    let content = serde_json::to_string_pretty(profiles)
+    let content = serde_json::to_string(profiles)
         .map_err(|e| format!("序列化配置档案失败: {}", e))?;
 
     std::fs::write(&path, content)
@@ -1361,7 +1361,7 @@ pub async fn save_quick_configs(configs: Vec<ClaudeQuickConfigOption>) -> Result
         last_updated: current_iso_time(),
         data: ClaudeQuickConfigsData { configs },
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化快捷配置失败: {}", e))?;
     fs::write(config.claude_quick_configs_file(), content)
         .map_err(|e| format!("保存快捷配置失败: {}", e))?;
@@ -1425,7 +1425,7 @@ pub async fn save_claude_installations_cache(installs: Vec<ClaudeCodeInfo>) -> R
             cached_at: current_iso_time(),
         },
     };
-    let content = serde_json::to_string_pretty(&data)
+    let content = serde_json::to_string(&data)
         .map_err(|e| format!("序列化安装缓存失败: {}", e))?;
     fs::write(config.claude_installations_cache_file(), content)
         .map_err(|e| format!("保存安装缓存失败: {}", e))?;
