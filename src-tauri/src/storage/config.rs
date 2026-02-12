@@ -78,10 +78,6 @@ impl StorageConfig {
         self.data_dir.join("stats_cache.json")
     }
 
-    pub fn claude_profiles_file(&self) -> PathBuf {
-        self.data_dir.join("claude_profiles.json")
-    }
-
     pub fn claude_quick_configs_file(&self) -> PathBuf {
         self.data_dir.join("claude_quick_configs.json")
     }

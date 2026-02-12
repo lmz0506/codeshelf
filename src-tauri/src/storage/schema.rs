@@ -1,7 +1,6 @@
 // 数据结构定义 - 简洁的数据格式，无版本包装
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 
 // ============== 项目数据 ==============
 
@@ -18,134 +17,6 @@ pub struct Project {
     pub created_at: String,
     pub updated_at: String,
     pub last_opened: Option<String>,
-}
-
-// ============== 统计缓存数据 ==============
-
-/// 统计缓存
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct StatsCache {
-    pub stats: DashboardStats,
-    pub heatmap_data: Vec<DailyActivity>,
-    pub recent_commits: Vec<RecentCommit>,
-    pub last_updated: i64,
-    pub dirty_projects: HashSet<String>,
-    pub project_stats: HashMap<String, ProjectStatsCache>,
-}
-
-/// 统计数据
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct DashboardStats {
-    pub total_projects: u32,
-    pub today_commits: u32,
-    pub week_commits: u32,
-    pub unpushed_commits: u32,
-    pub unmerged_branches: u32,
-    pub last_updated: String,
-}
-
-/// 每日活动
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DailyActivity {
-    pub date: String,
-    pub count: u32,
-}
-
-/// 最近提交
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct RecentCommit {
-    pub hash: String,
-    pub short_hash: String,
-    pub message: String,
-    pub author: String,
-    pub email: String,
-    pub date: String,
-    pub project_name: String,
-    pub project_path: String,
-}
-
-/// 项目统计缓存
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct ProjectStatsCache {
-    pub unpushed: u32,
-    pub commits_by_date: HashMap<String, u32>,
-    pub recent_commits: Vec<RecentCommit>,
-    pub last_updated: i64,
-}
-
-// ============== Claude 配置档案数据 ==============
-
-/// Claude 配置档案（按环境分组）
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct ClaudeProfiles {
-    pub environments: HashMap<String, Vec<ConfigProfile>>,
-}
-
-/// 配置档案
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ConfigProfile {
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub settings: serde_json::Value,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-// ============== 下载任务数据 ==============
-
-/// 下载任务
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DownloadTask {
-    pub id: String,
-    pub url: String,
-    pub save_path: String,
-    pub file_name: String,
-    pub total_size: u64,
-    pub downloaded_size: u64,
-    pub status: String,
-    pub speed: u64,
-    pub error: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-// ============== 转发规则数据 ==============
-
-/// 转发规则
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ForwardRule {
-    pub id: String,
-    pub name: String,
-    pub local_port: u16,
-    pub remote_host: String,
-    pub remote_port: u16,
-    pub created_at: String,
-}
-
-// ============== 服务配置数据 ==============
-
-/// 服务配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerConfig {
-    pub id: String,
-    pub name: String,
-    pub port: u16,
-    pub root_dir: String,
-    pub cors: bool,
-    pub gzip: bool,
-    pub cache_control: Option<String>,
-    pub url_prefix: String,
-    pub index_page: Option<String>,
-    pub proxies: Vec<ProxyConfig>,
-    pub created_at: String,
-}
-
-/// 代理配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProxyConfig {
-    pub prefix: String,
-    pub target: String,
 }
 
 // ============== 编辑器配置数据 ==============
@@ -260,23 +131,9 @@ pub struct ConfigFileInfo {
 
 // ============== 工具函数 ==============
 
-/// 获取当前时间字符串
-pub fn current_time() -> String {
-    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
-}
-
 /// 获取当前 ISO 时间字符串
 pub fn current_iso_time() -> String {
     chrono::Utc::now().to_rfc3339()
-}
-
-/// 获取当前时间戳
-pub fn current_timestamp() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
 }
 
 /// 生成唯一 ID

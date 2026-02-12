@@ -210,7 +210,7 @@ async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, 
     let lower_path = clean_path.to_lowercase();
 
     // 找到 wsl.localhost 或 wsl$ 的位置
-    let (prefix_end, distro_start) = if let Some(pos) = lower_path.find("wsl.localhost\\") {
+    let (_prefix_end, distro_start) = if let Some(pos) = lower_path.find("wsl.localhost\\") {
         (pos + 14, pos + 14) // "wsl.localhost\" 长度为 14
     } else if let Some(pos) = lower_path.find("wsl.localhost/") {
         (pos + 14, pos + 14)
