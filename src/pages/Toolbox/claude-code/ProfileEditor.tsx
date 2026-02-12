@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Search,
   Check,
+  Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { ConfigProfile } from "@/types/toolbox";
@@ -45,6 +46,7 @@ export function ProfileEditor({
   const [editingContent, setEditingContent] = useState(JSON.stringify(initialSettings, null, 2));
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // 自定义下拉框状态
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -120,6 +122,12 @@ export function ProfileEditor({
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleCopy() {
+    navigator.clipboard.writeText(editingContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   function renderConfigEditor(opt: QuickConfigOption) {
@@ -394,7 +402,26 @@ export function ProfileEditor({
 
           {/* JSON 编辑 */}
           <div>
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">JSON 配置</h4>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">JSON 配置</h4>
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+                title="复制配置到剪贴板"
+              >
+                {copied ? (
+                  <>
+                    <Check size={12} className="text-green-500" />
+                    <span className="text-green-500">已复制</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={12} />
+                    <span>复制</span>
+                  </>
+                )}
+              </button>
+            </div>
             <textarea
               value={editingContent}
               onChange={(e) => setEditingContent(e.target.value)}

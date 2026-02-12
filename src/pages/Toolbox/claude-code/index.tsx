@@ -239,9 +239,10 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
     const path = wslClaudePath.trim();
 
-    // 验证路径格式
-    if (!path.startsWith("/")) {
-      setWslClaudePathError("请输入 Linux 格式的绝对路径，如 /usr/bin/claude");
+    // 验证路径格式 - 需要是 Windows UNC 格式
+    const isValidUncPath = path.startsWith("\\\\wsl.localhost\\") || path.startsWith("\\\\wsl$\\");
+    if (!isValidUncPath) {
+      setWslClaudePathError("请输入 Windows UNC 格式的路径，如 \\\\wsl.localhost\\Ubuntu\\usr\\bin\\claude");
       return;
     }
 
@@ -860,11 +861,25 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                           <Settings size={16} className="text-blue-500" />
                           <span className="font-semibold text-gray-900 dark:text-white text-sm">当前 settings.json</span>
                         </div>
-                        {showCurrentSettings ? (
-                          <ChevronDown size={16} className="text-gray-400" />
-                        ) : (
-                          <ChevronRight size={16} className="text-gray-400" />
-                        )}
+                        <div className="flex items-center gap-2">
+                          {showCurrentSettings && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(currentSettings || "{}", "currentSettings");
+                              }}
+                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                              title="复制配置"
+                            >
+                              {copiedText === "currentSettings" ? <Check size={14} className="text-green-500" /> : <Copy size={14} className="text-gray-400" />}
+                            </button>
+                          )}
+                          {showCurrentSettings ? (
+                            <ChevronDown size={16} className="text-gray-400" />
+                          ) : (
+                            <ChevronRight size={16} className="text-gray-400" />
+                          )}
+                        </div>
                       </button>
                       {showCurrentSettings && (
                         <div className="px-3 pb-3">
@@ -1566,25 +1581,20 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
       {/* WSL 手动输入 Claude 路径弹框 */}
       {showWslClaudePathInput && selectedEnv && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6">
-            <div className="flex items-center gap-3 mb-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh]">
+            {/* 头部 */}
+            <div className="flex items-center gap-3 p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
               <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-full">
-                <Terminal size={20} className="text-orange-500" />
+                <Terminal size={18} className="text-orange-500" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">输入 Claude Code 路径</h3>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">输入 WSL Claude Code 路径</h3>
             </div>
 
-            <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-sm text-yellow-700 dark:text-yellow-400 mb-4">
-              <p className="font-medium mb-2">WSL 环境需要手动输入路径</p>
-              <p className="text-xs">
-                由于 Windows 文件对话框无法正确访问 WSL 文件系统，请直接输入 Linux 格式的路径。
-              </p>
-            </div>
-
-            <div className="space-y-4">
+            {/* 内容区 - 可滚动 */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Claude 可执行文件路径</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">Windows UNC 格式路径</label>
                 <input
                   type="text"
                   value={wslClaudePath}
@@ -1592,7 +1602,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                     setWslClaudePath(e.target.value);
                     setWslClaudePathError(null);
                   }}
-                  placeholder="/usr/bin/claude"
+                  placeholder="\\wsl.localhost\Ubuntu\usr\bin\claude"
                   className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm ${
                     wslClaudePathError ? "border-red-500" : "border-gray-200 dark:border-gray-700"
                   }`}
@@ -1602,25 +1612,33 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                 )}
               </div>
 
-              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs">
-                <p className="font-medium text-blue-700 dark:text-blue-400 mb-2">如何查询 Claude Code 路径？</p>
-                <p className="text-blue-600 dark:text-blue-300 mb-2">
-                  在 WSL 终端中运行以下命令：
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs space-y-2">
+                <p className="font-medium text-blue-700 dark:text-blue-400">如何获取路径？</p>
+                <div className="grid grid-cols-1 gap-2 text-gray-600 dark:text-gray-400">
+                  <div className="flex gap-2">
+                    <span className="font-medium text-blue-600 dark:text-blue-400 flex-shrink-0">1.</span>
+                    <span>Windows 中运行 <code className="bg-white dark:bg-gray-800 px-1 rounded">wsl -l -v</code> 获取发行版名称</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-medium text-blue-600 dark:text-blue-400 flex-shrink-0">2.</span>
+                    <span>WSL 终端运行 <code className="bg-white dark:bg-gray-800 px-1 rounded">which claude</code> 获取 Linux 路径</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-medium text-blue-600 dark:text-blue-400 flex-shrink-0">3.</span>
+                    <span>组合格式: <code className="bg-white dark:bg-gray-800 px-1 rounded">\\wsl.localhost\发行版\路径</code></span>
+                  </div>
+                </div>
+                <p className="text-gray-500 pt-1 border-t border-blue-200 dark:border-blue-800">
+                  示例: <code>\\wsl.localhost\Ubuntu\usr\bin\claude</code>
                 </p>
-                <code className="block p-2 bg-white dark:bg-gray-800 rounded text-gray-700 dark:text-gray-300 font-mono">
-                  which claude
-                </code>
-                <p className="text-blue-600 dark:text-blue-300 mt-3 mb-1">常见安装路径：</p>
-                <ul className="list-disc list-inside text-blue-600 dark:text-blue-300 space-y-0.5">
-                  <li><code>/usr/bin/claude</code></li>
-                  <li><code>/usr/local/bin/claude</code></li>
-                  <li><code>~/.nvm/versions/node/v版本号/bin/claude</code></li>
-                  <li><code>~/.local/bin/claude</code></li>
-                </ul>
+                <p className="text-gray-500">
+                  提示: 资源管理器地址栏输入 <code>\\wsl.localhost\</code> 可浏览 WSL 文件
+                </p>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 mt-6">
+            {/* 底部按钮 */}
+            <div className="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
               <Button onClick={() => setShowWslClaudePathInput(false)} variant="secondary">
                 取消
               </Button>
