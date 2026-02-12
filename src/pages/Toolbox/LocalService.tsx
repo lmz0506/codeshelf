@@ -130,7 +130,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
 
   // 添加代理规则
   function addProxyRule() {
-    setFormProxies([...formProxies, { prefix: "", target: "" }]);
+    setFormProxies([...formProxies, { prefix: "/api", target: "" }]);
   }
 
   // 更新代理规则

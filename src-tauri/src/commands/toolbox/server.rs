@@ -216,10 +216,16 @@ async fn run_server(
             client,
         };
 
-        let prefix = format!("/{}/*path", proxy.prefix.trim_matches('/'));
-        app = app.route(&prefix, any(proxy_handler).with_state(proxy_state));
+        // 确保前缀格式正确（以 / 开头，不以 / 结尾）
+        let clean_prefix = proxy.prefix.trim_matches('/');
+        let route_path = if clean_prefix.is_empty() {
+            "/*path".to_string()
+        } else {
+            format!("/{}/*path", clean_prefix)
+        };
+        app = app.route(&route_path, any(proxy_handler).with_state(proxy_state));
 
-        log::info!("代理规则: /{} -> {}", proxy.prefix.trim_matches('/'), proxy.target);
+        log::info!("代理规则: /{} -> {}", clean_prefix, proxy.target);
     }
 
     // 根据 URL 前缀配置静态文件服务
