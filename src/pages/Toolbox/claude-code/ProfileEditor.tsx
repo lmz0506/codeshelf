@@ -245,7 +245,7 @@ export function ProfileEditor({
   const configuredCount = Object.entries(editingValues).filter(([, v]) => v !== "" && v !== undefined && v !== null).length;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
         {/* 头部 */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">

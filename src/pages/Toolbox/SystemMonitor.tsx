@@ -846,7 +846,7 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
 
       {/* 终止进程确认对话框 */}
       {showKillConfirm !== null && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
             <div className="flex items-center gap-3 text-red-500 mb-4">
               <AlertCircle size={24} />

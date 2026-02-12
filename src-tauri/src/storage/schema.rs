@@ -1,26 +1,9 @@
-// 数据结构定义 - 所有持久化数据的 Schema
+// 数据结构定义 - 简洁的数据格式，无版本包装
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-// ============== 通用版本化容器 ==============
-
-/// 版本化数据容器
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct VersionedData<T> {
-    pub version: u32,
-    pub last_updated: String,
-    #[serde(flatten)]
-    pub data: T,
-}
-
 // ============== 项目数据 ==============
-
-/// 项目数据文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct ProjectsData {
-    pub projects: Vec<Project>,
-}
 
 /// 项目
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -29,35 +12,25 @@ pub struct Project {
     pub id: String,
     pub name: String,
     pub path: String,
-    #[serde(alias = "is_favorite")]
     pub is_favorite: bool,
-    pub tags: Vec<String>,
-    pub labels: Vec<String>,
-    #[serde(alias = "created_at")]
+    pub tags: Vec<String>,      // 分类（单选，但保留数组兼容）
+    pub labels: Vec<String>,    // 标签（多选）
     pub created_at: String,
-    #[serde(alias = "updated_at")]
     pub updated_at: String,
-    #[serde(alias = "last_opened")]
     pub last_opened: Option<String>,
 }
 
 // ============== 统计缓存数据 ==============
 
-/// 统计缓存文件结构
+/// 统计缓存
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct StatsCacheData {
-    pub data: CachedDashboardData,
-    pub last_updated: i64,
-    pub dirty_projects: HashSet<String>,
-    pub project_stats: HashMap<String, ProjectStatsCache>,
-}
-
-/// Dashboard 数据
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct CachedDashboardData {
+pub struct StatsCache {
     pub stats: DashboardStats,
     pub heatmap_data: Vec<DailyActivity>,
     pub recent_commits: Vec<RecentCommit>,
+    pub last_updated: i64,
+    pub dirty_projects: HashSet<String>,
+    pub project_stats: HashMap<String, ProjectStatsCache>,
 }
 
 /// 统计数据
@@ -102,16 +75,10 @@ pub struct ProjectStatsCache {
 
 // ============== Claude 配置档案数据 ==============
 
-/// Claude 配置档案文件结构
+/// Claude 配置档案（按环境分组）
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct ClaudeProfilesData {
-    pub environments: HashMap<String, EnvironmentProfiles>,
-}
-
-/// 环境配置档案
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct EnvironmentProfiles {
-    pub profiles: Vec<ConfigProfile>,
+pub struct ClaudeProfiles {
+    pub environments: HashMap<String, Vec<ConfigProfile>>,
 }
 
 /// 配置档案
@@ -127,12 +94,6 @@ pub struct ConfigProfile {
 
 // ============== 下载任务数据 ==============
 
-/// 下载任务文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct DownloadTasksData {
-    pub tasks: Vec<DownloadTask>,
-}
-
 /// 下载任务
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadTask {
@@ -142,7 +103,7 @@ pub struct DownloadTask {
     pub file_name: String,
     pub total_size: u64,
     pub downloaded_size: u64,
-    pub status: String, // "pending", "downloading", "paused", "completed", "failed", "cancelled"
+    pub status: String,
     pub speed: u64,
     pub error: Option<String>,
     pub created_at: String,
@@ -150,12 +111,6 @@ pub struct DownloadTask {
 }
 
 // ============== 转发规则数据 ==============
-
-/// 转发规则文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct ForwardRulesData {
-    pub rules: Vec<ForwardRule>,
-}
 
 /// 转发规则
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,17 +120,10 @@ pub struct ForwardRule {
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,
-    pub auto_start: bool,
     pub created_at: String,
 }
 
 // ============== 服务配置数据 ==============
-
-/// 服务配置文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct ServerConfigsData {
-    pub servers: Vec<ServerConfig>,
-}
 
 /// 服务配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,8 +136,8 @@ pub struct ServerConfig {
     pub gzip: bool,
     pub cache_control: Option<String>,
     pub url_prefix: String,
+    pub index_page: Option<String>,
     pub proxies: Vec<ProxyConfig>,
-    pub auto_start: bool,
     pub created_at: String,
 }
 
@@ -200,46 +148,7 @@ pub struct ProxyConfig {
     pub target: String,
 }
 
-// ============== 迁移状态数据 ==============
-
-/// 迁移状态文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct MigrationData {
-    pub migrations: Vec<MigrationRecord>,
-    pub last_migration_version: u32,
-}
-
-/// 迁移记录
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MigrationRecord {
-    pub id: String,
-    pub completed_at: String,
-    pub success: bool,
-}
-
-// ============== 标签数据 ==============
-
-/// 标签数据文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct LabelsData {
-    pub labels: Vec<String>,
-}
-
-// ============== 分类数据 ==============
-
-/// 分类数据文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct CategoriesData {
-    pub categories: Vec<String>,
-}
-
 // ============== 编辑器配置数据 ==============
-
-/// 编辑器配置文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct EditorsData {
-    pub editors: Vec<EditorConfig>,
-}
 
 /// 编辑器配置
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -253,9 +162,9 @@ pub struct EditorConfig {
 
 // ============== 终端配置数据 ==============
 
-/// 终端配置文件结构
+/// 终端配置
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct TerminalData {
+pub struct TerminalConfig {
     pub terminal_type: String,
     pub custom_path: Option<String>,
     pub terminal_path: Option<String>,
@@ -263,16 +172,16 @@ pub struct TerminalData {
 
 // ============== 应用设置数据 ==============
 
-/// 应用设置文件结构
+/// 应用设置
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AppSettingsData {
+pub struct AppSettings {
     pub theme: String,
     pub view_mode: String,
     pub sidebar_collapsed: bool,
     pub scan_depth: u32,
 }
 
-impl Default for AppSettingsData {
+impl Default for AppSettings {
     fn default() -> Self {
         Self {
             theme: "light".to_string(),
@@ -285,25 +194,19 @@ impl Default for AppSettingsData {
 
 // ============== UI 状态数据 ==============
 
-/// UI 状态文件结构
+/// UI 状态
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct UiStateData {
+pub struct UiState {
     pub recent_detail_project_ids: Vec<String>,
 }
 
 // ============== 通知数据 ==============
 
-/// 通知数据文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct NotificationsData {
-    pub notifications: Vec<NotificationData>,
-}
-
 /// 单条通知
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct NotificationData {
+pub struct Notification {
     pub id: String,
-    pub notification_type: String, // "info" | "success" | "warning" | "error"
+    pub notification_type: String,
     pub title: String,
     pub message: String,
     pub created_at: String,
@@ -311,22 +214,16 @@ pub struct NotificationData {
 
 // ============== Claude 快捷配置数据 ==============
 
-/// Claude 快捷配置文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct ClaudeQuickConfigsData {
-    pub configs: Vec<ClaudeQuickConfigOption>,
-}
-
 /// Claude 快捷配置选项
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ClaudeQuickConfigOption {
+pub struct ClaudeQuickConfig {
     pub id: String,
     pub name: String,
     pub description: String,
     pub category: String,
     pub config_key: String,
-    pub value_type: String, // "string" | "boolean" | "number" | "select" | "model"
+    pub value_type: String,
     pub default_value: serde_json::Value,
     pub options: Option<Vec<ClaudeConfigSelectOption>>,
     pub placeholder: Option<String>,
@@ -342,18 +239,11 @@ pub struct ClaudeConfigSelectOption {
 
 // ============== Claude 安装信息缓存数据 ==============
 
-/// Claude 安装信息缓存文件结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct ClaudeInstallationsCacheData {
-    pub installations: Vec<ClaudeCodeInfo>,
-    pub cached_at: String,
-}
-
 /// Claude Code 安装信息
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ClaudeCodeInfo {
-    pub env_type: String,  // "host" | "wsl"
+pub struct ClaudeInstallation {
+    pub env_type: String,
     pub env_name: String,
     pub version: Option<String>,
     pub config_dir: String,

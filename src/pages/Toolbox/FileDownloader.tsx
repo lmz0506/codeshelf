@@ -374,7 +374,7 @@ export function FileDownloader({ onBack }: FileDownloaderProps) {
 
       {/* 新建下载对话框 */}
       {showAddDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               新建下载
@@ -432,7 +432,7 @@ export function FileDownloader({ onBack }: FileDownloaderProps) {
 
       {/* 删除确认对话框 */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               删除下载

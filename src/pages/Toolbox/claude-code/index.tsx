@@ -1203,7 +1203,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
       {/* 新建档案对话框 */}
       {showCreateProfile && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">新建配置档案</h3>
 
@@ -1324,7 +1324,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
       {/* 配置参考弹框 */}
       {showConfigReference && selectedFile?.name && CONFIG_REFERENCES[selectedFile.name] && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -1382,7 +1382,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
       {/* 启用确认弹框 */}
       {activateConfirmProfile && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-full">
@@ -1419,7 +1419,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
       {/* 删除确认弹框 */}
       {deleteConfirmProfile && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-full">
@@ -1450,7 +1450,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
       {/* 查找 Claude 帮助弹框 */}
       {showFindClaudeHelp && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -1575,7 +1575,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
       {/* 编辑配置目录弹框 */}
       {showEditConfigDir && selectedEnv && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-full">
@@ -1673,7 +1673,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
       {/* WSL 手动输入 Claude 路径弹框 */}
       {showWslClaudePathInput && selectedEnv && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh]">
             {/* 头部 */}
             <div className="flex items-center gap-3 p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
