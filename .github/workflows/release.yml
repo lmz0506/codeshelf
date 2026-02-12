@@ -33,17 +33,24 @@ jobs:
       - name: Read release notes
         id: release_notes
         run: |
+          DEFAULT_NOTES="日常更新"
           if [ -f "RELEASE_NOTES.md" ]; then
-            # 读取文件内容，处理多行
+            # 读取文件内容
             NOTES=$(cat RELEASE_NOTES.md)
-            # 使用 EOF 分隔符处理多行内容
-            echo "notes<<EOF" >> $GITHUB_OUTPUT
-            echo "$NOTES" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-            echo "has_notes=true" >> $GITHUB_OUTPUT
+            # 去除空白字符后检查是否为空
+            TRIMMED=$(echo "$NOTES" | tr -d '[:space:]')
+            if [ -z "$TRIMMED" ]; then
+              # 文件为空，使用默认说明
+              echo "notes=$DEFAULT_NOTES" >> $GITHUB_OUTPUT
+            else
+              # 文件有内容，使用 EOF 分隔符处理多行内容
+              echo "notes<<EOF" >> $GITHUB_OUTPUT
+              echo "$NOTES" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "notes=See the assets to download this version and install." >> $GITHUB_OUTPUT
-            echo "has_notes=false" >> $GITHUB_OUTPUT
+            # 文件不存在，使用默认说明
+            echo "notes=$DEFAULT_NOTES" >> $GITHUB_OUTPUT
           fi
 
       - name: Create or Get Draft Release
@@ -54,7 +61,7 @@ jobs:
         with:
           script: |
             const tagName = `v${{ steps.get_version.outputs.version }}`;
-            const releaseNotes = process.env.RELEASE_NOTES || 'See the assets to download this version and install.';
+            const releaseNotes = process.env.RELEASE_NOTES || '日常更新';
 
             // 先检查是否已存在 release
             try {
