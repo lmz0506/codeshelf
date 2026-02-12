@@ -1380,7 +1380,7 @@ pub async fn get_claude_installations_cache() -> Result<Option<Vec<ClaudeCodeInf
                     env_name: i.env_name,
                     installed: true,
                     version: i.version,
-                    path: None,
+                    path: i.path,
                     config_dir: Some(i.config_dir),
                     config_files: i.config_files.into_iter().map(|f| ConfigFileInfo {
                         name: f.name,

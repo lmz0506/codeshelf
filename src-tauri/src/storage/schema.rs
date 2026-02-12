@@ -117,6 +117,7 @@ pub struct ClaudeInstallation {
     pub env_type: String,
     pub env_name: String,
     pub version: Option<String>,
+    pub path: Option<String>,
     pub config_dir: String,
     pub config_files: Vec<ConfigFileInfo>,
 }
