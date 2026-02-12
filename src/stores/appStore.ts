@@ -10,6 +10,7 @@ export interface EditorConfig {
   name: string;
   path: string;
   icon?: string;
+  is_default?: boolean;
 }
 
 export interface TerminalConfig {
@@ -22,6 +23,7 @@ export interface TerminalConfig {
     terminal?: string;
     iterm?: string;
     default?: string;
+    custom?: string;
   };
 }
 
@@ -106,9 +108,9 @@ interface AppState {
 }
 
 // 防抖保存辅助函数
-const debounce = <T extends (...args: unknown[]) => void>(fn: T, delay: number) => {
+const debounce = <T extends unknown[]>(fn: (...args: T) => void, delay: number) => {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<T>) => {
+  return (...args: T) => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => fn(...args), delay);
   };
@@ -272,11 +274,24 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setEditors: (editors) => set({ editors }),
   addEditor: (editor) => {
     set((state) => ({ editors: [...state.editors, editor] }));
+    invoke("add_editor", {
+      input: {
+        name: editor.name,
+        path: editor.path,
+        icon: editor.icon,
+        is_default: false,
+      }
+    }).then((editors: unknown) => {
+      set({ editors: editors as EditorConfig[] });
+    }).catch(console.error);
   },
   removeEditor: (id) => {
     set((state) => ({
       editors: state.editors.filter((e) => e.id !== id),
     }));
+    invoke("remove_editor", { id }).then((editors: unknown) => {
+      set({ editors: editors as EditorConfig[] });
+    }).catch(console.error);
   },
   updateEditor: (id, updates) => {
     set((state) => ({
@@ -284,6 +299,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
         e.id === id ? { ...e, ...updates } : e
       ),
     }));
+    const state = get();
+    const editor = state.editors.find((e) => e.id === id);
+    if (editor) {
+      invoke("update_editor", {
+        id,
+        input: {
+          name: editor.name,
+          path: editor.path,
+          icon: editor.icon,
+          is_default: false,
+        }
+      }).then((editors: unknown) => {
+        set({ editors: editors as EditorConfig[] });
+      }).catch(console.error);
+    }
   },
   setDefaultEditor: (id) => {
     set((state) => {
@@ -292,6 +322,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const others = state.editors.filter((e) => e.id !== id);
       return { editors: [editor, ...others] };
     });
+    invoke("set_default_editor", { id }).then((editors: unknown) => {
+      set({ editors: editors as EditorConfig[] });
+    }).catch(console.error);
   },
 
   // Terminal Settings
