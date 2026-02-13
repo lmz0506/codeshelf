@@ -24,6 +24,9 @@ import {
   Timer,
   Pause,
   Settings2,
+  Copy,
+  RefreshCw,
+  Trash,
 } from "lucide-react";
 import {
   netcatInit,
@@ -980,15 +983,60 @@ export default function NetcatTool() {
               <div className="text-gray-600 dark:text-gray-400">
                 消息: <span className="font-medium text-gray-900 dark:text-white">{selectedSession.messageCount}</span>
               </div>
-              <label className="flex items-center gap-1.5 ml-auto text-gray-600 dark:text-gray-400 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={autoScroll}
-                  onChange={(e) => setAutoScroll(e.target.checked)}
-                  className="rounded"
-                />
-                自动滚动
-              </label>
+              <div className="flex items-center gap-2 ml-auto">
+                {/* 复制所有消息 */}
+                <button
+                  onClick={() => {
+                    if (messages.length === 0) return;
+                    const text = messages
+                      .map((msg) => {
+                        const time = new Date(msg.timestamp).toLocaleTimeString();
+                        const dir = msg.direction === "sent" ? "发送" : "接收";
+                        const client = msg.clientAddr ? ` [${msg.clientAddr}]` : "";
+                        return `[${time}] ${dir}${client}: ${msg.data}`;
+                      })
+                      .join("\n");
+                    navigator.clipboard.writeText(text);
+                  }}
+                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                  title="复制所有消息"
+                >
+                  <Copy size={14} />
+                </button>
+                {/* 清除面板消息 */}
+                <button
+                  onClick={() => setMessages([])}
+                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                  title="清除面板消息"
+                >
+                  <Trash size={14} />
+                </button>
+                {/* 刷新消息 */}
+                <button
+                  onClick={() => {
+                    if (selectedSessionId) {
+                      loadMessages(selectedSessionId);
+                      if (selectedSession?.mode === "server") {
+                        loadClients(selectedSessionId);
+                      }
+                    }
+                  }}
+                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                  title="刷新消息"
+                >
+                  <RefreshCw size={14} />
+                </button>
+                <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+                <label className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoScroll}
+                    onChange={(e) => setAutoScroll(e.target.checked)}
+                    className="rounded"
+                  />
+                  自动滚动
+                </label>
+              </div>
             </div>
 
             {/* 服务器模式客户端列表 */}
