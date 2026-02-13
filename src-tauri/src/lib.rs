@@ -267,6 +267,7 @@ pub fn run() {
             toolbox::netcat::netcat_clear_messages,
             toolbox::netcat::netcat_disconnect_client,
             toolbox::netcat::netcat_update_auto_send,
+            toolbox::netcat::netcat_fetch_http,
             // Settings commands
             settings::get_labels,
             settings::save_labels,
