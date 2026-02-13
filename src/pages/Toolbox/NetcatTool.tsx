@@ -554,13 +554,31 @@ export default function NetcatTool() {
 
   const handleStopSession = async (sessionId: string) => {
     setLoading("stop");
+
+    // 先停止自动发送定时器
+    stopAutoSendTimer(sessionId);
+
+    // 更新本地状态 - 禁用自动发送并设置为已断开
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              status: "disconnected" as const,
+              autoSend: s.autoSend ? { ...s.autoSend, enabled: false } : s.autoSend,
+            }
+          : s
+      )
+    );
+
     try {
       await netcatStopSession(sessionId);
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === sessionId ? { ...s, status: "disconnected" as const } : s
-        )
-      );
+
+      // 如果有自动发送配置，保存禁用状态
+      const session = sessions.find((s) => s.id === sessionId);
+      if (session?.autoSend?.enabled) {
+        await netcatUpdateAutoSend(sessionId, { ...session.autoSend, enabled: false });
+      }
     } catch (err) {
       console.error("停止会话失败:", err);
       alert(`停止会话失败: ${err}`);
@@ -949,11 +967,19 @@ export default function NetcatTool() {
                     }`}
                   >
                     <span className="text-gray-500 shrink-0">[{formatTime(msg.timestamp)}]</span>
-                    <span className="shrink-0">
+                    <span className={`shrink-0 flex items-center gap-0.5 ${
+                      msg.direction === "sent" ? "text-green-500" : "text-cyan-500"
+                    }`}>
                       {msg.direction === "sent" ? (
-                        <ArrowUpRight size={14} className="text-green-500" />
+                        <>
+                          <ArrowUpRight size={14} />
+                          <span className="text-xs">发</span>
+                        </>
                       ) : (
-                        <ArrowDownLeft size={14} className="text-cyan-500" />
+                        <>
+                          <ArrowDownLeft size={14} />
+                          <span className="text-xs">收</span>
+                        </>
                       )}
                     </span>
                     {msg.clientAddr && (

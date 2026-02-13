@@ -250,7 +250,20 @@ pub async fn netcat_stop_session(
 
     if let Some(tx) = shutdown_tx {
         let _ = tx.send(()).await;
+        log::info!("Netcat 停止信号已发送: {}", session_id);
     }
+
+    // 强制更新状态为已断开
+    {
+        let mut s = session_state.write().await;
+        s.session.status = SessionStatus::Disconnected;
+        s.session.error_message = None;
+    }
+
+    // 清理 TCP 发送器
+    tcp_client::TCP_SENDERS.write().await.remove(&session_id);
+
+    Ok(())
 
     Ok(())
 }
