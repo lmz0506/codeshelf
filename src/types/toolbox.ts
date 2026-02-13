@@ -211,7 +211,7 @@ export interface ConfigProfile {
 
 // ============== 工具箱页面状态 ==============
 
-export type ToolType = "monitor" | "downloader" | "server" | "claude";
+export type ToolType = "monitor" | "downloader" | "server" | "claude" | "netcat";
 
 export interface ToolInfo {
   id: ToolType;
@@ -219,3 +219,76 @@ export interface ToolInfo {
   description: string;
   icon: string;
 }
+
+// ============== Netcat 协议测试 ==============
+
+export type Protocol = "tcp" | "udp";
+export type SessionMode = "client" | "server";
+export type DataFormat = "text" | "hex" | "base64";
+export type SessionStatus = "connecting" | "connected" | "listening" | "disconnected" | "error";
+export type MessageDirection = "sent" | "received";
+
+export interface NetcatSessionInput {
+  protocol: Protocol;
+  mode: SessionMode;
+  host: string;
+  port: number;
+  name?: string;
+  autoReconnect?: boolean;
+  timeoutMs?: number;
+}
+
+export interface NetcatSession {
+  id: string;
+  name: string;
+  protocol: Protocol;
+  mode: SessionMode;
+  host: string;
+  port: number;
+  status: SessionStatus;
+  autoReconnect: boolean;
+  timeoutMs: number;
+  createdAt: number;
+  connectedAt?: number;
+  lastActivity?: number;
+  bytesSent: number;
+  bytesReceived: number;
+  messageCount: number;
+  errorMessage?: string;
+  clientCount: number;
+}
+
+export interface SendMessageInput {
+  sessionId: string;
+  data: string;
+  format: DataFormat;
+  targetClient?: string;
+  broadcast?: boolean;
+}
+
+export interface NetcatMessage {
+  id: string;
+  sessionId: string;
+  direction: MessageDirection;
+  data: string;
+  format: DataFormat;
+  size: number;
+  timestamp: number;
+  clientId?: string;
+  clientAddr?: string;
+}
+
+export interface ConnectedClient {
+  id: string;
+  addr: string;
+  connectedAt: number;
+  lastActivity: number;
+  bytesSent: number;
+  bytesReceived: number;
+}
+
+export type NetcatEvent =
+  | { type: "statusChanged"; sessionId: string; status: SessionStatus; error?: string }
+  | { type: "messageReceived"; sessionId: string; message: NetcatMessage }
+  | { type: "clientConnected"; sessionId: string; client: ConnectedClient }
+  | { type: "clientDisconnected"; sessionId: string; clientId: string };

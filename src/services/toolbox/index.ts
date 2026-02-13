@@ -375,6 +375,64 @@ export async function clearClaudeInstallationsCache(): Promise<void> {
   return invoke("clear_claude_installations_cache");
 }
 
+// ============== Netcat 协议测试服务 ==============
+
+import type {
+  NetcatSessionInput,
+  NetcatSession,
+  SendMessageInput,
+  NetcatMessage,
+  ConnectedClient,
+} from "@/types/toolbox";
+
+export async function netcatCreateSession(input: NetcatSessionInput): Promise<NetcatSession> {
+  return invoke("netcat_create_session", { input });
+}
+
+export async function netcatStartSession(sessionId: string): Promise<void> {
+  return invoke("netcat_start_session", { sessionId });
+}
+
+export async function netcatStopSession(sessionId: string): Promise<void> {
+  return invoke("netcat_stop_session", { sessionId });
+}
+
+export async function netcatRemoveSession(sessionId: string): Promise<void> {
+  return invoke("netcat_remove_session", { sessionId });
+}
+
+export async function netcatSendMessage(input: SendMessageInput): Promise<NetcatMessage> {
+  return invoke("netcat_send_message", { input });
+}
+
+export async function netcatGetSessions(): Promise<NetcatSession[]> {
+  return invoke("netcat_get_sessions");
+}
+
+export async function netcatGetSession(sessionId: string): Promise<NetcatSession> {
+  return invoke("netcat_get_session", { sessionId });
+}
+
+export async function netcatGetMessages(
+  sessionId: string,
+  limit?: number,
+  offset?: number
+): Promise<NetcatMessage[]> {
+  return invoke("netcat_get_messages", { sessionId, limit, offset });
+}
+
+export async function netcatGetClients(sessionId: string): Promise<ConnectedClient[]> {
+  return invoke("netcat_get_clients", { sessionId });
+}
+
+export async function netcatClearMessages(sessionId: string): Promise<void> {
+  return invoke("netcat_clear_messages", { sessionId });
+}
+
+export async function netcatDisconnectClient(sessionId: string, clientId: string): Promise<void> {
+  return invoke("netcat_disconnect_client", { sessionId, clientId });
+}
+
 // ============== 工具函数 ==============
 
 export function formatBytes(bytes: number): string {

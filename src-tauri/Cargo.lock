@@ -660,6 +660,7 @@ name = "codeshelf"
 version = "0.1.15"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "chrono",
  "dirs 5.0.1",
  "futures",

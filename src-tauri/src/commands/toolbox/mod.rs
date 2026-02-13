@@ -6,6 +6,7 @@ pub mod process;
 pub mod forwarder;
 pub mod server;
 pub mod claude_code;
+pub mod netcat;
 
 use serde::{Deserialize, Serialize};
 

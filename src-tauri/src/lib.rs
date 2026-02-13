@@ -121,6 +121,9 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // 初始化 Netcat 状态
+            app.manage(toolbox::netcat::NetcatState::new());
+
             println!("Tauri app setup completed with tray icon");
 
             Ok(())
@@ -250,6 +253,18 @@ pub fn run() {
             toolbox::claude_code::get_claude_installations_cache,
             toolbox::claude_code::save_claude_installations_cache,
             toolbox::claude_code::clear_claude_installations_cache,
+            // Toolbox - Netcat commands
+            toolbox::netcat::netcat_create_session,
+            toolbox::netcat::netcat_start_session,
+            toolbox::netcat::netcat_stop_session,
+            toolbox::netcat::netcat_remove_session,
+            toolbox::netcat::netcat_send_message,
+            toolbox::netcat::netcat_get_sessions,
+            toolbox::netcat::netcat_get_session,
+            toolbox::netcat::netcat_get_messages,
+            toolbox::netcat::netcat_get_clients,
+            toolbox::netcat::netcat_clear_messages,
+            toolbox::netcat::netcat_disconnect_client,
             // Settings commands
             settings::get_labels,
             settings::save_labels,

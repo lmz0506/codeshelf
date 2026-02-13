@@ -8,6 +8,7 @@ import {
   Minus,
   X,
   ChevronLeft,
+  Radio,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/stores/appStore";
@@ -18,6 +19,7 @@ import { FileDownloader } from "./FileDownloader";
 import { LocalService } from "./LocalService";
 import { SystemMonitor } from "./SystemMonitor";
 import { ClaudeCodeManager } from "./ClaudeCodeManager";
+import NetcatTool from "./NetcatTool";
 
 const tools = [
   {
@@ -48,6 +50,13 @@ const tools = [
     icon: Terminal,
     color: "bg-purple-500",
   },
+  {
+    id: "netcat" as ToolType,
+    name: "协议测试",
+    description: "TCP/UDP 协议测试工具，支持客户端和服务器模式，用于调试物联网设备",
+    icon: Radio,
+    color: "bg-cyan-500",
+  },
 ];
 
 export function ToolboxPage() {
@@ -73,6 +82,8 @@ export function ToolboxPage() {
         return <LocalService onBack={() => setActiveTool(null)} />;
       case "claude":
         return <ClaudeCodeManager onBack={() => setActiveTool(null)} />;
+      case "netcat":
+        return <NetcatToolPanel onBack={() => setActiveTool(null)} />;
       default:
         return null;
     }
@@ -241,5 +252,17 @@ export function ToolPanelHeader({
         </div>
       </div>
     </header>
+  );
+}
+
+// Netcat 工具面板
+function NetcatToolPanel({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="flex flex-col h-full">
+      <ToolPanelHeader title="协议测试" icon={Radio} onBack={onBack} />
+      <div className="flex-1 overflow-hidden">
+        <NetcatTool />
+      </div>
+    </div>
   );
 }
