@@ -211,36 +211,67 @@ async fn handle_client_connection(
     // 启动读取任务
     tokio::spawn(async move {
         let mut buffer = vec![0u8; 8192];
+        let mut message_count: u64 = 0;
         log::info!("Netcat Server 读取任务启动: client={}", client_addr);
 
         loop {
-            log::debug!("Netcat Server 等待读取数据: client={}", client_addr);
-            match reader.read(&mut buffer).await {
-                Ok(0) => {
+            log::debug!("Netcat Server [{}] 等待读取数据 (已收{}条): client={}",
+                client_id_clone, message_count, client_addr);
+
+            // 使用 tokio::time::timeout 防止永久阻塞
+            let read_result = tokio::time::timeout(
+                std::time::Duration::from_secs(300), // 5分钟超时
+                reader.read(&mut buffer)
+            ).await;
+
+            match read_result {
+                Ok(Ok(0)) => {
                     // 客户端断开
-                    log::info!("Netcat Server 客户端断开 (read=0): client={}", client_addr);
+                    log::info!("Netcat Server [{}] 客户端断开 (read=0): client={}, 共收到{}条消息",
+                        client_id_clone, client_addr, message_count);
                     break;
                 }
-                Ok(n) => {
-                    log::info!("Netcat Server 收到数据: {} bytes from {}", n, client_addr);
+                Ok(Ok(n)) => {
+                    message_count += 1;
+                    log::info!("Netcat Server [{}] 收到第{}条数据: {} bytes from {}",
+                        client_id_clone, message_count, n, client_addr);
                     let data = buffer[..n].to_vec();
-                    handle_received_data(
-                        &app_clone,
-                        &session_state_clone,
-                        data,
-                        Some(client_id_clone.clone()),
-                        Some(client_addr.clone()),
-                    ).await;
-                    log::debug!("Netcat Server 数据处理完成: client={}", client_addr);
+
+                    // 使用 spawn 来避免阻塞读取循环
+                    let app_for_handle = app_clone.clone();
+                    let state_for_handle = session_state_clone.clone();
+                    let client_id_for_handle = client_id_clone.clone();
+                    let client_addr_for_handle = client_addr.clone();
+                    let msg_num = message_count;
+
+                    tokio::spawn(async move {
+                        handle_received_data(
+                            &app_for_handle,
+                            &state_for_handle,
+                            data,
+                            Some(client_id_for_handle.clone()),
+                            Some(client_addr_for_handle.clone()),
+                        ).await;
+                        log::debug!("Netcat Server [{}] 第{}条数据处理完成", client_id_for_handle, msg_num);
+                    });
+
+                    log::debug!("Netcat Server [{}] 数据已提交处理: client={}", client_id_clone, client_addr);
                 }
-                Err(e) => {
-                    log::error!("Netcat Server 读取客户端数据失败: {} - {}", client_addr, e);
+                Ok(Err(e)) => {
+                    log::error!("Netcat Server [{}] 读取客户端数据失败: {} - {}, 已收到{}条消息",
+                        client_id_clone, client_addr, e, message_count);
                     break;
+                }
+                Err(_) => {
+                    log::warn!("Netcat Server [{}] 读取超时 (5分钟无数据): client={}",
+                        client_id_clone, client_addr);
+                    // 继续等待，不断开连接
+                    continue;
                 }
             }
         }
 
-        log::info!("Netcat Server 读取任务结束: client={}", client_addr);
+        log::info!("Netcat Server 读取任务结束: client={}, 共收到{}条消息", client_addr, message_count);
         // 客户端断开处理
         handle_client_disconnect(
             &app_clone,
@@ -292,53 +323,72 @@ async fn handle_received_data(
     let message_id = generate_id();
     let data_preview = bytes_to_display_string(&data);
 
-    log::info!("Netcat Server 收到数据: {} bytes, from={:?}, preview={}",
-        data.len(), client_addr, &data_preview[..data_preview.len().min(50)]);
+    // 安全截断预览（字符边界安全）
+    let preview_safe: String = data_preview.chars().take(50).collect();
+    log::info!("Netcat Server handle_received_data: {} bytes, from={:?}, preview={}",
+        data.len(), client_addr, preview_safe);
 
-    let (session_id, message) = {
-        let mut state = session_state.write().await;
-        state.session.bytes_received += data.len() as u64;
-        state.session.message_count += 1;
-        state.session.last_activity = Some(now);
+    // 使用超时来获取锁，避免死锁
+    let lock_result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        session_state.write()
+    ).await;
 
-        // 更新客户端统计
-        if let Some(ref cid) = client_id {
-            if let Some(client) = state.clients.get_mut(cid) {
-                client.bytes_received += data.len() as u64;
-                client.last_activity = now;
+    let (session_id, message) = match lock_result {
+        Ok(mut state) => {
+            state.session.bytes_received += data.len() as u64;
+            state.session.message_count += 1;
+            state.session.last_activity = Some(now);
+
+            // 更新客户端统计
+            if let Some(ref cid) = client_id {
+                if let Some(client) = state.clients.get_mut(cid) {
+                    client.bytes_received += data.len() as u64;
+                    client.last_activity = now;
+                }
             }
+
+            let message = NetcatMessage {
+                id: message_id.clone(),
+                session_id: state.session.id.clone(),
+                direction: MessageDirection::Received,
+                data: data_preview,
+                format: DataFormat::Text,
+                size: data.len(),
+                timestamp: now,
+                client_id,
+                client_addr,
+            };
+
+            state.messages.push(message.clone());
+
+            // 限制消息历史
+            if state.messages.len() > 1000 {
+                state.messages.remove(0);
+            }
+
+            let sid = state.session.id.clone();
+            let msg_count = state.session.message_count;
+            log::debug!("Netcat Server 状态更新完成: session={}, 消息总数={}", sid, msg_count);
+
+            (sid, message)
         }
-
-        let message = NetcatMessage {
-            id: message_id,
-            session_id: state.session.id.clone(),
-            direction: MessageDirection::Received,
-            data: data_preview,
-            format: DataFormat::Text,
-            size: data.len(),
-            timestamp: now,
-            client_id,
-            client_addr,
-        };
-
-        state.messages.push(message.clone());
-
-        // 限制消息历史
-        if state.messages.len() > 1000 {
-            state.messages.remove(0);
+        Err(_) => {
+            log::error!("Netcat Server 获取写锁超时，跳过此消息: id={}", message_id);
+            return;
         }
-
-        (state.session.id.clone(), message)
     };
 
-    // 发送事件 - 记录结果
+    // 发送事件 - 在锁释放后
     let event = NetcatEvent::MessageReceived {
         session_id: session_id.clone(),
         message,
     };
+
+    log::debug!("Netcat Server 准备发送事件: session={}", session_id);
     match app.emit("netcat-event", &event) {
         Ok(_) => log::info!("Netcat Server 消息事件已发送: session={}", session_id),
-        Err(e) => log::error!("Netcat Server 消息事件发送失败: {}", e),
+        Err(e) => log::error!("Netcat Server 消息事件发送失败: {} (session={})", e, session_id),
     }
 }
 

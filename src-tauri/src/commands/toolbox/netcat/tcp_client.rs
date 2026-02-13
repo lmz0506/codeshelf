@@ -215,45 +215,64 @@ async fn handle_received_data(
     let message_id = generate_id();
     let data_preview = bytes_to_display_string(&data);
 
+    // 安全截断预览（字符边界安全）
+    let preview_safe: String = data_preview.chars().take(50).collect();
     log::info!("Netcat Client 收到数据: {} bytes, preview={}",
-        data.len(), &data_preview[..data_preview.len().min(50)]);
+        data.len(), preview_safe);
 
-    let (session_id, message) = {
-        let mut state = session_state.write().await;
-        state.session.bytes_received += data.len() as u64;
-        state.session.message_count += 1;
-        state.session.last_activity = Some(now);
+    // 使用超时来获取锁，避免死锁
+    let lock_result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        session_state.write()
+    ).await;
 
-        let message = NetcatMessage {
-            id: message_id,
-            session_id: state.session.id.clone(),
-            direction: MessageDirection::Received,
-            data: data_preview,
-            format: DataFormat::Text,
-            size: data.len(),
-            timestamp: now,
-            client_id: client_id.clone(),
-            client_addr: None,
-        };
+    let (session_id, message) = match lock_result {
+        Ok(mut state) => {
+            state.session.bytes_received += data.len() as u64;
+            state.session.message_count += 1;
+            state.session.last_activity = Some(now);
 
-        state.messages.push(message.clone());
+            let message = NetcatMessage {
+                id: message_id.clone(),
+                session_id: state.session.id.clone(),
+                direction: MessageDirection::Received,
+                data: data_preview,
+                format: DataFormat::Text,
+                size: data.len(),
+                timestamp: now,
+                client_id: client_id.clone(),
+                client_addr: None,
+            };
 
-        // 限制消息历史
-        if state.messages.len() > 1000 {
-            state.messages.remove(0);
+            state.messages.push(message.clone());
+
+            // 限制消息历史
+            if state.messages.len() > 1000 {
+                state.messages.remove(0);
+            }
+
+            let sid = state.session.id.clone();
+            let msg_count = state.session.message_count;
+            log::debug!("Netcat Client 状态更新完成: session={}, 消息总数={}", sid, msg_count);
+
+            (sid, message)
         }
-
-        (state.session.id.clone(), message)
+        Err(_) => {
+            log::error!("Netcat Client 获取写锁超时，跳过此消息: id={}", message_id);
+            return;
+        }
     };
 
-    // 发送事件 - 记录结果
+    // 发送事件 - 在锁释放后
     let event = NetcatEvent::MessageReceived {
         session_id: session_id.clone(),
         message,
     };
+
+    log::debug!("Netcat Client 准备发送事件: session={}", session_id);
     match app.emit("netcat-event", &event) {
         Ok(_) => log::info!("Netcat Client 消息事件已发送: session={}", session_id),
-        Err(e) => log::error!("Netcat Client 消息事件发送失败: {}", e),
+        Err(e) => log::error!("Netcat Client 消息事件发送失败: {} (session={})", e, session_id),
     }
 }
 
