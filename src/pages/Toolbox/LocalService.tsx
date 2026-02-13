@@ -68,6 +68,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
   const [formLocalPort, setFormLocalPort] = useState("");
   const [formRemoteHost, setFormRemoteHost] = useState("");
   const [formRemotePort, setFormRemotePort] = useState("");
+  const [formDocPath, setFormDocPath] = useState("");
 
   // 删除确认对话框状态
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -114,6 +115,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
     setFormLocalPort("");
     setFormRemoteHost("");
     setFormRemotePort("");
+    setFormDocPath("");
     setEditingServer(null);
     setEditingRule(null);
   }
@@ -181,6 +183,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
     setFormLocalPort(rule.localPort.toString());
     setFormRemoteHost(rule.remoteHost);
     setFormRemotePort(rule.remotePort.toString());
+    setFormDocPath(rule.docPath || "");
     setShowAddDialog(true);
   }
 
@@ -246,6 +249,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
       localPort,
       remoteHost: formRemoteHost.trim(),
       remotePort,
+      docPath: formDocPath.trim() || undefined,
     };
 
     try {
@@ -363,6 +367,16 @@ export function LocalService({ onBack }: LocalServiceProps) {
     return `${base}/`;
   }
 
+  // 获取端口转发的访问 URL（包含文档路径）
+  function getForwardUrl(rule: ForwardRule): string {
+    const base = `http://127.0.0.1:${rule.localPort}`;
+    if (rule.docPath) {
+      const docPath = rule.docPath.startsWith("/") ? rule.docPath : `/${rule.docPath}`;
+      return `${base}${docPath}`;
+    }
+    return base;
+  }
+
   // 在浏览器中打开
   async function handleOpenBrowser(server: ServerConfig) {
     const url = getServerUrl(server);
@@ -375,12 +389,35 @@ export function LocalService({ onBack }: LocalServiceProps) {
     }
   }
 
+  // 在浏览器中打开端口转发
+  async function handleOpenForwardBrowser(rule: ForwardRule) {
+    const url = getForwardUrl(rule);
+    try {
+      await shellOpen(url);
+    } catch (error) {
+      console.error("打开浏览器失败:", error);
+      window.open(url, "_blank");
+    }
+  }
+
   // 复制 URL 到剪贴板
   async function handleCopyUrl(server: ServerConfig) {
     const url = getServerUrl(server);
     try {
       await navigator.clipboard.writeText(url);
       setCopiedId(server.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (error) {
+      console.error("复制失败:", error);
+    }
+  }
+
+  // 复制端口转发 URL 到剪贴板
+  async function handleCopyForwardUrl(rule: ForwardRule) {
+    const url = getForwardUrl(rule);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(rule.id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch (error) {
       console.error("复制失败:", error);
@@ -647,12 +684,46 @@ export function LocalService({ onBack }: LocalServiceProps) {
                           {rule.name}
                           <span className="ml-2 text-xs text-gray-400">端口转发</span>
                         </h4>
+                        {/* 访问地址 */}
+                        <div className="flex items-center gap-2 mt-1">
+                          {rule.status === "running" ? (
+                            <>
+                              <button
+                                onClick={() => handleOpenForwardBrowser(rule)}
+                                className="text-sm font-mono text-purple-500 hover:text-purple-600 hover:underline"
+                                title="点击在浏览器中打开"
+                              >
+                                {getForwardUrl(rule)}
+                              </button>
+                              <button
+                                onClick={() => handleCopyForwardUrl(rule)}
+                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+                                title="复制地址"
+                              >
+                                {copiedId === rule.id ? (
+                                  <Check size={14} className="text-green-500" />
+                                ) : (
+                                  <Copy size={14} className="text-gray-400" />
+                                )}
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-sm font-mono text-gray-400">
+                              {getForwardUrl(rule)}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
                           <span className="font-mono">:{rule.localPort}</span>
                           <ArrowLeftRight size={14} />
                           <span className="font-mono">
                             {rule.remoteHost}:{rule.remotePort}
                           </span>
+                          {rule.docPath && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                              {rule.docPath}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -674,13 +745,22 @@ export function LocalService({ onBack }: LocalServiceProps) {
                       {/* 操作按钮 */}
                       <div className="flex items-center gap-1">
                         {rule.status === "running" ? (
-                          <button
-                            onClick={() => handleStopForward(rule.id)}
-                            className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-red-500"
-                            title="停止"
-                          >
-                            <Square size={16} />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleOpenForwardBrowser(rule)}
+                              className="p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors text-purple-500"
+                              title="在浏览器中打开"
+                            >
+                              <ExternalLink size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleStopForward(rule.id)}
+                              className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-red-500"
+                              title="停止"
+                            >
+                              <Square size={16} />
+                            </button>
+                          </>
                         ) : (
                           <>
                             <button
@@ -934,6 +1014,20 @@ export function LocalService({ onBack }: LocalServiceProps) {
                       onChange={(e) => setFormRemotePort(e.target.value)}
                       placeholder="如: 3000"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-2">
+                      文档路径 <span className="text-gray-400 font-normal">(可选)</span>
+                    </label>
+                    <Input
+                      value={formDocPath}
+                      onChange={(e) => setFormDocPath(e.target.value)}
+                      placeholder="如: doc.html、swagger-ui.html"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      设置快捷访问路径，如 API 文档页面。留空则直接访问根路径
+                    </p>
                   </div>
                 </>
               )}

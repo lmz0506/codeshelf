@@ -103,6 +103,8 @@ export interface ForwardRule {
   localPort: number;
   remoteHost: string;
   remotePort: number;
+  /** 文档路径，如 "doc.html" 或 "swagger-ui.html" */
+  docPath?: string;
   status: "running" | "stopped";
   connections: number;
   bytesIn: number;
@@ -115,6 +117,8 @@ export interface ForwardRuleInput {
   localPort: number;
   remoteHost: string;
   remotePort: number;
+  /** 文档路径，如 "doc.html" 或 "swagger-ui.html" */
+  docPath?: string;
 }
 
 export interface ForwardStats {

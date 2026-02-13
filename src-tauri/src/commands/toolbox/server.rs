@@ -357,6 +357,7 @@ async fn run_server(
     };
 
     // 添加多个 API 代理规则
+    // API 代理同时在根路径和 URL 前缀路径下生效，以便前端可以使用相对路径
     for proxy in &config.proxies {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -371,26 +372,43 @@ async fn run_server(
         // 确保前缀格式正确（以 / 开头，不以 / 结尾）
         let clean_prefix = proxy.prefix.trim_matches('/');
 
-        // 代理路由需要考虑 URL 前缀
-        let route_path = if clean_prefix.is_empty() {
-            format!("{}/*path", url_prefix_clean)
+        // 1. 首先在根路径注册代理（全局生效）
+        let root_route_path = if clean_prefix.is_empty() {
+            "/*path".to_string()
         } else {
-            format!("{}/{}/*path", url_prefix_clean, clean_prefix)
+            format!("/{}/*path", clean_prefix)
+        };
+        let root_route_exact = if clean_prefix.is_empty() {
+            "/".to_string()
+        } else {
+            format!("/{}", clean_prefix)
         };
 
-        // 同时添加带和不带尾部斜杠的路由
-        let route_path_exact = if clean_prefix.is_empty() {
-            url_prefix_clean.clone()
-        } else {
-            format!("{}/{}", url_prefix_clean, clean_prefix)
-        };
-
-        app = app.route(&route_path, any(proxy_handler).with_state(proxy_state.clone()));
-        if !route_path_exact.is_empty() {
-            app = app.route(&route_path_exact, any(proxy_handler).with_state(proxy_state));
+        app = app.route(&root_route_path, any(proxy_handler).with_state(proxy_state.clone()));
+        if !root_route_exact.is_empty() && root_route_exact != "/" {
+            app = app.route(&root_route_exact, any(proxy_handler).with_state(proxy_state.clone()));
         }
+        log::info!("代理规则（全局）: {} -> {}", root_route_path, proxy.target);
 
-        log::info!("代理规则: {} -> {}", route_path, proxy.target);
+        // 2. 如果有 URL 前缀，也在前缀路径下注册代理（兼容性）
+        if !url_prefix_clean.is_empty() {
+            let prefixed_route_path = if clean_prefix.is_empty() {
+                format!("{}/*path", url_prefix_clean)
+            } else {
+                format!("{}/{}/*path", url_prefix_clean, clean_prefix)
+            };
+            let prefixed_route_exact = if clean_prefix.is_empty() {
+                url_prefix_clean.clone()
+            } else {
+                format!("{}/{}", url_prefix_clean, clean_prefix)
+            };
+
+            app = app.route(&prefixed_route_path, any(proxy_handler).with_state(proxy_state.clone()));
+            if !prefixed_route_exact.is_empty() {
+                app = app.route(&prefixed_route_exact, any(proxy_handler).with_state(proxy_state));
+            }
+            log::info!("代理规则（前缀）: {} -> {}", prefixed_route_path, proxy.target);
+        }
     }
 
     // 根据 URL 前缀配置静态文件服务
@@ -438,6 +456,10 @@ async fn run_server(
     // 设置 SO_REUSEADDR，允许在 TIME_WAIT 状态时复用端口
     socket.set_reuse_address(true)
         .map_err(|e| format!("设置 SO_REUSEADDR 失败: {}", e))?;
+
+    // 设置 SO_LINGER 为 0，使 socket 关闭时立即释放端口（发送 RST 而非 FIN）
+    socket.set_linger(Some(std::time::Duration::from_secs(0)))
+        .map_err(|e| format!("设置 SO_LINGER 失败: {}", e))?;
 
     // 设置非阻塞模式
     socket.set_nonblocking(true)
@@ -634,8 +656,8 @@ pub async fn stop_server(server_id: String) -> Result<(), String> {
 
     // 只有在找到控制器时才等待
     if has_controller {
-        // 等待服务停止
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        // 短暂等待服务响应停止信号（由于使用了 SO_LINGER=0，不需要等太久）
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
     }
 
     // 更新状态

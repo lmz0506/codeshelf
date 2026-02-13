@@ -247,6 +247,17 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
     );
   });
 
+  // 检查是否是内部服务（CodeShelf 进程或其使用的端口）
+  function isInternalService(processName: string, port: number): boolean {
+    // 检查进程名是否为 CodeShelf
+    const name = processName.toLowerCase();
+    if (name.includes("codeshelf")) {
+      return true;
+    }
+    // 检查端口是否为内部服务使用
+    return codeshelfPorts.has(port);
+  }
+
   // 过滤进程列表
   const filteredProcesses = processes.filter((proc) => {
     if (!processSearch) return true;
@@ -393,18 +404,18 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
                     </thead>
                     <tbody>
                       {filteredOccupations.map((item, index) => {
-                        const isCodeshelfPort = codeshelfPorts.has(item.port);
+                        const isCodeshelfService = isInternalService(item.processName, item.port);
                         return (
                         <tr
                           key={`${item.port}-${item.protocol}-${item.pid}-${index}`}
                           className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 ${
-                            isCodeshelfPort ? "bg-blue-50/50 dark:bg-blue-900/10" : ""
+                            isCodeshelfService ? "bg-blue-50/50 dark:bg-blue-900/10" : ""
                           }`}
                         >
                           <td className="py-3 px-4 font-mono font-medium text-blue-600">
                             <div className="flex items-center gap-2">
                               {item.port}
-                              {isCodeshelfPort && (
+                              {isCodeshelfService && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-500 text-white" title="CodeShelf 内部服务">
                                   内部
                                 </span>
@@ -437,7 +448,7 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
                             )}
                           </td>
                           <td className="py-3 px-4 text-right">
-                            {isCodeshelfPort ? (
+                            {isCodeshelfService ? (
                               <span className="text-xs text-gray-400" title="请在本地服务页面停止此服务">
                                 内部服务
                               </span>

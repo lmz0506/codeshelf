@@ -120,6 +120,8 @@ pub struct ForwardRule {
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,
+    /// 文档路径，如 "doc.html" 或 "swagger-ui.html"，用于快速访问
+    pub doc_path: Option<String>,
     #[serde(default = "default_stopped")]
     pub status: String, // "running", "stopped"
     #[serde(default)]
@@ -138,6 +140,8 @@ pub struct ForwardRuleInput {
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,
+    /// 文档路径，如 "doc.html" 或 "swagger-ui.html"
+    pub doc_path: Option<String>,
 }
 
 /// 转发统计

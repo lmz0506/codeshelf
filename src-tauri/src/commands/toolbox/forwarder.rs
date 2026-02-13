@@ -3,6 +3,7 @@
 use super::{current_time, generate_id, ForwardRule, ForwardRuleInput, ForwardStats};
 use crate::storage;
 use once_cell::sync::Lazy;
+use socket2::{Domain, Socket, Type};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -72,6 +73,7 @@ fn load_rules_from_file() -> Result<HashMap<String, ForwardRule>, String> {
         let local_port = rule_val.get("local_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
         let remote_host = rule_val.get("remote_host").and_then(|v| v.as_str()).unwrap_or_default().to_string();
         let remote_port = rule_val.get("remote_port").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+        let doc_path = rule_val.get("doc_path").and_then(|v| v.as_str()).map(|s| s.to_string());
         let created_at = rule_val.get("created_at").and_then(|v| v.as_str()).unwrap_or_default().to_string();
 
         if !id.is_empty() {
@@ -82,6 +84,7 @@ fn load_rules_from_file() -> Result<HashMap<String, ForwardRule>, String> {
                 local_port,
                 remote_host,
                 remote_port,
+                doc_path,
                 status: "stopped".to_string(),
                 connections: 0,
                 bytes_in: 0,
@@ -112,6 +115,7 @@ async fn save_rules_to_file() -> Result<(), String> {
             "local_port": r.local_port,
             "remote_host": r.remote_host,
             "remote_port": r.remote_port,
+            "doc_path": r.doc_path,
             "created_at": r.created_at
         })
     }).collect();
@@ -217,6 +221,7 @@ pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, St
         local_port: input.local_port,
         remote_host: input.remote_host,
         remote_port: input.remote_port,
+        doc_path: input.doc_path,
         status: "stopped".to_string(),
         connections: 0,
         bytes_in: 0,
@@ -339,10 +344,38 @@ async fn run_forward_server(
     remote_port: u16,
     controller: Arc<ForwardController>,
 ) -> Result<(), String> {
-    let addr = format!("0.0.0.0:{}", local_port);
-    let listener = TcpListener::bind(&addr)
-        .await
+    let addr: std::net::SocketAddr = format!("0.0.0.0:{}", local_port)
+        .parse()
+        .map_err(|e| format!("解析地址失败: {}", e))?;
+
+    // 使用 socket2 创建支持快速关闭的 socket
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
+        .map_err(|e| format!("创建 socket 失败: {}", e))?;
+
+    // 设置 SO_REUSEADDR，允许在 TIME_WAIT 状态时复用端口
+    socket.set_reuse_address(true)
+        .map_err(|e| format!("设置 SO_REUSEADDR 失败: {}", e))?;
+
+    // 设置 SO_LINGER 为 0，使 socket 关闭时立即释放端口
+    socket.set_linger(Some(std::time::Duration::from_secs(0)))
+        .map_err(|e| format!("设置 SO_LINGER 失败: {}", e))?;
+
+    // 设置非阻塞模式
+    socket.set_nonblocking(true)
+        .map_err(|e| format!("设置非阻塞模式失败: {}", e))?;
+
+    // 绑定地址
+    socket.bind(&addr.into())
         .map_err(|e| format!("绑定端口失败: {}", e))?;
+
+    // 监听
+    socket.listen(128)
+        .map_err(|e| format!("监听端口失败: {}", e))?;
+
+    // 转换为 tokio TcpListener
+    let std_listener: std::net::TcpListener = socket.into();
+    let listener = TcpListener::from_std(std_listener)
+        .map_err(|e| format!("创建 TcpListener 失败: {}", e))?;
 
     log::info!("转发服务启动: {} -> {}:{}", local_port, remote_host, remote_port);
 
@@ -502,8 +535,8 @@ pub async fn stop_forwarding(rule_id: String) -> Result<(), String> {
         }
     }
 
-    // 等待一小段时间让服务停止
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // 短暂等待服务响应停止信号（由于使用了 SO_LINGER=0，不需要等太久）
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // 更新状态
     {
@@ -601,6 +634,7 @@ pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> Re
             rule.local_port = input.local_port;
             rule.remote_host = input.remote_host;
             rule.remote_port = input.remote_port;
+            rule.doc_path = input.doc_path;
         }
     }
 
