@@ -235,9 +235,17 @@ pub async fn netcat_stop_session(
     state: State<'_, NetcatState>,
     session_id: String,
 ) -> Result<(), String> {
+    stop_session_internal(&state, &session_id).await
+}
+
+/// 内部停止会话逻辑（可复用）
+async fn stop_session_internal(
+    state: &NetcatState,
+    session_id: &str,
+) -> Result<(), String> {
     let session_state = {
         let sessions = state.sessions.read().await;
-        sessions.get(&session_id).cloned()
+        sessions.get(session_id).cloned()
     };
 
     let session_state = session_state.ok_or("会话不存在")?;
@@ -261,9 +269,7 @@ pub async fn netcat_stop_session(
     }
 
     // 清理 TCP 发送器
-    tcp_client::TCP_SENDERS.write().await.remove(&session_id);
-
-    Ok(())
+    tcp_client::TCP_SENDERS.write().await.remove(session_id);
 
     Ok(())
 }
@@ -275,7 +281,7 @@ pub async fn netcat_remove_session(
     session_id: String,
 ) -> Result<(), String> {
     // 先停止
-    let _ = netcat_stop_session(state.clone(), session_id.clone()).await;
+    let _ = stop_session_internal(&state, &session_id).await;
 
     // 移除
     state.sessions.write().await.remove(&session_id);

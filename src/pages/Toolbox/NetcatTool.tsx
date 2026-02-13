@@ -154,6 +154,8 @@ export default function NetcatTool() {
   const loadMessages = useCallback(async (sessionId: string) => {
     try {
       const msgs = await netcatGetMessages(sessionId, 200);
+      // 调试：打印消息方向
+      console.log("加载消息:", msgs.map(m => ({ id: m.id, direction: m.direction, data: m.data.substring(0, 20) })));
       setMessages(msgs.reverse());
     } catch (err) {
       console.error("加载消息失败:", err);
@@ -975,11 +977,13 @@ export default function NetcatTool() {
                           <ArrowUpRight size={14} />
                           <span className="text-xs">发</span>
                         </>
-                      ) : (
+                      ) : msg.direction === "received" ? (
                         <>
                           <ArrowDownLeft size={14} />
                           <span className="text-xs">收</span>
                         </>
+                      ) : (
+                        <span className="text-xs text-red-500">[{msg.direction}]</span>
                       )}
                     </span>
                     {msg.clientAddr && (
