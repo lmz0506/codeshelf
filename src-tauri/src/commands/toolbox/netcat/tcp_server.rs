@@ -74,6 +74,10 @@ pub async fn start_tcp_server(
     // 初始化客户端存储
     SERVER_CLIENTS.write().await.insert(session_id.clone(), HashMap::new());
 
+    // 创建 shutdown 标志
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    SERVER_SHUTDOWN_FLAGS.write().await.insert(session_id.clone(), shutdown_flag.clone());
+
     // 创建关闭通道
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
     {
@@ -100,6 +104,7 @@ pub async fn start_tcp_server(
                             client_id,
                             client_addr,
                             stream,
+                            shutdown_flag.clone(),
                         ).await;
                     }
                     Err(e) => {
@@ -118,6 +123,7 @@ pub async fn start_tcp_server(
     }
 
     SERVER_CLIENTS.write().await.remove(&session_id);
+    SERVER_SHUTDOWN_FLAGS.write().await.remove(&session_id);
     emit_status_changed(&app, &session_id, SessionStatus::Disconnected, None);
 
     Ok(())
@@ -131,6 +137,7 @@ async fn handle_client_connection(
     client_id: String,
     client_addr: String,
     stream: TcpStream,
+    shutdown_flag: Arc<AtomicBool>,
 ) {
     let now = current_timestamp();
 
