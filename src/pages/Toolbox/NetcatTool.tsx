@@ -91,6 +91,7 @@ export default function NetcatTool() {
   const [autoSendEnabled, setAutoSendEnabled] = useState(false);
   const [autoSendInterval, setAutoSendInterval] = useState(1000); // 毫秒
   const [autoSendMode, setAutoSendMode] = useState<"fixed" | "csv" | "template" | "http">("fixed");
+  const [autoSendFixedData, setAutoSendFixedData] = useState(""); // 固定内容
   const [autoSendCsvData, setAutoSendCsvData] = useState("");
   const [autoSendCsvIndex, setAutoSendCsvIndex] = useState(0);
   const [autoSendTemplate, setAutoSendTemplate] = useState(""); // 支持 {{random:1-100}} {{uuid}} {{timestamp}} 等
@@ -370,7 +371,7 @@ export default function NetcatTool() {
   const getNextAutoSendData = async (): Promise<string | null> => {
     switch (autoSendMode) {
       case "fixed":
-        return sendData;
+        return autoSendFixedData || null;
       case "csv": {
         const lines = autoSendCsvData.split("\n").filter((l) => l.trim());
         if (lines.length === 0) return null;
@@ -891,9 +892,17 @@ export default function NetcatTool() {
                   )}
 
                   {autoSendMode === "fixed" && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                      将循环发送上方输入框中的固定内容
-                    </p>
+                    <div className="mb-3">
+                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                        固定发送内容
+                      </label>
+                      <textarea
+                        className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono h-20 resize-none"
+                        value={autoSendFixedData}
+                        onChange={(e) => setAutoSendFixedData(e.target.value)}
+                        placeholder="输入要循环发送的固定内容..."
+                      />
+                    </div>
                   )}
 
                   <div className="flex items-center justify-between">
