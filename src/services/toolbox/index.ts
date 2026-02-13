@@ -442,8 +442,16 @@ export async function netcatUpdateAutoSend(sessionId: string, config: AutoSendCo
   return invoke("netcat_update_auto_send", { sessionId, config });
 }
 
-export async function netcatFetchHttp(url: string, jsonPath?: string): Promise<string> {
-  return invoke("netcat_fetch_http", { url, jsonPath: jsonPath || null });
+export interface HttpFetchConfig {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  jsonPath?: string;
+}
+
+export async function netcatFetchHttp(config: HttpFetchConfig): Promise<string> {
+  return invoke("netcat_fetch_http", { config });
 }
 
 // ============== 工具函数 ==============

@@ -79,6 +79,9 @@ const defaultAutoSendConfig: AutoSendConfig = {
   csvData: "",
   template: "",
   httpUrl: "",
+  httpMethod: "GET",
+  httpHeaders: "",
+  httpBody: "",
   httpJsonPath: "",
 };
 
