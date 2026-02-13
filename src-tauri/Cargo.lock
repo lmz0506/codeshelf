@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "codeshelf"
-version = "0.2.0"
+version = "0.1.16"
 dependencies = [
  "axum",
  "base64 0.22.1",
