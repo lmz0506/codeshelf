@@ -215,17 +215,17 @@ export function FileDownloader({ onBack }: FileDownloaderProps) {
             {completedCount > 0 && (
               <button
                 onClick={handleClearCompleted}
-                className="re-btn flex items-center gap-2"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
               >
-                <Trash2 size={16} />
+                <Trash2 size={14} />
                 <span>清除已完成</span>
               </button>
             )}
             <button
               onClick={() => setShowAddDialog(true)}
-              className="re-btn-primary flex items-center gap-2"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
             >
-              <Plus size={16} />
+              <Plus size={14} />
               <span>新建下载</span>
             </button>
           </>
