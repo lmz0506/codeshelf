@@ -57,14 +57,20 @@ pub struct ScanProgress {
 pub struct DownloadTask {
     pub id: String,
     pub url: String,
+    #[serde(alias = "save_path")]
     pub save_path: String,
+    #[serde(alias = "file_name")]
     pub file_name: String,
+    #[serde(alias = "total_size")]
     pub total_size: u64,
+    #[serde(alias = "downloaded_size")]
     pub downloaded_size: u64,
     pub status: String, // "pending", "downloading", "paused", "completed", "failed"
     pub speed: u64,     // 字节/秒
     pub error: Option<String>,
+    #[serde(alias = "created_at")]
     pub created_at: String,
+    #[serde(alias = "updated_at")]
     pub updated_at: String,
 }
 
