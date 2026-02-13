@@ -189,10 +189,17 @@ async fn handle_client_connection(
     let session_state_clone2 = session_state.clone();
     let client_id_clone2 = client_id.clone();
     let client_addr_clone = client_addr.clone();
+    let shutdown_flag_send = shutdown_flag.clone();
 
     tokio::spawn(async move {
         log::info!("Netcat Server 发送任务启动: client={}", client_addr_clone);
         while let Some(data) = send_rx.recv().await {
+            // 检查 shutdown 标志
+            if shutdown_flag_send.load(Ordering::SeqCst) {
+                log::info!("Netcat Server 发送任务收到停止信号: client={}", client_addr_clone);
+                break;
+            }
+
             log::info!("Netcat Server 从通道收到数据: {} bytes, 准备写入客户端 {}",
                 data.len(), client_addr_clone);
 
@@ -221,18 +228,26 @@ async fn handle_client_connection(
     });
 
     // 启动读取任务
+    let shutdown_flag_read = shutdown_flag.clone();
     tokio::spawn(async move {
         let mut buffer = vec![0u8; 8192];
         let mut message_count: u64 = 0;
         log::info!("Netcat Server 读取任务启动: client={}", client_addr);
 
         loop {
+            // 先检查 shutdown 标志
+            if shutdown_flag_read.load(Ordering::SeqCst) {
+                log::info!("Netcat Server [{}] 读取任务收到停止信号: client={}",
+                    client_id_clone, client_addr);
+                break;
+            }
+
             log::debug!("Netcat Server [{}] 等待读取数据 (已收{}条): client={}",
                 client_id_clone, message_count, client_addr);
 
-            // 使用 tokio::time::timeout 防止永久阻塞
+            // 使用较短的超时 (100ms)，以便频繁检查 shutdown 标志
             let read_result = tokio::time::timeout(
-                std::time::Duration::from_secs(300), // 5分钟超时
+                std::time::Duration::from_millis(100),
                 reader.read(&mut buffer)
             ).await;
 
@@ -275,9 +290,7 @@ async fn handle_client_connection(
                     break;
                 }
                 Err(_) => {
-                    log::warn!("Netcat Server [{}] 读取超时 (5分钟无数据): client={}",
-                        client_id_clone, client_addr);
-                    // 继续等待，不断开连接
+                    // 超时是正常的，继续循环以检查 shutdown 标志
                     continue;
                 }
             }
@@ -478,6 +491,15 @@ pub async fn disconnect_client(session_id: &str, client_id: &str) -> Result<(), 
 
 /// 断开所有客户端连接（清理服务器资源）
 pub async fn shutdown_all_clients(session_id: &str) {
+    // 设置 shutdown 标志，通知所有客户端任务停止
+    {
+        let flags = SERVER_SHUTDOWN_FLAGS.read().await;
+        if let Some(flag) = flags.get(session_id) {
+            flag.store(true, Ordering::SeqCst);
+            log::info!("Netcat Server shutdown 标志已设置: {}", session_id);
+        }
+    }
+
     let mut servers = SERVER_CLIENTS.write().await;
     if let Some(clients) = servers.get_mut(session_id) {
         // 清空所有客户端，发送通道会被 drop，导致发送任务退出
@@ -486,6 +508,9 @@ pub async fn shutdown_all_clients(session_id: &str) {
     }
     // 移除整个会话的客户端存储
     servers.remove(session_id);
+
+    // 清理 shutdown 标志
+    SERVER_SHUTDOWN_FLAGS.write().await.remove(session_id);
 }
 
 /// 发送状态变更事件
