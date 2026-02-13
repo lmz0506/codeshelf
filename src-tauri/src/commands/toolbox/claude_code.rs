@@ -5,10 +5,31 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use crate::storage;
 use crate::storage::schema::{
     ClaudeQuickConfig, ClaudeInstallation, ConfigFileInfo as SchemaConfigFileInfo,
 };
+
+/// Windows 隐藏窗口标志
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+/// 创建隐藏窗口的 Command（Windows 专用）
+#[cfg(target_os = "windows")]
+fn new_command(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+/// 创建 Command（非 Windows）
+#[cfg(not(target_os = "windows"))]
+fn new_command(program: &str) -> Command {
+    Command::new(program)
+}
 
 /// 清理 WSL 命令输出中的特殊字符（\r, \0 等）
 fn clean_wsl_output(output: &[u8]) -> String {
@@ -150,7 +171,7 @@ pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo,
     };
 
     // 尝试获取版本
-    if let Ok(output) = Command::new(&claude_path).arg("-version").output() {
+    if let Ok(output) = new_command(&claude_path).arg("-version").output() {
         if output.status.success() {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !version.is_empty() {
@@ -169,7 +190,7 @@ pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo,
     // 如果上面的方式失败，尝试其他版本参数
     if !info.installed {
         for arg in &["--version", "-v", "-V"] {
-            if let Ok(output) = Command::new(&claude_path).arg(arg).output() {
+            if let Ok(output) = new_command(&claude_path).arg(arg).output() {
                 if output.status.success() {
                     let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     if !version.is_empty() {
@@ -260,7 +281,7 @@ async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, 
 
     // 获取版本（仍然需要用 wsl 命令执行）
     for arg in &["-version", "--version", "-v"] {
-        if let Ok(output) = Command::new("wsl")
+        if let Ok(output) = new_command("wsl")
             .args(["-d", distro, "--", &linux_path, arg])
             .output()
         {
@@ -283,7 +304,7 @@ async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, 
     }
 
     // 获取配置目录 - 转换为 UNC 格式
-    if let Ok(output) = Command::new("wsl")
+    if let Ok(output) = new_command("wsl")
         .args(["-d", distro, "--", "bash", "-c", "echo $HOME/.claude"])
         .output()
     {
@@ -322,7 +343,7 @@ async fn check_host_claude() -> ClaudeCodeInfo {
     #[cfg(not(target_os = "windows"))]
     let (which_cmd, which_args) = ("which", vec!["claude"]);
 
-    if let Ok(output) = Command::new(which_cmd).args(&which_args).output() {
+    if let Ok(output) = new_command(which_cmd).args(&which_args).output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
@@ -351,7 +372,7 @@ fn get_claude_version_host() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
         // Windows 上优先尝试 npm list
-        if let Ok(output) = Command::new("cmd")
+        if let Ok(output) = new_command("cmd")
             .args(["/c", "npm", "list", "-g", "@anthropic-ai/claude-code", "--depth=0"])
             .output()
         {
@@ -363,7 +384,7 @@ fn get_claude_version_host() -> Option<String> {
     }
 
     // 尝试 -version (单横杠，Claude Code 实际使用的格式)
-    if let Ok(output) = Command::new("claude").arg("-version").output() {
+    if let Ok(output) = new_command("claude").arg("-version").output() {
         // 检查 stdout
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !stdout.is_empty() {
@@ -377,7 +398,7 @@ fn get_claude_version_host() -> Option<String> {
     }
 
     // 尝试 --version (双横杠)
-    if let Ok(output) = Command::new("claude").arg("--version").output() {
+    if let Ok(output) = new_command("claude").arg("--version").output() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !stdout.is_empty() {
             return Some(parse_version(&stdout));
@@ -389,7 +410,7 @@ fn get_claude_version_host() -> Option<String> {
     }
 
     // 尝试 -v
-    if let Ok(output) = Command::new("claude").arg("-v").output() {
+    if let Ok(output) = new_command("claude").arg("-v").output() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !stdout.is_empty() {
             return Some(parse_version(&stdout));
@@ -397,7 +418,7 @@ fn get_claude_version_host() -> Option<String> {
     }
 
     // 尝试 -V
-    if let Ok(output) = Command::new("claude").arg("-V").output() {
+    if let Ok(output) = new_command("claude").arg("-V").output() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !stdout.is_empty() {
             return Some(parse_version(&stdout));
@@ -406,7 +427,7 @@ fn get_claude_version_host() -> Option<String> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        if let Ok(output) = Command::new("npm").args(["list", "-g", "@anthropic-ai/claude-code", "--depth=0"]).output() {
+        if let Ok(output) = new_command("npm").args(["list", "-g", "@anthropic-ai/claude-code", "--depth=0"]).output() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             if let Some(version) = extract_npm_version(&stdout) {
                 return Some(version);
@@ -524,7 +545,7 @@ fn get_host_config_dir() -> PathBuf {
 /// 获取 WSL 发行版列表
 #[cfg(target_os = "windows")]
 async fn get_wsl_distros() -> Result<Vec<String>, String> {
-    let output = Command::new("wsl")
+    let output = new_command("wsl")
         .args(["--list", "--quiet"])
         .output()
         .map_err(|e| format!("执行 wsl 命令失败: {}", e))?;
@@ -558,7 +579,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
     };
 
     // 检查 claude 命令
-    if let Ok(output) = Command::new("wsl")
+    if let Ok(output) = new_command("wsl")
         .args(["-d", distro, "--", "which", "claude"])
         .output()
     {
@@ -574,7 +595,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
     // 获取版本 - 尝试多种方式
     if info.installed {
         // 首先尝试 claude -version (单横杠)
-        if let Ok(output) = Command::new("wsl")
+        if let Ok(output) = new_command("wsl")
             .args(["-d", distro, "--", "claude", "-version"])
             .output()
         {
@@ -595,7 +616,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
 
         // 尝试 --version (双横杠)
         if info.version.is_none() {
-            if let Ok(output) = Command::new("wsl")
+            if let Ok(output) = new_command("wsl")
                 .args(["-d", distro, "--", "claude", "--version"])
                 .output()
             {
@@ -610,7 +631,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
 
         // 最后尝试 npm list
         if info.version.is_none() {
-            if let Ok(output) = Command::new("wsl")
+            if let Ok(output) = new_command("wsl")
                 .args(["-d", distro, "--", "npm", "list", "-g", "@anthropic-ai/claude-code", "--depth=0"])
                 .output()
             {
@@ -623,7 +644,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
     }
 
     // 获取配置目录 (WSL 中的 ~/.claude)
-    if let Ok(output) = Command::new("wsl")
+    if let Ok(output) = new_command("wsl")
         .args(["-d", distro, "--", "bash", "-c", "echo $HOME/.claude"])
         .output()
     {
@@ -658,7 +679,7 @@ fn scan_wsl_config_files(distro: &str, config_dir: &str) -> Vec<ConfigFileInfo> 
 
         // 分开检查文件存在性和获取文件信息
         // 先检查文件是否存在
-        if let Ok(output) = Command::new("wsl")
+        if let Ok(output) = new_command("wsl")
             .args(["-d", distro, "--", "test", "-f", &path])
             .output()
         {
@@ -666,7 +687,7 @@ fn scan_wsl_config_files(distro: &str, config_dir: &str) -> Vec<ConfigFileInfo> 
                 file_info.exists = true;
 
                 // 获取文件大小和修改时间
-                if let Ok(stat_output) = Command::new("wsl")
+                if let Ok(stat_output) = new_command("wsl")
                     .args(["-d", distro, "--", "stat", "-c", "%s %Y", &path])
                     .output()
                 {
@@ -804,7 +825,7 @@ pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: 
         #[cfg(target_os = "windows")]
         EnvType::Wsl => {
             let distro = env_name.strip_prefix("WSL: ").unwrap_or(&env_name);
-            let output = Command::new("wsl")
+            let output = new_command("wsl")
                 .args(["-d", distro, "--", "cat", &path])
                 .output()
                 .map_err(|e| format!("执行 wsl 命令失败: {}", e))?;
@@ -850,13 +871,13 @@ pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path:
 
             // 确保目录存在
             if let Some(parent) = std::path::Path::new(&path).parent() {
-                let _ = Command::new("wsl")
+                let _ = new_command("wsl")
                     .args(["-d", distro, "--", "mkdir", "-p", &parent.to_string_lossy()])
                     .output();
             }
 
             // 使用 echo 和管道写入文件
-            let output = Command::new("wsl")
+            let output = new_command("wsl")
                 .args(["-d", distro, "--", "bash", "-c", &format!("cat > '{}'", path)])
                 .stdin(std::process::Stdio::piped())
                 .spawn()
@@ -887,7 +908,7 @@ pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_
             std::fs::create_dir_all(&path)
                 .map_err(|e| format!("创建配置目录失败: {}", e))?;
         }
-        Command::new("explorer")
+        new_command("explorer")
             .arg(&config_dir)
             .spawn()
             .map_err(|e| format!("打开目录失败: {}", e))?;
@@ -904,7 +925,7 @@ pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_
 
             #[cfg(target_os = "windows")]
             {
-                Command::new("explorer")
+                new_command("explorer")
                     .arg(&config_dir)
                     .spawn()
                     .map_err(|e| format!("打开目录失败: {}", e))?;
@@ -912,7 +933,7 @@ pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_
 
             #[cfg(target_os = "macos")]
             {
-                Command::new("open")
+                new_command("open")
                     .arg(&config_dir)
                     .spawn()
                     .map_err(|e| format!("打开目录失败: {}", e))?;
@@ -920,7 +941,7 @@ pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_
 
             #[cfg(target_os = "linux")]
             {
-                Command::new("xdg-open")
+                new_command("xdg-open")
                     .arg(&config_dir)
                     .spawn()
                     .map_err(|e| format!("打开目录失败: {}", e))?;
@@ -932,14 +953,14 @@ pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_
         EnvType::Wsl => {
             let distro = env_name.strip_prefix("WSL: ").unwrap_or(&env_name);
             // 将 WSL 路径转换为 Windows 路径
-            let output = Command::new("wsl")
+            let output = new_command("wsl")
                 .args(["-d", distro, "--", "wslpath", "-w", &config_dir])
                 .output()
                 .map_err(|e| format!("转换路径失败: {}", e))?;
 
             if output.status.success() {
                 let win_path = clean_wsl_output(&output.stdout);
-                Command::new("explorer")
+                new_command("explorer")
                     .arg(&win_path)
                     .spawn()
                     .map_err(|e| format!("打开目录失败: {}", e))?;
@@ -1261,7 +1282,7 @@ pub async fn get_wsl_config_dir(distro: String) -> Result<WslConfigDirResult, St
     let distro = distro.trim().replace('\r', "").replace('\0', "");
 
     // 获取 WSL 用户的 home 目录
-    let output = Command::new("wsl")
+    let output = new_command("wsl")
         .args(["-d", &distro, "--", "bash", "-c", "echo $HOME/.claude"])
         .output()
         .map_err(|e| format!("执行 wsl 命令失败: {}", e))?;

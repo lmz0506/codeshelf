@@ -250,7 +250,8 @@ pub async fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         Command::new("cmd")
-            .args(["/c", "start", &url])
+            .args(["/c", "start", "", &url])
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
