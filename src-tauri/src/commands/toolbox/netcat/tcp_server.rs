@@ -211,14 +211,18 @@ async fn handle_client_connection(
     // 启动读取任务
     tokio::spawn(async move {
         let mut buffer = vec![0u8; 8192];
+        log::info!("Netcat Server 读取任务启动: client={}", client_addr);
 
         loop {
+            log::debug!("Netcat Server 等待读取数据: client={}", client_addr);
             match reader.read(&mut buffer).await {
                 Ok(0) => {
                     // 客户端断开
+                    log::info!("Netcat Server 客户端断开 (read=0): client={}", client_addr);
                     break;
                 }
                 Ok(n) => {
+                    log::info!("Netcat Server 收到数据: {} bytes from {}", n, client_addr);
                     let data = buffer[..n].to_vec();
                     handle_received_data(
                         &app_clone,
@@ -227,14 +231,16 @@ async fn handle_client_connection(
                         Some(client_id_clone.clone()),
                         Some(client_addr.clone()),
                     ).await;
+                    log::debug!("Netcat Server 数据处理完成: client={}", client_addr);
                 }
                 Err(e) => {
-                    eprintln!("读取客户端数据失败: {}", e);
+                    log::error!("Netcat Server 读取客户端数据失败: {} - {}", client_addr, e);
                     break;
                 }
             }
         }
 
+        log::info!("Netcat Server 读取任务结束: client={}", client_addr);
         // 客户端断开处理
         handle_client_disconnect(
             &app_clone,
