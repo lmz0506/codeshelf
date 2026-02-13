@@ -76,42 +76,67 @@ pub async fn start_tcp_client(
     // 保存发送通道
     TCP_SENDERS.write().await.insert(session_id.clone(), send_tx);
 
+    // 创建 shutdown 标志
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    CLIENT_SHUTDOWN_FLAGS.write().await.insert(session_id.clone(), shutdown_flag.clone());
+
     let session_state_clone = session_state.clone();
     let app_clone = app.clone();
     let session_id_clone = session_id.clone();
+    let shutdown_flag_read = shutdown_flag.clone();
 
     // 启动读取任务
     let read_task = tokio::spawn(async move {
         let mut buffer = vec![0u8; 8192];
 
         loop {
-            tokio::select! {
-                _ = shutdown_rx.recv() => {
+            // 检查 shutdown 标志
+            if shutdown_flag_read.load(Ordering::SeqCst) {
+                log::info!("Netcat Client 读取任务收到停止信号: session={}", session_id_clone);
+                break;
+            }
+
+            // 使用较短的超时 (100ms)，以便频繁检查 shutdown 标志
+            let read_result = tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                reader.read(&mut buffer)
+            ).await;
+
+            match read_result {
+                Ok(Ok(0)) => {
+                    // 连接关闭
+                    update_status(&app_clone, &session_state_clone, SessionStatus::Disconnected, None).await;
                     break;
                 }
-                result = reader.read(&mut buffer) => {
-                    match result {
-                        Ok(0) => {
-                            // 连接关闭
-                            update_status(&app_clone, &session_state_clone, SessionStatus::Disconnected, None).await;
-                            break;
-                        }
-                        Ok(n) => {
-                            let data = buffer[..n].to_vec();
-                            handle_received_data(&app_clone, &session_state_clone, data, None).await;
-                        }
-                        Err(e) => {
-                            let err_msg = format!("读取错误: {}", e);
-                            update_status(&app_clone, &session_state_clone, SessionStatus::Error, Some(err_msg)).await;
-                            break;
-                        }
-                    }
+                Ok(Ok(n)) => {
+                    let data = buffer[..n].to_vec();
+                    handle_received_data(&app_clone, &session_state_clone, data, None).await;
                 }
+                Ok(Err(e)) => {
+                    let err_msg = format!("读取错误: {}", e);
+                    update_status(&app_clone, &session_state_clone, SessionStatus::Error, Some(err_msg)).await;
+                    break;
+                }
+                Err(_) => {
+                    // 超时是正常的，继续循环以检查 shutdown 标志
+                    continue;
+                }
+            }
+
+            // 检查 shutdown channel（保持原有逻辑）
+            tokio::select! {
+                biased;
+                _ = shutdown_rx.recv() => {
+                    log::info!("Netcat Client 读取任务收到 shutdown channel 信号: session={}", session_id_clone);
+                    break;
+                }
+                else => {}
             }
         }
 
         // 清理
         TCP_SENDERS.write().await.remove(&session_id_clone);
+        CLIENT_SHUTDOWN_FLAGS.write().await.remove(&session_id_clone);
     });
 
     // 启动发送任务
@@ -119,10 +144,17 @@ pub async fn start_tcp_client(
     let session_state_clone2 = session_state.clone();
     let addr_clone = addr.clone();
     let session_id_for_send = session_id.clone();
+    let shutdown_flag_send = shutdown_flag.clone();
 
     tokio::spawn(async move {
         log::info!("Netcat Client 发送任务启动: target={}", addr_clone);
         while let Some(data) = send_rx.recv().await {
+            // 检查 shutdown 标志
+            if shutdown_flag_send.load(Ordering::SeqCst) {
+                log::info!("Netcat Client 发送任务收到停止信号: target={}", addr_clone);
+                break;
+            }
+
             log::info!("Netcat Client 从通道收到数据: {} bytes, 准备写入服务器", data.len());
 
             let mut w = writer_clone.write().await;
@@ -316,6 +348,25 @@ fn bytes_to_display_string(data: &[u8]) -> String {
 // 全局 TCP 发送器存储
 use tokio::sync::RwLock as TokioRwLock;
 use once_cell::sync::Lazy;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub static TCP_SENDERS: Lazy<TokioRwLock<std::collections::HashMap<String, mpsc::Sender<Vec<u8>>>>> =
     Lazy::new(|| TokioRwLock::new(std::collections::HashMap::new()));
+
+/// 全局 shutdown 标志 - 用于通知客户端任务停止
+static CLIENT_SHUTDOWN_FLAGS: Lazy<TokioRwLock<std::collections::HashMap<String, Arc<AtomicBool>>>> =
+    Lazy::new(|| TokioRwLock::new(std::collections::HashMap::new()));
+
+/// 设置客户端 shutdown 标志
+pub async fn set_client_shutdown_flag(session_id: &str) {
+    let flags = CLIENT_SHUTDOWN_FLAGS.read().await;
+    if let Some(flag) = flags.get(session_id) {
+        flag.store(true, Ordering::SeqCst);
+        log::info!("Netcat Client shutdown 标志已设置: {}", session_id);
+    }
+}
+
+/// 清理客户端 shutdown 标志
+pub async fn cleanup_client_shutdown_flag(session_id: &str) {
+    CLIENT_SHUTDOWN_FLAGS.write().await.remove(session_id);
+}

@@ -13,8 +13,13 @@ use tauri::{AppHandle, Emitter};
 /// 全局 UDP 套接字存储
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock as TokioRwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub static UDP_SOCKETS: Lazy<TokioRwLock<HashMap<String, UdpSocketState>>> =
+    Lazy::new(|| TokioRwLock::new(HashMap::new()));
+
+/// 全局 UDP shutdown 标志
+static UDP_SHUTDOWN_FLAGS: Lazy<TokioRwLock<HashMap<String, Arc<AtomicBool>>>> =
     Lazy::new(|| TokioRwLock::new(HashMap::new()));
 
 pub struct UdpSocketState {
@@ -87,6 +92,10 @@ pub async fn start_udp_session(
         target_addr,
     });
 
+    // 创建 shutdown 标志
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    UDP_SHUTDOWN_FLAGS.write().await.insert(session_id.clone(), shutdown_flag.clone());
+
     let socket_clone = socket.clone();
     let session_state_clone = session_state.clone();
     let app_clone = app.clone();
@@ -96,9 +105,16 @@ pub async fn start_udp_session(
     // 启动发送任务
     let socket_send = socket.clone();
     let session_state_send = session_state.clone();
+    let shutdown_flag_send = shutdown_flag.clone();
 
     tokio::spawn(async move {
         while let Some((data, addr)) = send_rx.recv().await {
+            // 检查 shutdown 标志
+            if shutdown_flag_send.load(Ordering::SeqCst) {
+                log::info!("Netcat UDP 发送任务收到停止信号");
+                break;
+            }
+
             let result = match addr {
                 Some(target) => socket_send.send_to(&data, target).await,
                 None => {
@@ -124,36 +140,57 @@ pub async fn start_udp_session(
     });
 
     // 启动接收任务
+    let shutdown_flag_recv = shutdown_flag.clone();
     tokio::spawn(async move {
         let mut buffer = vec![0u8; 65535];
 
         loop {
+            // 检查 shutdown 标志
+            if shutdown_flag_recv.load(Ordering::SeqCst) {
+                log::info!("Netcat UDP 接收任务收到停止信号: session={}", session_id_clone);
+                break;
+            }
+
+            // 使用较短的超时 (100ms)
+            let recv_result = tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                socket_clone.recv_from(&mut buffer)
+            ).await;
+
+            match recv_result {
+                Ok(Ok((n, addr))) => {
+                    let data = buffer[..n].to_vec();
+                    handle_received_data(
+                        &app_clone,
+                        &session_state_clone,
+                        data,
+                        addr.to_string(),
+                        mode_clone,
+                    ).await;
+                }
+                Ok(Err(e)) => {
+                    log::error!("UDP 接收失败: {}", e);
+                }
+                Err(_) => {
+                    // 超时是正常的，继续循环
+                    continue;
+                }
+            }
+
+            // 检查 shutdown channel
             tokio::select! {
+                biased;
                 _ = shutdown_rx.recv() => {
+                    log::info!("Netcat UDP 接收任务收到 shutdown channel 信号: session={}", session_id_clone);
                     break;
                 }
-                result = socket_clone.recv_from(&mut buffer) => {
-                    match result {
-                        Ok((n, addr)) => {
-                            let data = buffer[..n].to_vec();
-                            handle_received_data(
-                                &app_clone,
-                                &session_state_clone,
-                                data,
-                                addr.to_string(),
-                                mode_clone,
-                            ).await;
-                        }
-                        Err(e) => {
-                            eprintln!("UDP 接收失败: {}", e);
-                        }
-                    }
-                }
+                else => {}
             }
         }
 
         // 清理
         UDP_SOCKETS.write().await.remove(&session_id_clone);
+        UDP_SHUTDOWN_FLAGS.write().await.remove(&session_id_clone);
 
         let mut state = session_state_clone.write().await;
         state.session.status = SessionStatus::Disconnected;
@@ -187,11 +224,23 @@ pub async fn send_udp_data(
 
 /// 关闭 UDP 会话（清理资源）
 pub async fn shutdown_udp_session(session_id: &str) {
+    // 设置 shutdown 标志
+    {
+        let flags = UDP_SHUTDOWN_FLAGS.read().await;
+        if let Some(flag) = flags.get(session_id) {
+            flag.store(true, Ordering::SeqCst);
+            log::info!("Netcat UDP shutdown 标志已设置: {}", session_id);
+        }
+    }
+
     // 移除发送通道会导致发送任务退出
     let removed = UDP_SOCKETS.write().await.remove(session_id);
     if removed.is_some() {
         log::info!("Netcat UDP 会话已清理: {}", session_id);
     }
+
+    // 清理 shutdown 标志
+    UDP_SHUTDOWN_FLAGS.write().await.remove(session_id);
 }
 
 /// 处理接收到的数据

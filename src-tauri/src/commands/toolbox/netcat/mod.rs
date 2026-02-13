@@ -296,6 +296,17 @@ async fn stop_session_internal(
         s.session.mode
     };
 
+    // 设置 shutdown 标志（优先于其他清理操作）
+    match session_mode {
+        SessionMode::Server => {
+            // 服务器模式：设置 shutdown 标志会在 shutdown_all_clients 中完成
+        }
+        SessionMode::Client => {
+            // 客户端模式：设置 shutdown 标志
+            tcp_client::set_client_shutdown_flag(session_id).await;
+        }
+    }
+
     // 发送关闭信号
     let shutdown_tx = {
         let mut s = session_state.write().await;
@@ -317,7 +328,7 @@ async fn stop_session_internal(
     }
 
     // 等待一小段时间让任务终止
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     // 根据模式清理资源
     match session_mode {
@@ -326,8 +337,9 @@ async fn stop_session_internal(
             tcp_server::shutdown_all_clients(session_id).await;
         }
         SessionMode::Client => {
-            // 客户端模式：清理 TCP 发送器
+            // 客户端模式：清理 TCP 发送器和 shutdown 标志
             tcp_client::TCP_SENDERS.write().await.remove(session_id);
+            tcp_client::cleanup_client_shutdown_flag(session_id).await;
         }
     }
 
