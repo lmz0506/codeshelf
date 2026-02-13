@@ -20,16 +20,8 @@ import type {
 // ============== 端口扫描服务 ==============
 
 export async function scanPorts(config: ScanConfig): Promise<ScanResult[]> {
-  // 转换为 snake_case
-  const rustConfig = {
-    target: config.target,
-    ports: config.ports,
-    port_start: config.portStart,
-    port_end: config.portEnd,
-    timeout_ms: config.timeoutMs,
-    concurrency: config.concurrency,
-  };
-  return invoke("scan_ports", { config: rustConfig });
+  // 后端已配置 rename_all = "camelCase"，直接发送
+  return invoke("scan_ports", { config });
 }
 
 export async function stopScan(): Promise<void> {
@@ -55,13 +47,8 @@ export async function scanLocalDevPorts(): Promise<ScanResult[]> {
 // ============== 文件下载服务 ==============
 
 export async function startDownload(config: DownloadConfig): Promise<string> {
-  const rustConfig = {
-    url: config.url,
-    save_dir: config.saveDir,
-    file_name: config.fileName,
-    max_retries: config.maxRetries,
-  };
-  return invoke("start_download", { config: rustConfig });
+  // 后端已配置 rename_all = "camelCase"，直接发送
+  return invoke("start_download", { config });
 }
 
 export async function pauseDownload(taskId: string): Promise<void> {
@@ -77,15 +64,13 @@ export async function cancelDownload(taskId: string): Promise<void> {
 }
 
 export async function getDownloadTasks(): Promise<DownloadTask[]> {
-  const tasks: any[] = await invoke("get_download_tasks");
-  return tasks.map(transformDownloadTask);
+  return invoke("get_download_tasks");
 }
 
 export async function getDownloadTask(
   taskId: string
 ): Promise<DownloadTask | null> {
-  const task: any = await invoke("get_download_task", { taskId });
-  return task ? transformDownloadTask(task) : null;
+  return invoke("get_download_task", { taskId });
 }
 
 export async function clearCompletedDownloads(): Promise<number> {
@@ -100,34 +85,16 @@ export async function removeDownloadTask(taskId: string, deleteFile?: boolean): 
   return invoke("remove_download_task", { taskId, deleteFile });
 }
 
-function transformDownloadTask(task: any): DownloadTask {
-  return {
-    id: task.id,
-    url: task.url,
-    savePath: task.save_path,
-    fileName: task.file_name,
-    totalSize: task.total_size,
-    downloadedSize: task.downloaded_size,
-    status: task.status,
-    speed: task.speed,
-    error: task.error,
-    createdAt: task.created_at,
-    updatedAt: task.updated_at,
-  };
-}
-
 // ============== 进程管理服务 ==============
 
 export async function getProcesses(
   filter?: ProcessFilter
 ): Promise<ProcessInfo[]> {
-  const processes: any[] = await invoke("get_processes", { filter });
-  return processes.map(transformProcessInfo);
+  return invoke("get_processes", { filter });
 }
 
 export async function getPortProcesses(port: number): Promise<ProcessInfo[]> {
-  const processes: any[] = await invoke("get_port_processes", { port });
-  return processes.map(transformProcessInfo);
+  return invoke("get_port_processes", { port });
 }
 
 export async function killProcess(
@@ -138,43 +105,11 @@ export async function killProcess(
 }
 
 export async function getSystemStats(): Promise<SystemStats> {
-  const stats: any = await invoke("get_system_stats");
-  return {
-    totalMemory: stats.total_memory,
-    usedMemory: stats.used_memory,
-    totalSwap: stats.total_swap,
-    usedSwap: stats.used_swap,
-    cpuCount: stats.cpu_count,
-    processCount: stats.process_count,
-  };
+  return invoke("get_system_stats");
 }
 
 export async function getLocalPortOccupation(): Promise<PortOccupation[]> {
-  const data: any[] = await invoke("get_local_port_occupation");
-  return data.map((item) => ({
-    port: item.port,
-    protocol: item.protocol,
-    pid: item.pid,
-    processName: item.process_name,
-    localAddr: item.local_addr,
-    state: item.state,
-  }));
-}
-
-function transformProcessInfo(proc: any): ProcessInfo {
-  return {
-    pid: proc.pid,
-    name: proc.name,
-    port: proc.port,
-    protocol: proc.protocol,
-    localAddr: proc.local_addr,
-    remoteAddr: proc.remote_addr,
-    status: proc.status,
-    memory: proc.memory,
-    cpu: proc.cpu,
-    workingDir: proc.working_dir,
-    cmd: proc.cmd,
-  };
+  return invoke("get_local_port_occupation");
 }
 
 // ============== 端口转发服务 ==============
