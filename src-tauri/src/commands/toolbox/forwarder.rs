@@ -427,13 +427,18 @@ async fn handle_connection(
     let ctrl1 = controller.clone();
     let ctrl2 = controller.clone();
 
-    // 设置空闲超时
-    let idle_timeout = Duration::from_secs(300); // 5 分钟
+    // 使用较短的检查间隔，以便快速响应停止信号
+    let check_interval = Duration::from_millis(100);
 
     let client_to_server = async {
         let mut buf = [0u8; 8192];
         loop {
-            match timeout(idle_timeout, tokio::io::AsyncReadExt::read(&mut ri, &mut buf)).await {
+            // 检查停止标志
+            if ctrl1.is_stopped() {
+                break;
+            }
+            // 使用短超时，以便频繁检查停止标志
+            match timeout(check_interval, tokio::io::AsyncReadExt::read(&mut ri, &mut buf)).await {
                 Ok(Ok(0)) => break,
                 Ok(Ok(n)) => {
                     ctrl1.add_bytes_out(n as u64);
@@ -444,7 +449,8 @@ async fn handle_connection(
                         break;
                     }
                 }
-                Ok(Err(_)) | Err(_) => break,
+                Ok(Err(_)) => break,
+                Err(_) => continue, // 超时，继续检查停止标志
             }
         }
         let _ = wo.shutdown().await;
@@ -453,7 +459,12 @@ async fn handle_connection(
     let server_to_client = async {
         let mut buf = [0u8; 8192];
         loop {
-            match timeout(idle_timeout, tokio::io::AsyncReadExt::read(&mut ro, &mut buf)).await {
+            // 检查停止标志
+            if ctrl2.is_stopped() {
+                break;
+            }
+            // 使用短超时，以便频繁检查停止标志
+            match timeout(check_interval, tokio::io::AsyncReadExt::read(&mut ro, &mut buf)).await {
                 Ok(Ok(0)) => break,
                 Ok(Ok(n)) => {
                     ctrl2.add_bytes_in(n as u64);
@@ -464,7 +475,8 @@ async fn handle_connection(
                         break;
                     }
                 }
-                Ok(Err(_)) | Err(_) => break,
+                Ok(Err(_)) => break,
+                Err(_) => continue, // 超时，继续检查停止标志
             }
         }
         let _ = wi.shutdown().await;

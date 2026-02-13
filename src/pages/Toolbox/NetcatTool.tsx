@@ -785,6 +785,13 @@ export default function NetcatTool() {
             </div>
           )}
         </div>
+
+        {/* 小提示 */}
+        <div className="p-2 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
+            💡 服务端启动失败？可能是端口占用，重启 CodeShelf 即可解决
+          </p>
+        </div>
       </div>
 
       {/* 右侧内容区 */}
