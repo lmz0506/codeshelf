@@ -185,6 +185,15 @@ pub async fn send_udp_data(
     }
 }
 
+/// 关闭 UDP 会话（清理资源）
+pub async fn shutdown_udp_session(session_id: &str) {
+    // 移除发送通道会导致发送任务退出
+    let removed = UDP_SOCKETS.write().await.remove(session_id);
+    if removed.is_some() {
+        log::info!("Netcat UDP 会话已清理: {}", session_id);
+    }
+}
+
 /// 处理接收到的数据
 async fn handle_received_data(
     app: &AppHandle,

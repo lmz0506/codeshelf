@@ -514,6 +514,106 @@ pub async fn netcat_disconnect_client(
     Ok(())
 }
 
+/// HTTP 获取数据（用于自动发送的 HTTP 模式）
+#[tauri::command]
+pub async fn netcat_fetch_http(
+    url: String,
+    json_path: Option<String>,
+) -> Result<String, String> {
+    use reqwest::Client;
+    use std::time::Duration;
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP 请求失败: {}", e))?;
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {}", e))?;
+
+    // 如果是 JSON 并且指定了路径，则提取
+    if content_type.contains("application/json") {
+        if let Some(path) = json_path {
+            if !path.trim().is_empty() {
+                return extract_json_path(&text, &path);
+            }
+        }
+    }
+
+    Ok(text)
+}
+
+/// 从 JSON 中提取指定路径的值
+fn extract_json_path(json_str: &str, path: &str) -> Result<String, String> {
+    let json: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("JSON 解析失败: {}", e))?;
+
+    // 支持多路径: "data.name,data.id"
+    let paths: Vec<&str> = path.split(',').map(|p| p.trim()).collect();
+    let mut results: Vec<String> = Vec::new();
+
+    for single_path in paths {
+        if let Some(value) = get_json_value(&json, single_path) {
+            let str_value = match value {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Null => "null".to_string(),
+                other => other.to_string(),
+            };
+            results.push(str_value);
+        }
+    }
+
+    if results.is_empty() {
+        Ok(json_str.to_string())
+    } else {
+        Ok(results.join(" "))
+    }
+}
+
+/// 获取 JSON 路径对应的值
+fn get_json_value<'a>(json: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    let mut current = json;
+
+    // 解析路径: "data.items[0].value"
+    let parts: Vec<&str> = path.split('.').collect();
+
+    for part in parts {
+        // 检查是否有数组索引
+        if let Some(bracket_pos) = part.find('[') {
+            let key = &part[..bracket_pos];
+            let index_str = &part[bracket_pos + 1..part.len() - 1];
+
+            // 先获取对象属性
+            if !key.is_empty() {
+                current = current.get(key)?;
+            }
+
+            // 然后获取数组元素
+            let index: usize = index_str.parse().ok()?;
+            current = current.get(index)?;
+        } else {
+            current = current.get(part)?;
+        }
+    }
+
+    Some(current)
+}
+
 // ============== 辅助函数 ==============
 
 /// 解析输入数据
