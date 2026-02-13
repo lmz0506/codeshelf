@@ -13,6 +13,8 @@
 ![project_2.png](docs/images/project_2.png)
 ![project_3.png](docs/images/project_3.png)
 ![project_4.png](docs/images/project_4.png)
+![project_5.png](docs/images/project_5.png)
+
 
 ## 安装
 前往 [Releases 页面](https://github.com/en-o/codeshelf/releases) 下载适用于 Windows、macOS 或 Linux 的最新安装包或便携版。
