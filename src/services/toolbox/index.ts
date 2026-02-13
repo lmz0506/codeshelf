@@ -442,6 +442,10 @@ export async function netcatUpdateAutoSend(sessionId: string, config: AutoSendCo
   return invoke("netcat_update_auto_send", { sessionId, config });
 }
 
+export async function netcatFetchHttp(url: string, jsonPath?: string): Promise<string> {
+  return invoke("netcat_fetch_http", { url, jsonPath: jsonPath || null });
+}
+
 // ============== 工具函数 ==============
 
 export function formatBytes(bytes: number): string {

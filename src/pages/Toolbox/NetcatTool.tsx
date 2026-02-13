@@ -38,6 +38,7 @@ import {
   netcatClearMessages,
   netcatDisconnectClient,
   netcatUpdateAutoSend,
+  netcatFetchHttp,
   formatBytes,
 } from "@/services/toolbox";
 import type {
@@ -294,45 +295,6 @@ export default function NetcatTool() {
     });
   };
 
-  // 从 JSON 中提取指定路径的值
-  const extractJsonPath = (obj: unknown, path: string): string => {
-    if (!path.trim()) {
-      return typeof obj === "string" ? obj : JSON.stringify(obj);
-    }
-
-    try {
-      // 支持路径格式: "data.items[0].value" 或 "data.name,data.id" (多个值)
-      const paths = path.split(",").map((p) => p.trim());
-      const results: string[] = [];
-
-      for (const singlePath of paths) {
-        let current: unknown = obj;
-        const parts = singlePath.match(/(\w+)|\[(\d+)\]/g) || [];
-
-        for (const part of parts) {
-          if (current === null || current === undefined) break;
-
-          if (part.startsWith("[")) {
-            // 数组索引
-            const index = parseInt(part.slice(1, -1), 10);
-            current = Array.isArray(current) ? current[index] : undefined;
-          } else {
-            // 对象属性
-            current = (current as Record<string, unknown>)[part];
-          }
-        }
-
-        if (current !== null && current !== undefined) {
-          results.push(typeof current === "string" ? current : JSON.stringify(current));
-        }
-      }
-
-      return results.join(" ");
-    } catch {
-      return typeof obj === "string" ? obj : JSON.stringify(obj);
-    }
-  };
-
   // 获取下一条自动发送数据
   const getNextAutoSendData = async (sessionId: string, config: AutoSendConfig): Promise<string | null> => {
     switch (config.mode) {
@@ -351,15 +313,9 @@ export default function NetcatTool() {
       case "http": {
         if (!config.httpUrl) return null;
         try {
-          const response = await fetch(config.httpUrl);
-          const contentType = response.headers.get("content-type") || "";
-
-          if (contentType.includes("application/json")) {
-            const json = await response.json();
-            return extractJsonPath(json, config.httpJsonPath);
-          } else {
-            return await response.text();
-          }
+          // 使用后端 HTTP 请求，避免 CORS 限制
+          const data = await netcatFetchHttp(config.httpUrl, config.httpJsonPath);
+          return data || null;
         } catch (err) {
           console.error("HTTP 获取失败:", err);
           return null;
