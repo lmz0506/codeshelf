@@ -93,7 +93,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   const [showCreateProfile, setShowCreateProfile] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
   const [newProfileDesc, setNewProfileDesc] = useState("");
-  const [newProfileSource, setNewProfileSource] = useState<"empty" | "current" | "quick">("empty");
+  const [newProfileSource, setNewProfileSource] = useState<"empty" | "current" | "quick" | "recommended">("empty");
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileNameError, setProfileNameError] = useState<string | null>(null);
 
@@ -102,6 +102,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
   // 启用确认
   const [activateConfirmProfile, setActivateConfirmProfile] = useState<ConfigProfile | null>(null);
+  const [activatingProfile, setActivatingProfile] = useState(false);
 
   // 复制提示
   const [copiedText, setCopiedText] = useState<string | null>(null);
@@ -175,8 +176,14 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
       // 保存到后端缓存
       await saveClaudeInstallationsCache(installs);
 
-      if (installs.length > 0 && !selectedEnv) {
-        setSelectedEnv(installs[0]);
+      if (installs.length > 0) {
+        if (selectedEnv) {
+          // 刷新时，用新数据更新当前选中的环境
+          const updated = installs.find(e => e.envName === selectedEnv.envName);
+          setSelectedEnv(updated || installs[0]);
+        } else {
+          setSelectedEnv(installs[0]);
+        }
       }
     } catch (err) {
       console.error("加载数据失败:", err);
@@ -442,6 +449,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   async function handleActivateProfile(profile: ConfigProfile) {
     if (!selectedEnv) return;
 
+    setActivatingProfile(true);
     try {
       const settings = { ...(profile.settings as Record<string, unknown>) };
       delete settings.__active;
@@ -473,6 +481,8 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     } catch (err) {
       console.error("启用档案失败:", err);
       alert(`启用配置档案失败: ${err}`);
+    } finally {
+      setActivatingProfile(false);
     }
   }
 
@@ -537,6 +547,21 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
             settings[opt.configKey] = opt.defaultValue;
           }
         });
+      } else if (newProfileSource === "recommended") {
+        settings = {
+          env: {
+            ANTHROPIC_AUTH_TOKEN: "sa-token",
+            ANTHROPIC_BASE_URL: "你的地址",
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-opus-4-6",
+            ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-6",
+            ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-opus-4-6",
+            ANTHROPIC_MODEL: "claude-opus-4-6",
+            CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+            CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+          },
+          model: "opus",
+          effortLevel: "medium",
+        };
       }
 
       const profile = await saveConfigProfile(selectedEnv.envType, selectedEnv.envName, trimmedName, newProfileDesc.trim() || undefined, settings);
@@ -1286,6 +1311,18 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                       <div className="text-xs text-gray-500">应用快捷配置中设置的默认值</div>
                     </div>
                   </label>
+                  <label className="flex items-center gap-3 p-2.5 border border-blue-200 dark:border-blue-700 rounded-lg cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                    <input
+                      type="radio"
+                      checked={newProfileSource === "recommended"}
+                      onChange={() => setNewProfileSource("recommended")}
+                      className="w-4 h-4 text-blue-500"
+                    />
+                    <div>
+                      <div className="font-medium text-sm">推荐模板（第三方 API）</div>
+                      <div className="text-xs text-gray-500">包含第三方 API 代理的推荐配置，创建后请修改地址和令牌</div>
+                    </div>
+                  </label>
                 </div>
               </div>
             </div>
@@ -1419,18 +1456,19 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button onClick={() => setActivateConfirmProfile(null)} variant="secondary">
+              <Button onClick={() => setActivateConfirmProfile(null)} variant="secondary" disabled={activatingProfile}>
                 取消
               </Button>
               <Button
-                onClick={() => {
-                  handleActivateProfile(activateConfirmProfile);
+                onClick={async () => {
+                  await handleActivateProfile(activateConfirmProfile!);
                   setActivateConfirmProfile(null);
                 }}
+                disabled={activatingProfile}
                 variant="primary"
               >
-                <Power size={14} className="mr-1" />
-                启用
+                {activatingProfile ? <Loader2 size={14} className="animate-spin mr-1" /> : <Power size={14} className="mr-1" />}
+                {activatingProfile ? "启用中..." : "启用"}
               </Button>
             </div>
           </div>
