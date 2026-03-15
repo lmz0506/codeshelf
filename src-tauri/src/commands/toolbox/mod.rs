@@ -7,6 +7,7 @@ pub mod forwarder;
 pub mod server;
 pub mod claude_code;
 pub mod netcat;
+pub mod shortcuts;
 
 use serde::{Deserialize, Serialize};
 
@@ -323,6 +324,32 @@ pub fn port_service_name(port: u16) -> Option<&'static str> {
 /// 默认状态为停止
 fn default_stopped() -> String {
     "stopped".to_string()
+}
+
+// ============== 快捷键备忘相关结构 ==============
+
+/// 快捷键条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutEntry {
+    pub id: String,
+    pub category: String,
+    pub description: String,
+    pub keys: String,
+    pub platform: String,
+    pub is_default: bool,
+    pub is_modified: bool,
+    pub original_keys: Option<String>,
+}
+
+/// 添加/编辑快捷键的输入
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutInput {
+    pub category: Option<String>,
+    pub description: Option<String>,
+    pub keys: Option<String>,
+    pub platform: Option<String>,
 }
 
 /// 生成唯一 ID

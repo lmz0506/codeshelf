@@ -105,6 +105,10 @@ impl StorageConfig {
     pub fn claude_launch_dirs_file(&self) -> PathBuf {
         self.data_dir.join("claude_launch_dirs.json")
     }
+
+    pub fn shortcuts_file(&self) -> PathBuf {
+        self.data_dir.join("shortcuts.json")
+    }
 }
 
 /// 初始化存储配置

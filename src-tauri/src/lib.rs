@@ -277,6 +277,14 @@ pub fn run() {
             toolbox::netcat::netcat_disconnect_client,
             toolbox::netcat::netcat_update_auto_send,
             toolbox::netcat::netcat_fetch_http,
+            // Toolbox - Shortcuts commands
+            toolbox::shortcuts::get_shortcuts,
+            toolbox::shortcuts::save_shortcuts,
+            toolbox::shortcuts::add_shortcut,
+            toolbox::shortcuts::update_shortcut,
+            toolbox::shortcuts::delete_shortcut,
+            toolbox::shortcuts::reset_shortcuts,
+            toolbox::shortcuts::get_current_platform,
             // Settings commands
             settings::get_labels,
             settings::save_labels,

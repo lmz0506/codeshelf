@@ -9,6 +9,7 @@ import {
   X,
   ChevronLeft,
   Radio,
+  Keyboard,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/stores/appStore";
@@ -20,6 +21,7 @@ import { LocalService } from "./LocalService";
 import { SystemMonitor } from "./SystemMonitor";
 import { ClaudeCodeManager } from "./ClaudeCodeManager";
 import NetcatTool from "./NetcatTool";
+import { ShortcutsMemo } from "./ShortcutsMemo";
 
 const tools = [
   {
@@ -58,6 +60,13 @@ const tools = [
     color: "bg-cyan-500",
     beta: true,
   },
+  {
+    id: "shortcuts" as ToolType,
+    name: "快捷键备忘",
+    description: "预置 Mac/Windows 常用快捷键，支持自定义编辑、搜索、导入导出",
+    icon: Keyboard,
+    color: "bg-amber-500",
+  },
 ];
 
 export function ToolboxPage() {
@@ -85,6 +94,8 @@ export function ToolboxPage() {
         return <ClaudeCodeManager onBack={() => setActiveTool(null)} />;
       case "netcat":
         return <NetcatToolPanel onBack={() => setActiveTool(null)} />;
+      case "shortcuts":
+        return <ShortcutsMemo onBack={() => setActiveTool(null)} />;
       default:
         return null;
     }

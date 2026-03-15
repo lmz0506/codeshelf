@@ -211,7 +211,7 @@ export interface ConfigProfile {
 
 // ============== 工具箱页面状态 ==============
 
-export type ToolType = "monitor" | "downloader" | "server" | "claude" | "netcat";
+export type ToolType = "monitor" | "downloader" | "server" | "claude" | "netcat" | "shortcuts";
 
 export interface ToolInfo {
   id: ToolType;
@@ -313,3 +313,23 @@ export type NetcatEvent =
   | { type: "messageReceived"; sessionId: string; message: NetcatMessage }
   | { type: "clientConnected"; sessionId: string; client: ConnectedClient }
   | { type: "clientDisconnected"; sessionId: string; clientId: string };
+
+// ============== 快捷键备忘 ==============
+
+export interface ShortcutEntry {
+  id: string;
+  category: string;
+  description: string;
+  keys: string;
+  platform: string;
+  isDefault: boolean;
+  isModified: boolean;
+  originalKeys?: string;
+}
+
+export interface ShortcutInput {
+  category?: string;
+  description?: string;
+  keys?: string;
+  platform?: string;
+}

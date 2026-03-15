@@ -481,6 +481,38 @@ export async function netcatFetchHttp(config: HttpFetchConfig): Promise<string> 
   return invoke("netcat_fetch_http", { config });
 }
 
+// ============== 快捷键备忘服务 ==============
+
+import type { ShortcutEntry, ShortcutInput } from "@/types/toolbox";
+
+export async function getShortcuts(): Promise<ShortcutEntry[]> {
+  return invoke("get_shortcuts");
+}
+
+export async function saveShortcuts(shortcuts: ShortcutEntry[]): Promise<void> {
+  return invoke("save_shortcuts", { shortcuts });
+}
+
+export async function addShortcut(input: ShortcutInput): Promise<ShortcutEntry> {
+  return invoke("add_shortcut", { input });
+}
+
+export async function updateShortcut(id: string, input: ShortcutInput): Promise<ShortcutEntry> {
+  return invoke("update_shortcut", { id, input });
+}
+
+export async function deleteShortcut(id: string): Promise<void> {
+  return invoke("delete_shortcut", { id });
+}
+
+export async function resetShortcuts(): Promise<ShortcutEntry[]> {
+  return invoke("reset_shortcuts");
+}
+
+export async function getCurrentPlatform(): Promise<string> {
+  return invoke("get_current_platform");
+}
+
 // ============== 工具函数 ==============
 
 export function formatBytes(bytes: number): string {
