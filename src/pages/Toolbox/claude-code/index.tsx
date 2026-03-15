@@ -804,6 +804,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                     <button
                       key={`${env.envType}-${env.envName}`}
                       onClick={() => {
+                        if (selectedEnv?.envName === env.envName) return;
                         setSelectedEnv(env);
                         // selectedFile 由 useEffect 自动处理（选中 settings.json）
                         setProfiles([]);
