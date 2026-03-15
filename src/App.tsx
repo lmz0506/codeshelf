@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { MainLayout } from "@/components/layout";
 import { ShelfPage } from "@/pages/Shelf";
 import { DashboardPage } from "@/pages/Dashboard";
@@ -10,6 +11,7 @@ import { ToastContainer, UpdateNotification } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import type { Project, Notification, AppShortcutBinding } from "@/types";
+import type { ToolType } from "@/types/toolbox";
 import type { EditorConfig, TerminalConfig, Theme } from "@/stores/appStore";
 
 const queryClient = new QueryClient({
@@ -119,6 +121,14 @@ function AppContent() {
   }, []);
 
   useAppShortcuts();
+
+  // 监听托盘菜单工具箱导航事件
+  useEffect(() => {
+    const unlisten = listen<string>("navigate-to-tool", (event) => {
+      useAppStore.getState().navigateToTool(event.payload as ToolType);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
 
   if (!initialized) {
     return (

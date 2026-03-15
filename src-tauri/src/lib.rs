@@ -3,9 +3,9 @@ mod storage;
 
 use commands::{git, project, stats, system, toolbox, settings};
 use tauri::{
-    Manager,
+    Emitter, Manager,
     tray::TrayIconBuilder,
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     image::Image,
 };
 
@@ -71,7 +71,24 @@ pub fn run() {
             // 创建托盘右键菜单
             let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出程序", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
+
+            // 工具箱子菜单
+            let tool_monitor = MenuItem::with_id(app, "tool_monitor", "系统监控", true, None::<&str>)?;
+            let tool_downloader = MenuItem::with_id(app, "tool_downloader", "文件下载", true, None::<&str>)?;
+            let tool_server = MenuItem::with_id(app, "tool_server", "本地服务", true, None::<&str>)?;
+            let tool_claude = MenuItem::with_id(app, "tool_claude", "Claude Code", true, None::<&str>)?;
+            let tool_netcat = MenuItem::with_id(app, "tool_netcat", "Netcat", true, None::<&str>)?;
+            let tool_shortcuts = MenuItem::with_id(app, "tool_shortcuts", "快捷键备忘", true, None::<&str>)?;
+            let toolbox_submenu = Submenu::with_items(
+                app,
+                "工具箱",
+                true,
+                &[&tool_monitor, &tool_downloader, &tool_server, &tool_claude, &tool_netcat, &tool_shortcuts],
+            )?;
+
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
+            let menu = Menu::with_items(app, &[&show, &sep1, &toolbox_submenu, &sep2, &quit])?;
 
             // 加载托盘图标（不透明版本）
             let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))
@@ -84,7 +101,8 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| {
-                    match event.id().as_ref() {
+                    let id = event.id().as_ref();
+                    match id {
                         "show" => {
                             if let Some(window) = app.get_webview_window("main") {
                                 let _ = window.show();
@@ -94,6 +112,15 @@ pub fn run() {
                         }
                         "quit" => {
                             app.exit(0);
+                        }
+                        _ if id.starts_with("tool_") => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                            let tool_type = &id[5..]; // strip "tool_" prefix
+                            let _ = app.emit("navigate-to-tool", tool_type);
                         }
                         _ => {}
                     }

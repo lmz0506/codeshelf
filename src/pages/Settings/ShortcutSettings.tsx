@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { RotateCcw, Keyboard, Pencil, X, Globe } from "lucide-react";
+import { RotateCcw, Keyboard, Pencil, X, Globe, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import {
@@ -41,6 +41,17 @@ const GROUPS: { label: string; ids: string[] }[] = [
     ids: ["toggle_sidebar"],
   },
 ];
+
+const IS_WINDOWS = /Windows/.test(navigator.userAgent);
+
+function getConflictWarning(keys: string): string | null {
+  if (!IS_WINDOWS) return null;
+  const parts = keys.toLowerCase().split("+");
+  if (parts.includes("alt") && parts.includes("shift") && !parts.includes("ctrl")) {
+    return "Alt+Shift 在 Windows 上是默认的输入法切换热键，可能导致快捷键失效";
+  }
+  return null;
+}
 
 export function ShortcutSettings({ onClose }: ShortcutSettingsProps) {
   const { appShortcuts, setAppShortcuts } = useAppStore();
@@ -197,6 +208,12 @@ export function ShortcutSettings({ onClose }: ShortcutSettingsProps) {
                       <div className="text-xs text-gray-400 truncate">
                         {shortcut.description}
                       </div>
+                      {getConflictWarning(shortcut.keys) && (
+                        <div className="flex items-center gap-1 mt-0.5 text-xs text-amber-500 dark:text-amber-400">
+                          <AlertTriangle size={11} className="flex-shrink-0" />
+                          <span>{getConflictWarning(shortcut.keys)}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* 快捷键显示 / 录制区域 */}

@@ -6,6 +6,7 @@ import {
   unregister,
 } from "@tauri-apps/plugin-global-shortcut";
 import { useAppStore } from "@/stores/appStore";
+import { showToast } from "@/components/ui/Toast";
 import type { AppShortcutBinding } from "@/types";
 import type { ToolType } from "@/types/toolbox";
 
@@ -15,7 +16,7 @@ const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
 export const DEFAULT_APP_SHORTCUTS: AppShortcutBinding[] = [
   // 全局
-  { id: "show_window", label: "显示/隐藏窗口", description: "切换应用窗口显示状态", keys: "alt+shift+c", defaultKeys: "alt+shift+c", enabled: true, global: true },
+  { id: "show_window", label: "显示/隐藏窗口", description: "切换应用窗口显示状态", keys: "ctrl+alt+c", defaultKeys: "ctrl+alt+c", enabled: true, global: true },
   // 页面导航
   { id: "nav_shelf", label: "打开书架", description: "切换到书架页面", keys: "ctrl+1", defaultKeys: "ctrl+1", enabled: true, global: false },
   { id: "nav_dashboard", label: "打开仪表盘", description: "切换到仪表盘页面", keys: "ctrl+2", defaultKeys: "ctrl+2", enabled: true, global: false },
@@ -194,6 +195,8 @@ async function registerGlobalShortcuts(shortcuts: AppShortcutBinding[]) {
   const globalBindings = shortcuts.filter((s) => s.enabled && s.global);
   if (globalBindings.length === 0) return;
 
+  const failedKeys: string[] = [];
+
   for (const binding of globalBindings) {
     const acc = toAccelerator(binding.keys);
     try {
@@ -205,7 +208,16 @@ async function registerGlobalShortcuts(shortcuts: AppShortcutBinding[]) {
       registeredAccelerators.push(acc);
     } catch (err) {
       console.error(`注册全局快捷键失败 [${acc}]:`, err);
+      failedKeys.push(displayKeys(binding.keys));
     }
+  }
+
+  if (failedKeys.length > 0) {
+    const keysList = failedKeys.join("、");
+    const platformTip = IS_MAC
+      ? "请在「系统设置 > 隐私与安全 > 辅助功能」中授权本应用"
+      : "可能与系统热键冲突，请在设置中更换按键组合";
+    showToast("warning", "全局快捷键注册失败", `${keysList} 注册失败。${platformTip}`, 5000);
   }
 }
 
@@ -244,20 +256,30 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
   const existingIds = new Set(appShortcuts.map((s) => s.id));
   const newEntries = DEFAULT_APP_SHORTCUTS.filter((d) => !existingIds.has(d.id));
 
+  // 一次性迁移：将旧默认 alt+shift+c 更新为新默认 ctrl+alt+c
+  let needsSave = false;
+  let patched = appShortcuts.map((s) => {
+    const updated = { ...s, global: s.global ?? false };
+    if (s.id === "show_window" && s.keys === "alt+shift+c") {
+      updated.keys = "ctrl+alt+c";
+      needsSave = true;
+    }
+    return updated;
+  });
+
   if (newEntries.length > 0) {
-    // 补齐 global 字段（旧数据可能没有）
-    const patched = appShortcuts.map((s) => ({
-      ...s,
-      global: s.global ?? false,
-    }));
-    const merged = [...patched, ...newEntries];
+    patched = [...patched, ...newEntries];
+    needsSave = true;
+  }
+
+  if (needsSave) {
     try {
-      await invoke("save_app_shortcuts", { shortcuts: merged });
+      await invoke("save_app_shortcuts", { shortcuts: patched });
     } catch (err) {
       console.error("补齐快捷键失败:", err);
     }
-    setAppShortcuts(merged);
-    return merged;
+    setAppShortcuts(patched);
+    return patched;
   }
 
   return appShortcuts;
