@@ -149,10 +149,18 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
             }
             "custom" => {
                 if let Some(custom) = custom_path {
-                    Command::new(&custom)
-                        .arg(&path)
-                        .spawn()
-                        .map_err(|e| format!("Failed to open custom terminal '{}': {}", custom, e))?;
+                    if custom.ends_with(".app") {
+                        // macOS .app 应用包：用 open -a 启动（同 iTerm/Terminal 模式）
+                        Command::new("open")
+                            .args(["-a", &custom, &path])
+                            .spawn()
+                            .map_err(|e| format!("Failed to open custom terminal '{}': {}", custom, e))?;
+                    } else {
+                        Command::new(&custom)
+                            .arg(&path)
+                            .spawn()
+                            .map_err(|e| format!("Failed to open custom terminal '{}': {}", custom, e))?;
+                    }
                 } else {
                     return Err("Custom terminal path not provided".to_string());
                 }

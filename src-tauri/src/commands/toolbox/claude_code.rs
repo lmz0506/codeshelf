@@ -1707,10 +1707,36 @@ pub async fn launch_claude_in_terminal(
             }
             "custom" => {
                 if let Some(custom) = custom_path {
-                    Command::new(&custom)
-                        .arg(&dir)
-                        .spawn()
-                        .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                    if custom.ends_with(".app") {
+                        // macOS .app 应用包：尝试找到包内可执行文件并启动
+                        let macos_dir = PathBuf::from(&custom).join("Contents/MacOS");
+                        let executable = std::fs::read_dir(&macos_dir)
+                            .ok()
+                            .and_then(|entries| {
+                                entries.flatten().find(|e| e.path().is_file())
+                                    .map(|e| e.path().to_string_lossy().to_string())
+                            });
+
+                        if let Some(exec_path) = executable {
+                            Command::new(&exec_path)
+                                .current_dir(&dir)
+                                .env("PATH", &augmented_path)
+                                .spawn()
+                                .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                        } else {
+                            // fallback: 用 open -a 打开（至少不会崩溃）
+                            Command::new("open")
+                                .args(["-a", &custom, &dir])
+                                .spawn()
+                                .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                        }
+                    } else {
+                        Command::new(&custom)
+                            .current_dir(&dir)
+                            .env("PATH", &augmented_path)
+                            .spawn()
+                            .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                    }
                 } else {
                     return Err("未提供自定义终端路径".to_string());
                 }
