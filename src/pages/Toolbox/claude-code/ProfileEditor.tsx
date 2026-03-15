@@ -1,4 +1,4 @@
-// 配置档案编辑器组件
+// 配置档案编辑器组件 - 支持新建和编辑模式，左右分栏布局
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import {
@@ -11,9 +11,8 @@ import {
   Check,
   Copy,
   WrapText,
-  Maximize2,
-  Minimize2,
   AlertCircle,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { ConfigProfile } from "@/types/toolbox";
@@ -25,33 +24,105 @@ import {
   deleteNestedKey,
 } from "./constants";
 
-interface ProfileEditorProps {
-  profile: ConfigProfile;
+// 推荐模板数据
+const RECOMMENDED_TEMPLATE: Record<string, unknown> = {
+  env: {
+    ANTHROPIC_AUTH_TOKEN: "sa-token",
+    ANTHROPIC_BASE_URL: "你的地址",
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-opus-4-6",
+    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-6",
+    ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-opus-4-6",
+    ANTHROPIC_MODEL: "claude-opus-4-6",
+    CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+  },
+  model: "opus",
+  effortLevel: "medium",
+};
+
+interface ProfileEditorBaseProps {
   quickConfigs: QuickConfigOption[];
-  isActive: boolean;
-  onSave: (content: string) => Promise<void>;
   onClose: () => void;
 }
 
-export function ProfileEditor({
-  profile,
-  quickConfigs,
-  isActive,
-  onSave,
-  onClose,
-}: ProfileEditorProps) {
-  // 初始化配置内容
-  const initialSettings = useMemo(() => {
-    const settings = { ...(profile.settings as Record<string, unknown>) };
-    delete settings.__active;
-    return settings;
-  }, [profile]);
+interface ProfileEditorCreateProps extends ProfileEditorBaseProps {
+  mode: "create";
+  existingNames: string[];
+  currentSettings: string;
+  onSave: (name: string, description: string | undefined, content: string) => Promise<void>;
+}
 
-  const [editingContent, setEditingContent] = useState(JSON.stringify(initialSettings, null, 2));
-  const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
+interface ProfileEditorEditProps extends ProfileEditorBaseProps {
+  mode: "edit";
+  profile: ConfigProfile;
+  isActive: boolean;
+  onSave: (description: string | undefined, content: string) => Promise<void>;
+}
+
+type ProfileEditorProps = ProfileEditorCreateProps | ProfileEditorEditProps;
+
+type InitialSource = "empty" | "current" | "quick" | "recommended";
+
+function getInitialContent(
+  mode: "create" | "edit",
+  props: ProfileEditorProps,
+): string {
+  if (mode === "edit") {
+    const p = props as ProfileEditorEditProps;
+    const settings = { ...(p.profile.settings as Record<string, unknown>) };
+    delete settings.__active;
+    return JSON.stringify(settings, null, 2);
+  }
+  return "{}";
+}
+
+function getContentForSource(
+  source: InitialSource,
+  currentSettings: string,
+  quickConfigs: QuickConfigOption[],
+): string {
+  switch (source) {
+    case "empty":
+      return "{}";
+    case "current": {
+      try {
+        const parsed = JSON.parse(currentSettings);
+        return JSON.stringify(parsed, null, 2);
+      } catch {
+        return "{}";
+      }
+    }
+    case "quick": {
+      const settings: Record<string, unknown> = {};
+      quickConfigs.forEach(opt => {
+        if (opt.defaultValue !== "" && opt.defaultValue !== null && opt.defaultValue !== undefined) {
+          settings[opt.configKey] = opt.defaultValue;
+        }
+      });
+      return JSON.stringify(settings, null, 2);
+    }
+    case "recommended":
+      return JSON.stringify(RECOMMENDED_TEMPLATE, null, 2);
+  }
+}
+
+export function ProfileEditor(props: ProfileEditorProps) {
+  const { mode, quickConfigs, onClose } = props;
+
+  // 新建模式专用 state
+  const [profileName, setProfileName] = useState("");
+  const [profileNameError, setProfileNameError] = useState<string | null>(null);
+  const [initialSource, setInitialSource] = useState<InitialSource>("empty");
+
+  // 描述 - 新建和编辑都支持
+  const [description, setDescription] = useState(
+    mode === "edit" ? (props as ProfileEditorEditProps).profile.description || "" : ""
+  );
+
+  // 编辑内容
+  const [editingContent, setEditingContent] = useState(() => getInitialContent(mode, props));
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [expanded, setExpanded] = useState(false);
 
   // JSON 格式验证
   const jsonError = useMemo(() => {
@@ -61,12 +132,12 @@ export function ProfileEditor({
       JSON.parse(text);
       return null;
     } catch (e) {
-      const msg = e instanceof SyntaxError ? e.message : "无效的 JSON 格式";
-      return msg;
+      return e instanceof SyntaxError ? e.message : "无效的 JSON 格式";
     }
   }, [editingContent]);
 
-  // 自定义下拉框状态
+  // 自定义下拉框状态（编辑模式用）
+  const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -81,6 +152,14 @@ export function ProfileEditor({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // 初始配置源切换时更新 JSON 内容（新建模式）
+  useEffect(() => {
+    if (mode === "create") {
+      const p = props as ProfileEditorCreateProps;
+      setEditingContent(getContentForSource(initialSource, p.currentSettings, quickConfigs));
+    }
+  }, [initialSource]);
 
   // 解析当前配置值
   const editingValues = useMemo(() => {
@@ -135,11 +214,31 @@ export function ProfileEditor({
 
   async function handleSave() {
     if (jsonError) return;
-    setSaving(true);
-    try {
-      await onSave(editingContent);
-    } finally {
-      setSaving(false);
+
+    if (mode === "create") {
+      const p = props as ProfileEditorCreateProps;
+      const trimmedName = profileName.trim();
+      if (!trimmedName) return;
+
+      if (p.existingNames.includes(trimmedName)) {
+        setProfileNameError("配置档案名称已存在，请使用其他名称");
+        return;
+      }
+      setProfileNameError(null);
+      setSaving(true);
+      try {
+        await p.onSave(trimmedName, description.trim() || undefined, editingContent);
+      } finally {
+        setSaving(false);
+      }
+    } else {
+      const p = props as ProfileEditorEditProps;
+      setSaving(true);
+      try {
+        await p.onSave(description.trim() || undefined, editingContent);
+      } finally {
+        setSaving(false);
+      }
     }
   }
 
@@ -214,7 +313,7 @@ export function ProfileEditor({
           </select>
         );
 
-      case "model":
+      case "model": {
         const isCustom = Boolean(value) && !opt.options?.some(o => o.value === value);
         return (
           <div className="flex flex-col gap-1 w-full">
@@ -248,6 +347,7 @@ export function ProfileEditor({
             )}
           </div>
         );
+      }
 
       case "string":
       case "number":
@@ -267,35 +367,22 @@ export function ProfileEditor({
   }
 
   const selectedOpt = selectedConfigId ? quickConfigs.find(c => c.id === selectedConfigId) : null;
-  const CategoryIcon = selectedOpt ? getCategoryIcon(selectedOpt.category) : null;
+  const SelectedCategoryIcon = selectedOpt ? getCategoryIcon(selectedOpt.category) : null;
 
   // 统计已配置项数量
   const configuredCount = Object.entries(editingValues).filter(([, v]) => v !== "" && v !== undefined && v !== null).length;
 
+  const isCreateMode = mode === "create";
+  const canSave = isCreateMode ? !!profileName.trim() && !jsonError : !jsonError;
+
   return (
     <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl mx-4 max-h-[85vh] flex flex-col">
         {/* 头部 */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              编辑配置档案
-            </h3>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-sm text-gray-500">名称:</span>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">
-                {profile.name}
-              </span>
-              <span title="编辑时不可修改名称">
-                <Lock size={12} className="text-gray-400" />
-              </span>
-              {isActive && (
-                <span className="text-[10px] text-green-600 bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 rounded">
-                  已启用
-                </span>
-              )}
-            </div>
-          </div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            {isCreateMode ? "新建配置档案" : "编辑配置档案"}
+          </h3>
           <button
             onClick={onClose}
             className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
@@ -304,132 +391,260 @@ export function ProfileEditor({
           </button>
         </div>
 
-        {/* 内容区 */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-          {/* 快捷配置 - 下拉选择方式 */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
-              <Sliders size={14} />
-              快捷配置
-            </h4>
+        {/* 内容区 - 左右分栏 */}
+        <div className="flex-1 flex min-h-0 overflow-hidden">
+          {/* 左侧面板 */}
+          <div className="w-[360px] flex-shrink-0 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
+            {isCreateMode ? (
+              /* 新建模式左侧 */
+              <>
+                {/* 名称 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">档案名称 *</label>
+                  <input
+                    type="text"
+                    value={profileName}
+                    onChange={(e) => {
+                      setProfileName(e.target.value);
+                      setProfileNameError(null);
+                    }}
+                    placeholder="如: 开发环境"
+                    className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      profileNameError ? "border-red-500" : "border-gray-200 dark:border-gray-700"
+                    }`}
+                  />
+                  {profileNameError && (
+                    <p className="text-xs text-red-500 mt-1">{profileNameError}</p>
+                  )}
+                </div>
 
-            {/* 自定义下拉选择器 */}
-            <div className="relative" ref={dropdownRef}>
-              <button
-                type="button"
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <span className={selectedConfigId ? "text-gray-900 dark:text-white" : "text-gray-400"}>
-                  {selectedConfigId
-                    ? quickConfigs.find(c => c.id === selectedConfigId)?.name || "选择要配置的项..."
-                    : "选择要配置的项..."}
-                </span>
-                <ChevronDown size={16} className={`text-gray-400 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
-              </button>
+                {/* 描述 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">描述</label>
+                  <input
+                    type="text"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="可选"
+                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
 
-              {/* 下拉菜单 */}
-              {dropdownOpen && (
-                <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-[300px] overflow-hidden flex flex-col">
-                  {/* 搜索框 */}
-                  <div className="p-2 border-b border-gray-100 dark:border-gray-700">
-                    <div className="relative">
-                      <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                {/* 初始配置源 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-2">初始配置</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-3 p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
                       <input
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="搜索配置项..."
-                        className="w-full pl-7 pr-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        autoFocus
+                        type="radio"
+                        checked={initialSource === "empty"}
+                        onChange={() => setInitialSource("empty")}
+                        className="w-4 h-4 text-blue-500"
                       />
-                    </div>
+                      <div>
+                        <div className="font-medium text-sm">空白配置</div>
+                        <div className="text-xs text-gray-500">从头开始</div>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <input
+                        type="radio"
+                        checked={initialSource === "current"}
+                        onChange={() => setInitialSource("current")}
+                        className="w-4 h-4 text-blue-500"
+                      />
+                      <div>
+                        <div className="font-medium text-sm">复制当前配置</div>
+                        <div className="text-xs text-gray-500">从 settings.json 复制</div>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <input
+                        type="radio"
+                        checked={initialSource === "quick"}
+                        onChange={() => setInitialSource("quick")}
+                        className="w-4 h-4 text-blue-500"
+                      />
+                      <div>
+                        <div className="font-medium text-sm">使用快捷配置默认值</div>
+                        <div className="text-xs text-gray-500">应用快捷配置中设置的默认值</div>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 p-2.5 border border-blue-200 dark:border-blue-700 rounded-lg cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                      <input
+                        type="radio"
+                        checked={initialSource === "recommended"}
+                        onChange={() => setInitialSource("recommended")}
+                        className="w-4 h-4 text-blue-500"
+                      />
+                      <div>
+                        <div className="font-medium text-sm">推荐模板（第三方 API）</div>
+                        <div className="text-xs text-gray-500">包含第三方 API 代理的推荐配置，创建后请修改地址和令牌</div>
+                      </div>
+                    </label>
                   </div>
+                </div>
+              </>
+            ) : (
+              /* 编辑模式左侧 */
+              <>
+                {/* 名称（只读） */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">档案名称</label>
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                      {(props as ProfileEditorEditProps).profile.name}
+                    </span>
+                    <span title="编辑时不可修改名称">
+                      <Lock size={14} className="text-gray-400" />
+                    </span>
+                    {(props as ProfileEditorEditProps).isActive && (
+                      <span className="text-[10px] text-green-600 bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 rounded">
+                        已启用
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-                  {/* 选项列表 */}
-                  <div className="flex-1 overflow-y-auto">
-                    {Object.entries(groupedOptions).map(([category, options]) => {
-                      const filteredOptions = options.filter(opt =>
-                        !searchTerm || opt.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        opt.description.toLowerCase().includes(searchTerm.toLowerCase())
-                      );
-                      if (filteredOptions.length === 0) return null;
+                {/* 描述（可编辑） */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">描述</label>
+                  <input
+                    type="text"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="可选"
+                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
 
-                      const CategoryIcon = getCategoryIcon(category);
-                      return (
-                        <div key={category}>
-                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-50 dark:bg-gray-900 flex items-center gap-1.5 sticky top-0">
-                            <CategoryIcon size={12} />
-                            {category}
+                {/* 快捷配置 */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                    <Sliders size={14} />
+                    快捷配置
+                  </h4>
+
+                  {/* 自定义下拉选择器 */}
+                  <div className="relative" ref={dropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setDropdownOpen(!dropdownOpen)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <span className={selectedConfigId ? "text-gray-900 dark:text-white" : "text-gray-400"}>
+                        {selectedConfigId
+                          ? quickConfigs.find(c => c.id === selectedConfigId)?.name || "选择要配置的项..."
+                          : "选择要配置的项..."}
+                      </span>
+                      <ChevronDown size={16} className={`text-gray-400 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
+                    </button>
+
+                    {/* 下拉菜单 */}
+                    {dropdownOpen && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-[300px] overflow-hidden flex flex-col">
+                        {/* 搜索框 */}
+                        <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                          <div className="relative">
+                            <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              value={searchTerm}
+                              onChange={(e) => setSearchTerm(e.target.value)}
+                              placeholder="搜索配置项..."
+                              className="w-full pl-7 pr-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              autoFocus
+                            />
                           </div>
-                          {filteredOptions.map((opt) => {
-                            const val = editingValues[opt.id];
-                            const hasValue = val !== "" && val !== undefined && val !== null;
-                            const isSelected = selectedConfigId === opt.id;
+                        </div>
+
+                        {/* 选项列表 */}
+                        <div className="flex-1 overflow-y-auto">
+                          {Object.entries(groupedOptions).map(([category, options]) => {
+                            const filteredOptions = options.filter(opt =>
+                              !searchTerm || opt.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              opt.description.toLowerCase().includes(searchTerm.toLowerCase())
+                            );
+                            if (filteredOptions.length === 0) return null;
+
+                            const CatIcon = getCategoryIcon(category);
                             return (
-                              <button
-                                key={opt.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedConfigId(opt.id);
-                                  setDropdownOpen(false);
-                                  setSearchTerm("");
-                                }}
-                                className={`w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 ${
-                                  isSelected ? "bg-blue-50 dark:bg-blue-900/20" : ""
-                                }`}
-                              >
-                                <span className="truncate">{opt.name}</span>
-                                {hasValue && <Check size={14} className="text-green-500 flex-shrink-0" />}
-                              </button>
+                              <div key={category}>
+                                <div className="px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-50 dark:bg-gray-900 flex items-center gap-1.5 sticky top-0">
+                                  <CatIcon size={12} />
+                                  {category}
+                                </div>
+                                {filteredOptions.map((opt) => {
+                                  const val = editingValues[opt.id];
+                                  const hasValue = val !== "" && val !== undefined && val !== null;
+                                  const isSelected = selectedConfigId === opt.id;
+                                  return (
+                                    <button
+                                      key={opt.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedConfigId(opt.id);
+                                        setDropdownOpen(false);
+                                        setSearchTerm("");
+                                      }}
+                                      className={`w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                                        isSelected ? "bg-blue-50 dark:bg-blue-900/20" : ""
+                                      }`}
+                                    >
+                                      <span className="truncate">{opt.name}</span>
+                                      {hasValue && <Check size={14} className="text-green-500 flex-shrink-0" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             );
                           })}
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
-            </div>
 
-            {/* 选中的配置项编辑 */}
-            {selectedOpt && CategoryIcon && (
-              <div className="p-4 border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-lg">
-                    <CategoryIcon size={16} className="text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900 dark:text-white">{selectedOpt.name}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">{selectedOpt.description}</div>
-                    <code className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-1 rounded mt-1 inline-block">
-                      {selectedOpt.configKey}
-                    </code>
+                  {/* 选中的配置项编辑 */}
+                  {selectedOpt && SelectedCategoryIcon && (
+                    <div className="p-4 border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-lg">
+                          <SelectedCategoryIcon size={16} className="text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900 dark:text-white">{selectedOpt.name}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">{selectedOpt.description}</div>
+                          <code className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-1 rounded mt-1 inline-block">
+                            {selectedOpt.configKey}
+                          </code>
+                        </div>
+                      </div>
+                      <div>{renderConfigEditor(selectedOpt)}</div>
+                    </div>
+                  )}
+
+                  {/* 已配置项统计 */}
+                  <div className="text-xs text-gray-500">
+                    已配置: {configuredCount} 项
+                    {configuredCount > 0 && (
+                      <span className="ml-2">
+                        ({Object.entries(editingValues)
+                          .filter(([, v]) => v !== "" && v !== undefined && v !== null)
+                          .map(([id]) => quickConfigs.find(c => c.id === id)?.name)
+                          .filter(Boolean)
+                          .slice(0, 3)
+                          .join(", ") as string}
+                        {configuredCount > 3 ? "..." : ""})
+                      </span>
+                    )}
                   </div>
                 </div>
-                <div>{renderConfigEditor(selectedOpt)}</div>
-              </div>
+              </>
             )}
-
-            {/* 已配置项快速预览 */}
-            <div className="text-xs text-gray-500">
-              已配置: {configuredCount} 项
-              {configuredCount > 0 && (
-                <span className="ml-2">
-                  ({Object.entries(editingValues)
-                    .filter(([, v]) => v !== "" && v !== undefined && v !== null)
-                    .map(([id]) => quickConfigs.find(c => c.id === id)?.name)
-                    .filter(Boolean)
-                    .slice(0, 3)
-                    .join(", ") as string}
-                  {configuredCount > 3 ? "..." : ""})
-                </span>
-              )}
-            </div>
           </div>
 
-          {/* JSON 编辑 */}
-          <div>
+          {/* 右侧面板 - JSON 编辑器 */}
+          <div className="flex-1 flex flex-col min-h-0 p-4">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
                 JSON 配置
@@ -467,24 +682,16 @@ export function ProfileEditor({
                     </>
                   )}
                 </button>
-                <button
-                  onClick={() => setExpanded(!expanded)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
-                  title={expanded ? "收起编辑区" : "展开编辑区"}
-                >
-                  {expanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-                  <span>{expanded ? "收起" : "展开"}</span>
-                </button>
               </div>
             </div>
             <textarea
               value={editingContent}
               onChange={(e) => setEditingContent(e.target.value)}
-              className={`w-full p-3 font-mono text-sm bg-gray-50 dark:bg-gray-800 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y ${
+              className={`flex-1 w-full p-3 font-mono text-sm bg-gray-50 dark:bg-gray-800 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none min-h-0 ${
                 jsonError
                   ? "border-red-300 dark:border-red-700"
                   : "border-gray-200 dark:border-gray-700"
-              } ${expanded ? "h-[500px]" : "h-[200px]"}`}
+              }`}
               spellCheck={false}
             />
             {jsonError && (
@@ -501,9 +708,13 @@ export function ProfileEditor({
           <Button onClick={onClose} variant="secondary">
             取消
           </Button>
-          <Button onClick={handleSave} variant="primary" disabled={saving || !!jsonError}>
-            <Save size={14} className="mr-1" />
-            保存
+          <Button onClick={handleSave} variant="primary" disabled={saving || !canSave}>
+            {saving ? (
+              <Loader2 size={14} className="animate-spin mr-1" />
+            ) : (
+              <Save size={14} className="mr-1" />
+            )}
+            {isCreateMode ? "创建" : "保存"}
           </Button>
         </div>
       </div>

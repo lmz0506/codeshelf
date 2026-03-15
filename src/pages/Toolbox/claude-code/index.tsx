@@ -91,11 +91,6 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
   // 新建档案
   const [showCreateProfile, setShowCreateProfile] = useState(false);
-  const [newProfileName, setNewProfileName] = useState("");
-  const [newProfileDesc, setNewProfileDesc] = useState("");
-  const [newProfileSource, setNewProfileSource] = useState<"empty" | "current" | "quick" | "recommended">("empty");
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [profileNameError, setProfileNameError] = useState<string | null>(null);
 
   // 删除确认
   const [deleteConfirmProfile, setDeleteConfirmProfile] = useState<ConfigProfile | null>(null);
@@ -486,7 +481,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     }
   }
 
-  async function handleSaveProfile(content: string) {
+  async function handleSaveProfile(description: string | undefined, content: string) {
     if (!editingProfile || !selectedEnv) return;
 
     try {
@@ -495,7 +490,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         settings.__active = true;
       }
 
-      await saveConfigProfile(selectedEnv.envType, selectedEnv.envName, editingProfile.name, editingProfile.description, settings);
+      await saveConfigProfile(selectedEnv.envType, selectedEnv.envName, editingProfile.name, description, settings);
 
       if (activeProfileId === editingProfile.id) {
         const settingsFile = selectedEnv.configFiles.find(f => f.name === "settings.json");
@@ -520,67 +515,17 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     }
   }
 
-  async function handleCreateProfile() {
-    if (!newProfileName.trim() || !selectedEnv) return;
+  async function handleCreateProfileFromEditor(name: string, description: string | undefined, content: string) {
+    if (!selectedEnv) return;
 
-    // 检查重名
-    const trimmedName = newProfileName.trim();
-    if (profiles.find(p => p.name === trimmedName)) {
-      setProfileNameError("配置档案名称已存在，请使用其他名称");
-      return;
-    }
-
-    setProfileNameError(null);
-    setSavingProfile(true);
     try {
-      let settings: Record<string, unknown> = {};
-
-      if (newProfileSource === "current" && currentSettings) {
-        try {
-          settings = JSON.parse(currentSettings);
-        } catch {
-          // ignore
-        }
-      } else if (newProfileSource === "quick") {
-        quickConfigs.forEach(opt => {
-          if (opt.defaultValue !== "" && opt.defaultValue !== null && opt.defaultValue !== undefined) {
-            settings[opt.configKey] = opt.defaultValue;
-          }
-        });
-      } else if (newProfileSource === "recommended") {
-        settings = {
-          env: {
-            ANTHROPIC_AUTH_TOKEN: "sa-token",
-            ANTHROPIC_BASE_URL: "你的地址",
-            ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-opus-4-6",
-            ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-6",
-            ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-opus-4-6",
-            ANTHROPIC_MODEL: "claude-opus-4-6",
-            CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
-            CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-          },
-          model: "opus",
-          effortLevel: "medium",
-        };
-      }
-
-      const profile = await saveConfigProfile(selectedEnv.envType, selectedEnv.envName, trimmedName, newProfileDesc.trim() || undefined, settings);
-
+      const settings = JSON.parse(content);
+      await saveConfigProfile(selectedEnv.envType, selectedEnv.envName, name, description, settings);
       setShowCreateProfile(false);
-      setNewProfileName("");
-      setNewProfileDesc("");
-      setNewProfileSource("empty");
-      setProfileNameError(null);
       await loadProfiles();
-
-      if (profile) {
-        setEditingProfile(profile);
-      }
     } catch (err) {
       console.error("创建档案失败:", err);
       alert(`创建配置档案失败: ${err}`);
-    } finally {
-      setSavingProfile(false);
     }
   }
 
@@ -1238,122 +1183,22 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         )}
       </div>
 
-      {/* 新建档案对话框 */}
+      {/* 新建档案弹框 */}
       {showCreateProfile && (
-        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">新建配置档案</h3>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">档案名称 *</label>
-                <input
-                  type="text"
-                  value={newProfileName}
-                  onChange={(e) => {
-                    setNewProfileName(e.target.value);
-                    setProfileNameError(null);
-                  }}
-                  placeholder="如: 开发环境"
-                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    profileNameError ? "border-red-500" : "border-gray-200 dark:border-gray-700"
-                  }`}
-                />
-                {profileNameError && (
-                  <p className="text-xs text-red-500 mt-1">{profileNameError}</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">描述</label>
-                <input
-                  type="text"
-                  value={newProfileDesc}
-                  onChange={(e) => setNewProfileDesc(e.target.value)}
-                  placeholder="可选"
-                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-2">初始配置</label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-3 p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
-                    <input
-                      type="radio"
-                      checked={newProfileSource === "empty"}
-                      onChange={() => setNewProfileSource("empty")}
-                      className="w-4 h-4 text-blue-500"
-                    />
-                    <div>
-                      <div className="font-medium text-sm">空白配置</div>
-                      <div className="text-xs text-gray-500">从头开始</div>
-                    </div>
-                  </label>
-                  <label className="flex items-center gap-3 p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
-                    <input
-                      type="radio"
-                      checked={newProfileSource === "current"}
-                      onChange={() => setNewProfileSource("current")}
-                      className="w-4 h-4 text-blue-500"
-                    />
-                    <div>
-                      <div className="font-medium text-sm">复制当前配置</div>
-                      <div className="text-xs text-gray-500">从 settings.json 复制</div>
-                    </div>
-                  </label>
-                  <label className="flex items-center gap-3 p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
-                    <input
-                      type="radio"
-                      checked={newProfileSource === "quick"}
-                      onChange={() => setNewProfileSource("quick")}
-                      className="w-4 h-4 text-blue-500"
-                    />
-                    <div>
-                      <div className="font-medium text-sm">使用快捷配置默认值</div>
-                      <div className="text-xs text-gray-500">应用快捷配置中设置的默认值</div>
-                    </div>
-                  </label>
-                  <label className="flex items-center gap-3 p-2.5 border border-blue-200 dark:border-blue-700 rounded-lg cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20">
-                    <input
-                      type="radio"
-                      checked={newProfileSource === "recommended"}
-                      onChange={() => setNewProfileSource("recommended")}
-                      className="w-4 h-4 text-blue-500"
-                    />
-                    <div>
-                      <div className="font-medium text-sm">推荐模板（第三方 API）</div>
-                      <div className="text-xs text-gray-500">包含第三方 API 代理的推荐配置，创建后请修改地址和令牌</div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-xs text-gray-400 mt-3">创建后自动进入编辑模式</p>
-
-            <div className="flex justify-end gap-2 mt-4">
-              <Button onClick={() => {
-                setShowCreateProfile(false);
-                setNewProfileName("");
-                setNewProfileDesc("");
-                setNewProfileSource("empty");
-                setProfileNameError(null);
-              }} variant="secondary">取消</Button>
-              <Button
-                onClick={handleCreateProfile}
-                disabled={!newProfileName.trim() || savingProfile}
-                variant="primary"
-              >
-                {savingProfile && <Loader2 size={14} className="animate-spin mr-1" />}
-                创建
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ProfileEditor
+          mode="create"
+          quickConfigs={quickConfigs}
+          existingNames={profiles.map(p => p.name)}
+          currentSettings={currentSettings}
+          onSave={handleCreateProfileFromEditor}
+          onClose={() => setShowCreateProfile(false)}
+        />
       )}
 
       {/* 编辑档案弹框 */}
       {editingProfile && (
         <ProfileEditor
+          mode="edit"
           profile={editingProfile}
           quickConfigs={quickConfigs}
           isActive={activeProfileId === editingProfile.id}
