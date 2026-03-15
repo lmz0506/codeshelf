@@ -29,6 +29,10 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // macOS: 隐藏 Dock 图标，仅保留菜单栏托盘图标
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             // 初始化存储系统
             if let Err(e) = storage::init_storage() {
                 eprintln!("存储系统初始化警告: {}", e);
