@@ -698,7 +698,9 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         dir,
         terminalConfig.type,
         terminalConfig.customPath,
-        terminalConfig.paths?.[terminalConfig.type]
+        terminalConfig.paths?.[terminalConfig.type],
+        selectedEnv?.envType,
+        selectedEnv?.envName
       );
       setShowLaunchMenu(false);
     } catch (err) {

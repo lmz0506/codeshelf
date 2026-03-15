@@ -1549,6 +1549,8 @@ pub async fn launch_claude_in_terminal(
     terminal_type: Option<String>,
     custom_path: Option<String>,
     terminal_path: Option<String>,
+    env_type: Option<String>,
+    env_name: Option<String>,
 ) -> Result<(), String> {
     let dir = work_dir.unwrap_or_else(|| {
         dirs::home_dir()
@@ -1558,53 +1560,73 @@ pub async fn launch_claude_in_terminal(
 
     let term_type = terminal_type.unwrap_or_else(|| "default".to_string());
 
+    // 从 env_name (如 "WSL: Ubuntu") 中提取 distro 名称 (仅 Windows 使用)
+    #[allow(unused_variables)]
+    let is_wsl_env = env_type.as_deref() == Some("wsl");
+    #[allow(unused_variables)]
+    let wsl_distro = env_name
+        .as_deref()
+        .and_then(|n| n.strip_prefix("WSL: "))
+        .unwrap_or("").to_string();
+
     #[cfg(target_os = "windows")]
     {
         const CREATE_NEW_CONSOLE: u32 = 0x00000010;
 
-        match term_type.as_str() {
-            "powershell" => {
-                let ps_path = terminal_path.as_deref().unwrap_or("powershell");
-                let escaped_path = dir.replace("'", "''");
-                Command::new(ps_path)
-                    .args([
-                        "-NoExit",
-                        "-Command",
-                        &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
-                    ])
-                    .creation_flags(CREATE_NEW_CONSOLE)
-                    .spawn()
-                    .map_err(|e| format!("启动终端失败: {}", e))?;
+        if is_wsl_env {
+            // WSL 环境: 必须通过 wsl.exe 在 Linux 上下文中执行
+            // Windows 终端无法直接访问 Linux 路径 (如 /home/user/...)
+            let escaped_dir = dir.replace("'", "'\\''");
+            let wsl_bash_cmd = format!("cd '{}' && claude", escaped_dir);
+
+            let mut wsl_args: Vec<String> = Vec::new();
+            if !wsl_distro.is_empty() {
+                wsl_args.push("-d".to_string());
+                wsl_args.push(wsl_distro.clone());
             }
-            "cmd" => {
-                let cmd_path = terminal_path.as_deref().unwrap_or("cmd");
-                Command::new(cmd_path)
-                    .args(["/k", &format!("cd /d \"{}\" && claude", dir)])
-                    .creation_flags(CREATE_NEW_CONSOLE)
-                    .spawn()
-                    .map_err(|e| format!("启动终端失败: {}", e))?;
-            }
-            "custom" => {
-                if let Some(custom) = custom_path {
-                    Command::new(&custom)
-                        .arg(&dir)
-                        .creation_flags(CREATE_NEW_CONSOLE)
-                        .spawn()
-                        .map_err(|e| format!("启动自定义终端失败: {}", e))?;
-                } else {
-                    return Err("未提供自定义终端路径".to_string());
+            wsl_args.push("--".to_string());
+            wsl_args.push("bash".to_string());
+            wsl_args.push("-lc".to_string());
+            wsl_args.push(wsl_bash_cmd.clone());
+
+            match term_type.as_str() {
+                "custom" => {
+                    if let Some(custom) = custom_path {
+                        Command::new(&custom)
+                            .args(&wsl_args[..wsl_args.len()-4]) // 只传 -d distro
+                            .creation_flags(CREATE_NEW_CONSOLE)
+                            .spawn()
+                            .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                    } else {
+                        return Err("未提供自定义终端路径".to_string());
+                    }
+                }
+                _ => {
+                    // 默认: Windows Terminal → PowerShell fallback
+                    let wt_path = terminal_path.as_deref().unwrap_or("wt");
+                    let mut wt_args = vec!["wsl.exe".to_string()];
+                    wt_args.extend(wsl_args.clone());
+                    let wt_result = Command::new(wt_path)
+                        .args(&wt_args)
+                        .spawn();
+
+                    if wt_result.is_err() {
+                        // fallback: 直接用 wsl.exe 打开新窗口
+                        Command::new("wsl.exe")
+                            .args(&wsl_args)
+                            .creation_flags(CREATE_NEW_CONSOLE)
+                            .spawn()
+                            .map_err(|e| format!("启动终端失败: {}", e))?;
+                    }
                 }
             }
-            _ => {
-                // 默认: Windows Terminal → PowerShell fallback
-                let wt_path = terminal_path.as_deref().unwrap_or("wt");
-                let wt_result = Command::new(wt_path)
-                    .args(["-d", &dir, "cmd", "/k", "claude"])
-                    .spawn();
-
-                if wt_result.is_err() {
+        } else {
+            // Host 环境: 正常 Windows 终端
+            match term_type.as_str() {
+                "powershell" => {
+                    let ps_path = terminal_path.as_deref().unwrap_or("powershell");
                     let escaped_path = dir.replace("'", "''");
-                    Command::new("powershell")
+                    Command::new(ps_path)
                         .args([
                             "-NoExit",
                             "-Command",
@@ -1613,6 +1635,45 @@ pub async fn launch_claude_in_terminal(
                         .creation_flags(CREATE_NEW_CONSOLE)
                         .spawn()
                         .map_err(|e| format!("启动终端失败: {}", e))?;
+                }
+                "cmd" => {
+                    let cmd_path = terminal_path.as_deref().unwrap_or("cmd");
+                    Command::new(cmd_path)
+                        .args(["/k", &format!("cd /d \"{}\" && claude", dir)])
+                        .creation_flags(CREATE_NEW_CONSOLE)
+                        .spawn()
+                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                }
+                "custom" => {
+                    if let Some(custom) = custom_path {
+                        Command::new(&custom)
+                            .arg(&dir)
+                            .creation_flags(CREATE_NEW_CONSOLE)
+                            .spawn()
+                            .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                    } else {
+                        return Err("未提供自定义终端路径".to_string());
+                    }
+                }
+                _ => {
+                    // 默认: Windows Terminal → PowerShell fallback
+                    let wt_path = terminal_path.as_deref().unwrap_or("wt");
+                    let wt_result = Command::new(wt_path)
+                        .args(["-d", &dir, "cmd", "/k", "claude"])
+                        .spawn();
+
+                    if wt_result.is_err() {
+                        let escaped_path = dir.replace("'", "''");
+                        Command::new("powershell")
+                            .args([
+                                "-NoExit",
+                                "-Command",
+                                &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
+                            ])
+                            .creation_flags(CREATE_NEW_CONSOLE)
+                            .spawn()
+                            .map_err(|e| format!("启动终端失败: {}", e))?;
+                    }
                 }
             }
         }

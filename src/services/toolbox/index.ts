@@ -380,13 +380,17 @@ export async function launchClaudeInTerminal(
   workDir?: string,
   terminalType?: string,
   customPath?: string,
-  terminalPath?: string
+  terminalPath?: string,
+  envType?: string,
+  envName?: string
 ): Promise<void> {
   return invoke("launch_claude_in_terminal", {
     workDir,
     terminalType,
     customPath,
     terminalPath,
+    envType,
+    envName,
   });
 }
 
