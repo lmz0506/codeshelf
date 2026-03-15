@@ -126,6 +126,9 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   const [launchDirs, setLaunchDirs] = useState<string[]>([]);
   const [showLaunchMenu, setShowLaunchMenu] = useState(false);
   const [showManageLaunchDirs, setShowManageLaunchDirs] = useState(false);
+  const [newDirInput, setNewDirInput] = useState("");
+  const [showManualLaunchInput, setShowManualLaunchInput] = useState(false);
+  const [manualLaunchDir, setManualLaunchDir] = useState("");
 
   const terminalConfig = useAppStore((s) => s.terminalConfig);
 
@@ -712,15 +715,19 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         multiple: false,
       });
       if (selected && typeof selected === "string") {
-        if (!launchDirs.includes(selected)) {
-          const updated = [...launchDirs, selected];
-          setLaunchDirs(updated);
-          await saveClaudeLaunchDirs(updated);
-        }
+        await addLaunchDir(selected);
       }
     } catch (err) {
       console.error("添加目录失败:", err);
     }
+  }
+
+  async function addLaunchDir(dir: string) {
+    const trimmed = dir.trim();
+    if (!trimmed || launchDirs.includes(trimmed)) return;
+    const updated = [...launchDirs, trimmed];
+    setLaunchDirs(updated);
+    await saveClaudeLaunchDirs(updated);
   }
 
   async function handleRemoveLaunchDir(dir: string) {
@@ -789,6 +796,18 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                     >
                       <FolderOpen size={14} className="text-blue-500 flex-shrink-0" />
                       <span className="text-gray-900 dark:text-white">选择目录启动...</span>
+                    </button>
+                    {/* 手动输入目录启动 (WSL 等场景) */}
+                    <button
+                      onClick={() => {
+                        setManualLaunchDir("");
+                        setShowManualLaunchInput(true);
+                        setShowLaunchMenu(false);
+                      }}
+                      className="w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
+                    >
+                      <Edit3 size={14} className="text-purple-500 flex-shrink-0" />
+                      <span className="text-gray-900 dark:text-white">输入目录启动...</span>
                     </button>
                     {/* 常用目录列表 */}
                     {launchDirs.length > 0 && (
@@ -1808,7 +1827,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                 <div className="text-center py-8 text-gray-400">
                   <FolderOpen size={32} className="mx-auto mb-2 opacity-50" />
                   <p className="text-sm">暂无常用目录</p>
-                  <p className="text-xs mt-1">点击下方按钮添加</p>
+                  <p className="text-xs mt-1">在下方输入路径或选择文件夹添加</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -1834,13 +1853,117 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
               )}
             </div>
 
-            <div className="flex justify-between p-4 border-t border-gray-200 dark:border-gray-700">
-              <Button onClick={handleAddLaunchDir} variant="secondary">
-                <Plus size={14} className="mr-1" />
-                添加目录
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+              {/* 输入路径 + 选择文件夹 + 添加 */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newDirInput}
+                  onChange={(e) => setNewDirInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newDirInput.trim()) {
+                      addLaunchDir(newDirInput);
+                      setNewDirInput("");
+                    }
+                  }}
+                  placeholder="输入目录路径，如 /home/user/project"
+                  className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                />
+                <button
+                  onClick={handleAddLaunchDir}
+                  className="px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  title="选择文件夹"
+                >
+                  <FolderOpen size={16} className="text-gray-500" />
+                </button>
+                <Button
+                  onClick={() => {
+                    if (newDirInput.trim()) {
+                      addLaunchDir(newDirInput);
+                      setNewDirInput("");
+                    }
+                  }}
+                  variant="primary"
+                  disabled={!newDirInput.trim()}
+                >
+                  <Plus size={14} className="mr-1" />
+                  添加
+                </Button>
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={() => setShowManageLaunchDirs(false)} variant="secondary">
+                  关闭
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 手动输入目录启动弹框 */}
+      {showManualLaunchInput && (
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-full">
+                <Terminal size={20} className="text-purple-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">输入目录启动 Claude</h3>
+            </div>
+
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+              输入工作目录路径，支持 Linux 路径（如 WSL）
+            </p>
+
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={manualLaunchDir}
+                onChange={(e) => setManualLaunchDir(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && manualLaunchDir.trim()) {
+                    handleLaunchClaude(manualLaunchDir.trim());
+                    setShowManualLaunchInput(false);
+                  }
+                }}
+                placeholder="/home/user/project 或 C:\project"
+                className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                autoFocus
+              />
+              <button
+                onClick={async () => {
+                  try {
+                    const selected = await open({ title: "选择工作目录", directory: true, multiple: false });
+                    if (selected && typeof selected === "string") {
+                      setManualLaunchDir(selected);
+                    }
+                  } catch (err) {
+                    console.error(err);
+                  }
+                }}
+                className="px-2 py-2 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                title="选择文件夹"
+              >
+                <FolderOpen size={16} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setShowManualLaunchInput(false)} variant="secondary">
+                取消
               </Button>
-              <Button onClick={() => setShowManageLaunchDirs(false)} variant="secondary">
-                关闭
+              <Button
+                onClick={() => {
+                  if (manualLaunchDir.trim()) {
+                    handleLaunchClaude(manualLaunchDir.trim());
+                    setShowManualLaunchInput(false);
+                  }
+                }}
+                variant="primary"
+                disabled={!manualLaunchDir.trim()}
+              >
+                <Play size={14} className="mr-1" />
+                启动
               </Button>
             </div>
           </div>

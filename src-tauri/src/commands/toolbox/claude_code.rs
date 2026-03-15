@@ -1680,6 +1680,13 @@ pub async fn launch_claude_in_terminal(
             augmented_path.replace("'", "'\\''")
         );
 
+        // 检测是否在 WSL 环境中
+        // WSL 下 Windows 终端 (wt.exe/powershell.exe/cmd.exe) 无法直接访问 Linux 路径，
+        // 需要通过 wsl.exe 来在 WSL 上下文中执行命令
+        let in_wsl = std::fs::read_to_string("/proc/version")
+            .map(|v| v.to_lowercase().contains("microsoft"))
+            .unwrap_or(false);
+
         match term_type.as_str() {
             "custom" => {
                 if let Some(custom) = custom_path {
@@ -1692,18 +1699,27 @@ pub async fn launch_claude_in_terminal(
                 }
             }
             "powershell" => {
-                // WSL: powershell.exe
                 let ps_path = terminal_path.as_deref().unwrap_or("powershell.exe");
-                let escaped_path = dir.replace("'", "''");
-                let result = Command::new(ps_path)
-                    .args([
-                        "-NoExit",
-                        "-Command",
-                        &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
-                    ])
-                    .spawn();
-                if result.is_err() {
-                    Command::new("powershell")
+                if in_wsl {
+                    // WSL: 通过 wsl.exe 在 Linux 上下文中执行
+                    let wsl_cmd = format!(
+                        "wsl.exe bash -lc \"{}\"",
+                        bash_cmd.replace("\"", "\\\"")
+                    );
+                    let mut cmd = Command::new(ps_path);
+                    cmd.args(["-NoExit", "-Command", &wsl_cmd]);
+                    // WSL 下 Windows 程序无法访问 Linux 路径作为 CWD
+                    if let Ok(cwd) = std::env::current_dir() {
+                        let cwd_str = cwd.to_string_lossy();
+                        if cwd_str.starts_with("/mnt/") {
+                            cmd.current_dir(&cwd);
+                        }
+                    }
+                    cmd.spawn()
+                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                } else {
+                    let escaped_path = dir.replace("'", "''");
+                    Command::new(ps_path)
                         .args([
                             "-NoExit",
                             "-Command",
@@ -1714,29 +1730,76 @@ pub async fn launch_claude_in_terminal(
                 }
             }
             "cmd" => {
-                // WSL: cmd.exe
                 let cmd_path = terminal_path.as_deref().unwrap_or("cmd.exe");
-                let result = Command::new(cmd_path)
-                    .args(["/k", &format!("cd /d {} && claude", dir)])
-                    .spawn();
-                if result.is_err() {
-                    Command::new("cmd")
-                        .args(["/k", &format!("cd /d {} && claude", dir)])
+                if in_wsl {
+                    // WSL: 通过 wsl.exe 在 Linux 上下文中执行
+                    let wsl_cmd = format!(
+                        "wsl.exe bash -lc \"{}\"",
+                        bash_cmd.replace("\"", "\\\"")
+                    );
+                    let mut cmd = Command::new(cmd_path);
+                    cmd.args(["/k", &wsl_cmd]);
+                    if let Ok(cwd) = std::env::current_dir() {
+                        let cwd_str = cwd.to_string_lossy();
+                        if cwd_str.starts_with("/mnt/") {
+                            cmd.current_dir(&cwd);
+                        }
+                    }
+                    cmd.spawn()
+                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                } else {
+                    Command::new(cmd_path)
+                        .args(["/k", &format!("cd /d \"{}\" && claude", dir)])
                         .spawn()
                         .map_err(|e| format!("启动终端失败: {}", e))?;
                 }
             }
             _ => {
-                // 默认: Windows Terminal (WSL) → gnome-terminal → 其他
-                let wt_path = terminal_path.as_deref().unwrap_or("wt.exe");
-                let wt_result = Command::new(wt_path)
-                    .args(["-d", &dir, "bash", "-lc", &format!("export PATH='{}' && claude", augmented_path.replace("'", "'\\''"))])
-                    .spawn();
+                if in_wsl {
+                    // WSL 默认: Windows Terminal 通过 wsl.exe 执行
+                    // 不使用 -d <linux_path>，因为 wt.exe 无法访问 Linux 路径
+                    // 改为让 wsl.exe 内部 cd 到目标目录
+                    let wt_path = terminal_path.as_deref().unwrap_or("wt.exe");
+                    let mut cmd = Command::new(wt_path);
+                    cmd.args(["--", "wsl.exe", "bash", "-lc", &bash_cmd]);
+                    // 设置一个 Windows 可访问的 CWD，避免 wt.exe 继承 Linux 路径
+                    if let Ok(cwd) = std::env::current_dir() {
+                        let cwd_str = cwd.to_string_lossy();
+                        if cwd_str.starts_with("/mnt/") {
+                            cmd.current_dir(&cwd);
+                        }
+                    }
+                    let wt_result = cmd.spawn();
 
-                if wt_result.is_err() {
+                    if wt_result.is_err() {
+                        // wt.exe 不可用，尝试原生 Linux 终端
+                        let mut opened = false;
+                        let terminals = ["gnome-terminal", "konsole", "xterm", "xfce4-terminal"];
+                        for term in terminals {
+                            let result = match term {
+                                "gnome-terminal" => Command::new(term)
+                                    .args(["--", "bash", "-lc", &bash_cmd])
+                                    .spawn(),
+                                "konsole" => Command::new(term)
+                                    .args(["-e", "bash", "-lc", &bash_cmd])
+                                    .spawn(),
+                                _ => Command::new(term)
+                                    .args(["-e", &format!("bash -lc '{}'", bash_cmd.replace("'", "'\\''"))])
+                                    .spawn(),
+                            };
+                            if result.is_ok() {
+                                opened = true;
+                                break;
+                            }
+                        }
+                        if !opened {
+                            return Err("未找到可用的终端程序".to_string());
+                        }
+                    }
+                } else {
+                    // 原生 Linux: 尝试常见终端
                     let terminals = ["gnome-terminal", "konsole", "xterm", "xfce4-terminal"];
                     let mut opened = false;
-
                     for term in terminals {
                         let result = match term {
                             "gnome-terminal" => Command::new(term)
@@ -1749,13 +1812,11 @@ pub async fn launch_claude_in_terminal(
                                 .args(["-e", &format!("bash -lc '{}'", bash_cmd.replace("'", "'\\''"))])
                                 .spawn(),
                         };
-
                         if result.is_ok() {
                             opened = true;
                             break;
                         }
                     }
-
                     if !opened {
                         return Err("未找到可用的终端程序".to_string());
                     }
