@@ -73,7 +73,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show, &quit])?;
 
             // 加载托盘图标（不透明版本）
-            let icon = Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
+            let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))
                 .expect("Failed to load tray icon");
 
             // 创建系统托盘
