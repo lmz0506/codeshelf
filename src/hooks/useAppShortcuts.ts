@@ -1,10 +1,7 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  register,
-  unregister,
-} from "@tauri-apps/plugin-global-shortcut";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui/Toast";
 import type { AppShortcutBinding } from "@/types";
@@ -73,28 +70,6 @@ export function displayKeys(keys: string): string {
       }
     })
     .join(" + ");
-}
-
-/**
- * 将规范化格式转换为 Tauri Accelerator 格式
- * "ctrl+shift+1" -> "CmdOrCtrl+Shift+1"
- */
-function toAccelerator(keys: string): string {
-  return keys
-    .split("+")
-    .map((part) => {
-      switch (part) {
-        case "ctrl": return "CmdOrCtrl";
-        case "alt": return "Alt";
-        case "shift": return "Shift";
-        default:
-          if (part.length === 1) return part.toUpperCase();
-          if (/^f\d+$/.test(part)) return part.toUpperCase();
-          // 特殊键名首字母大写
-          return part.charAt(0).toUpperCase() + part.slice(1);
-      }
-    })
-    .join("+");
 }
 
 /**
@@ -186,51 +161,28 @@ async function handleGlobalAction(actionId: string) {
 
 // ============== 全局快捷键注册/注销 ==============
 
-let registeredAccelerators: string[] = [];
 let shortcutsReady = false;
 
 async function registerGlobalShortcuts(shortcuts: AppShortcutBinding[]) {
-  // 先注销旧的
-  await unregisterGlobalShortcuts();
-
-  const globalBindings = shortcuts.filter((s) => s.enabled && s.global);
-  if (globalBindings.length === 0) return;
-
-  const failedKeys: string[] = [];
-
-  for (const binding of globalBindings) {
-    const acc = toAccelerator(binding.keys);
-    try {
-      await register(acc, (event) => {
-        if (event.state === "Pressed") {
-          handleGlobalAction(binding.id);
-        }
-      });
-      registeredAccelerators.push(acc);
-    } catch (err) {
-      console.error(`注册全局快捷键失败 [${acc}]:`, err);
-      failedKeys.push(displayKeys(binding.keys));
+  const globalBindings = shortcuts
+    .filter((s) => s.enabled && s.global)
+    .map((s) => ({ id: s.id, keys: s.keys }));
+  try {
+    await invoke("register_global_shortcuts", { shortcuts: globalBindings });
+  } catch (err) {
+    console.error("注册全局快捷键失败:", err);
+    if (shortcutsReady) {
+      showToast("warning", "全局快捷键注册失败", String(err), 5000);
     }
-  }
-
-  if (failedKeys.length > 0 && shortcutsReady) {
-    const keysList = failedKeys.join("、");
-    const platformTip = IS_MAC
-      ? "请在「系统设置 > 隐私与安全 > 辅助功能」中授权本应用"
-      : "可能与系统热键冲突，请在设置中更换按键组合";
-    showToast("warning", "全局快捷键注册失败", `${keysList} 注册失败。${platformTip}`, 5000);
   }
 }
 
 async function unregisterGlobalShortcuts() {
-  for (const acc of registeredAccelerators) {
-    try {
-      await unregister(acc);
-    } catch {
-      // 忽略注销失败
-    }
+  try {
+    await invoke("unregister_all_global_shortcuts");
+  } catch {
+    // 忽略注销失败
   }
-  registeredAccelerators = [];
 }
 
 // ============== 初始化 ==============
@@ -294,7 +246,7 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
 /**
  * 全局键盘快捷键监听 Hook
  * - 应用内快捷键：document keydown（仅处理 non-global）
- * - 系统级快捷键：tauri-plugin-global-shortcut（仅处理 global）
+ * - 系统级快捷键：Windows 键盘钩子 + Tauri 事件（仅处理 global）
  */
 export function useAppShortcuts() {
   const appShortcuts = useAppStore((state) => state.appShortcuts);
@@ -327,12 +279,17 @@ export function useAppShortcuts() {
     return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, []);
 
-  // 系统级全局快捷键（OS 注册）
+  // 系统级全局快捷键（Windows 键盘钩子事件监听）
   useEffect(() => {
     registerGlobalShortcuts(appShortcuts);
 
+    const unlistenPromise = listen<string>("global-shortcut-event", (event) => {
+      handleGlobalAction(event.payload);
+    });
+
     return () => {
       unregisterGlobalShortcuts();
+      unlistenPromise.then((fn) => fn());
     };
   }, [appShortcuts]);
 }

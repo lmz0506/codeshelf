@@ -1,9 +1,10 @@
 mod commands;
+mod keyboard_hook;
 mod storage;
 
 use commands::{git, project, stats, system, toolbox, settings};
 use tauri::{
-    Emitter, Manager,
+    Emitter, Manager, RunEvent,
     tray::TrayIconBuilder,
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     image::Image,
@@ -28,7 +29,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             // macOS: 隐藏 Dock 图标，仅保留菜单栏托盘图标
             #[cfg(target_os = "macos")]
@@ -155,6 +155,21 @@ pub fn run() {
 
             // 初始化 Netcat 状态
             app.manage(toolbox::netcat::NetcatState::new());
+
+            // 启动 Windows 键盘钩子（全局快捷键）
+            #[cfg(target_os = "windows")]
+            {
+                match keyboard_hook::start_hook(app.handle().clone()) {
+                    Ok(state) => {
+                        app.manage(keyboard_hook::KeyboardHookManager(
+                            std::sync::Mutex::new(Some(state)),
+                        ));
+                    }
+                    Err(e) => {
+                        log::error!("键盘钩子启动失败: {}", e);
+                    }
+                }
+            }
 
             println!("Tauri app setup completed with tray icon");
 
@@ -343,7 +358,15 @@ pub fn run() {
             // Settings - App Shortcuts commands
             settings::get_app_shortcuts,
             settings::save_app_shortcuts,
+            // Keyboard hook commands
+            keyboard_hook::register_global_shortcuts,
+            keyboard_hook::unregister_all_global_shortcuts,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                keyboard_hook::stop_hook_from_manager(app);
+            }
+        });
 }
