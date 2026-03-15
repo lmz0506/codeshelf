@@ -10,6 +10,10 @@ import {
   Search,
   Check,
   Copy,
+  WrapText,
+  Maximize2,
+  Minimize2,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { ConfigProfile } from "@/types/toolbox";
@@ -47,6 +51,20 @@ export function ProfileEditor({
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  // JSON 格式验证
+  const jsonError = useMemo(() => {
+    const text = editingContent.trim();
+    if (!text) return null;
+    try {
+      JSON.parse(text);
+      return null;
+    } catch (e) {
+      const msg = e instanceof SyntaxError ? e.message : "无效的 JSON 格式";
+      return msg;
+    }
+  }, [editingContent]);
 
   // 自定义下拉框状态
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -116,11 +134,21 @@ export function ProfileEditor({
   }
 
   async function handleSave() {
+    if (jsonError) return;
     setSaving(true);
     try {
       await onSave(editingContent);
     } finally {
       setSaving(false);
+    }
+  }
+
+  function handleFormat() {
+    try {
+      const parsed = JSON.parse(editingContent);
+      setEditingContent(JSON.stringify(parsed, null, 2));
+    } catch {
+      // JSON 无效时不做格式化
     }
   }
 
@@ -403,30 +431,68 @@ export function ProfileEditor({
           {/* JSON 编辑 */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">JSON 配置</h4>
-              <button
-                onClick={handleCopy}
-                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
-                title="复制配置到剪贴板"
-              >
-                {copied ? (
-                  <>
-                    <Check size={12} className="text-green-500" />
-                    <span className="text-green-500">已复制</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy size={12} />
-                    <span>复制</span>
-                  </>
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                JSON 配置
+                {jsonError && (
+                  <span className="flex items-center gap-1 text-xs font-normal text-red-500">
+                    <AlertCircle size={12} />
+                    格式错误
+                  </span>
                 )}
-              </button>
+              </h4>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleFormat}
+                  disabled={!!jsonError}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="格式化 JSON"
+                >
+                  <WrapText size={12} />
+                  <span>格式化</span>
+                </button>
+                <button
+                  onClick={handleCopy}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+                  title="复制配置到剪贴板"
+                >
+                  {copied ? (
+                    <>
+                      <Check size={12} className="text-green-500" />
+                      <span className="text-green-500">已复制</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={12} />
+                      <span>复制</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setExpanded(!expanded)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+                  title={expanded ? "收起编辑区" : "展开编辑区"}
+                >
+                  {expanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                  <span>{expanded ? "收起" : "展开"}</span>
+                </button>
+              </div>
             </div>
             <textarea
               value={editingContent}
               onChange={(e) => setEditingContent(e.target.value)}
-              className="w-full h-[200px] p-3 font-mono text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className={`w-full p-3 font-mono text-sm bg-gray-50 dark:bg-gray-800 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y ${
+                jsonError
+                  ? "border-red-300 dark:border-red-700"
+                  : "border-gray-200 dark:border-gray-700"
+              } ${expanded ? "h-[500px]" : "h-[200px]"}`}
+              spellCheck={false}
             />
+            {jsonError && (
+              <p className="mt-1 text-xs text-red-500 flex items-start gap-1">
+                <AlertCircle size={12} className="mt-0.5 flex-shrink-0" />
+                <span>{jsonError}</span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -435,7 +501,7 @@ export function ProfileEditor({
           <Button onClick={onClose} variant="secondary">
             取消
           </Button>
-          <Button onClick={handleSave} variant="primary" disabled={saving}>
+          <Button onClick={handleSave} variant="primary" disabled={saving || !!jsonError}>
             <Save size={14} className="mr-1" />
             保存
           </Button>
