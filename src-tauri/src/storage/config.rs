@@ -109,6 +109,10 @@ impl StorageConfig {
     pub fn shortcuts_file(&self) -> PathBuf {
         self.data_dir.join("shortcuts.json")
     }
+
+    pub fn app_shortcuts_file(&self) -> PathBuf {
+        self.data_dir.join("app_shortcuts.json")
+    }
 }
 
 /// 初始化存储配置

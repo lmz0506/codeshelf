@@ -312,6 +312,9 @@ pub fn run() {
             settings::add_notification,
             settings::remove_notification,
             settings::clear_notifications,
+            // Settings - App Shortcuts commands
+            settings::get_app_shortcuts,
+            settings::save_app_shortcuts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

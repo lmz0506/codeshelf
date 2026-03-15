@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Search,
   Activity,
@@ -70,9 +70,17 @@ const tools = [
 ];
 
 export function ToolboxPage() {
-  const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed, toolboxNavigateTarget, clearToolboxNavigateTarget } = useAppStore();
   const [activeTool, setActiveTool] = useState<ToolType | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // 响应外部导航请求（如全局快捷键）
+  useEffect(() => {
+    if (toolboxNavigateTarget) {
+      setActiveTool(toolboxNavigateTarget);
+      clearToolboxNavigateTarget();
+    }
+  }, [toolboxNavigateTarget]);
 
   // 过滤工具
   const filteredTools = tools.filter(

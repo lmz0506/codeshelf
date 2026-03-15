@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
-import { Minus, X, Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info } from "lucide-react";
+import { Minus, X, Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { EditorSettings } from "./EditorSettings";
@@ -10,11 +10,12 @@ import { AppearanceSettings } from "./AppearanceSettings";
 import { LabelSettings } from "./LabelSettings";
 import { UpdateSettings } from "./UpdateSettings";
 import { AboutSettings } from "./AboutSettings";
+import { ShortcutSettings } from "./ShortcutSettings";
 
-type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "update" | "about" | null;
+type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "shortcuts" | "update" | "about" | null;
 
 export function SettingsPage() {
-  const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, labels } = useAppStore();
+  const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, labels, appShortcuts } = useAppStore();
   const [activeSection, setActiveSection] = useState<SettingsSection>(null);
   const [appVersion, setAppVersion] = useState<string>("...");
 
@@ -86,6 +87,14 @@ export function SettingsPage() {
       icon: Tag,
       value: `${labels.length} 个标签`,
       component: LabelSettings,
+    },
+    {
+      id: "shortcuts" as const,
+      title: "快捷键",
+      description: "管理应用快捷键绑定",
+      icon: Keyboard,
+      value: `${appShortcuts.filter((s) => s.enabled).length || 11} 个启用`,
+      component: ShortcutSettings,
     },
     {
       id: "update" as const,

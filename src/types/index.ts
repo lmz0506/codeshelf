@@ -107,3 +107,14 @@ export interface DashboardStats {
   unpushedCommits: number;
   unmergedBranches: number;
 }
+
+// ============== 应用快捷键 ==============
+
+export interface AppShortcutBinding {
+  id: string;
+  label: string;
+  description: string;
+  keys: string;
+  defaultKeys: string;
+  enabled: boolean;
+}

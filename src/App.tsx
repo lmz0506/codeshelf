@@ -8,7 +8,8 @@ import { SettingsPage } from "@/pages/Settings";
 import { ToolboxPage } from "@/pages/Toolbox";
 import { ToastContainer, UpdateNotification } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
-import type { Project, Notification } from "@/types";
+import { useAppShortcuts } from "@/hooks/useAppShortcuts";
+import type { Project, Notification, AppShortcutBinding } from "@/types";
 import type { EditorConfig, TerminalConfig, Theme } from "@/stores/appStore";
 
 const queryClient = new QueryClient({
@@ -56,7 +57,7 @@ async function initializeApp() {
 
   try {
     // 并行加载所有数据
-    const [settings, labels, categories, editors, terminal, projects, uiState, notifications] = await Promise.all([
+    const [settings, labels, categories, editors, terminal, projects, uiState, notifications, appShortcuts] = await Promise.all([
       invoke<AppSettings>("get_app_settings"),
       invoke<string[]>("get_labels"),
       invoke<string[]>("get_categories"),
@@ -65,6 +66,7 @@ async function initializeApp() {
       invoke<Project[]>("get_projects"),
       invoke<UiState>("get_ui_state"),
       invoke<NotificationBackend[]>("get_notifications"),
+      invoke<AppShortcutBinding[]>("get_app_shortcuts"),
     ]);
 
     // 转换终端配置格式
@@ -98,6 +100,7 @@ async function initializeApp() {
       projects: projects || [],
       recentDetailProjectIds: uiState.recent_detail_project_ids || [],
       notifications: notificationsFormatted,
+      appShortcuts: appShortcuts || [],
       initialized: true,
     });
 
@@ -114,6 +117,8 @@ function AppContent() {
   useEffect(() => {
     initializeApp();
   }, []);
+
+  useAppShortcuts();
 
   if (!initialized) {
     return (

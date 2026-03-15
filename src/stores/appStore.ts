@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { Project, ViewMode, Notification } from "@/types";
+import type { Project, ViewMode, Notification, AppShortcutBinding } from "@/types";
+import type { ToolType } from "@/types/toolbox";
 import { markProjectDirty as markDirty } from "@/services/stats";
 
 export type Theme = "light" | "dark";
@@ -105,6 +106,15 @@ interface AppState {
   addNotification: (notification: Omit<Notification, "id" | "createdAt">) => void;
   removeNotification: (id: string) => void;
   clearAllNotifications: () => void;
+
+  // App Shortcuts (应用快捷键)
+  appShortcuts: AppShortcutBinding[];
+  setAppShortcuts: (shortcuts: AppShortcutBinding[]) => void;
+
+  // Toolbox Navigation Target (从外部快捷键导航到工具箱子工具)
+  toolboxNavigateTarget: ToolType | null;
+  navigateToTool: (tool: ToolType) => void;
+  clearToolboxNavigateTarget: () => void;
 }
 
 // 防抖保存辅助函数
@@ -372,4 +382,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set({ notifications: [] });
     invoke("clear_notifications").catch(console.error);
   },
+
+  // App Shortcuts (应用快捷键)
+  appShortcuts: [],
+  setAppShortcuts: (appShortcuts) => set({ appShortcuts }),
+
+  // Toolbox Navigation Target
+  toolboxNavigateTarget: null,
+  navigateToTool: (tool) => set({ currentPage: "toolbox", toolboxNavigateTarget: tool }),
+  clearToolboxNavigateTarget: () => set({ toolboxNavigateTarget: null }),
 }));

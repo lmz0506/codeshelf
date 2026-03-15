@@ -431,3 +431,49 @@ pub async fn clear_notifications() -> Result<(), String> {
 pub async fn save_notifications(notifications: Vec<Notification>) -> Result<(), String> {
     save_notifications_internal(&notifications).await
 }
+
+// ============== 应用快捷键管理 ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppShortcutBinding {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    pub keys: String,
+    pub default_keys: String,
+    pub enabled: bool,
+}
+
+#[tauri::command]
+pub async fn get_app_shortcuts() -> Result<Vec<AppShortcutBinding>, String> {
+    let config = get_storage_config()?;
+    let path = config.app_shortcuts_file();
+
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("读取应用快捷键配置失败: {}", e))?;
+
+    if content.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    serde_json::from_str(&content)
+        .map_err(|e| format!("解析应用快捷键配置失败: {}", e))
+}
+
+#[tauri::command]
+pub async fn save_app_shortcuts(shortcuts: Vec<AppShortcutBinding>) -> Result<(), String> {
+    let config = get_storage_config()?;
+    config.ensure_dirs()?;
+
+    let content = serde_json::to_string_pretty(&shortcuts)
+        .map_err(|e| format!("序列化应用快捷键配置失败: {}", e))?;
+
+    fs::write(config.app_shortcuts_file(), content)
+        .map_err(|e| format!("保存应用快捷键配置失败: {}", e))?;
+    Ok(())
+}
