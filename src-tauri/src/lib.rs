@@ -156,6 +156,7 @@ pub fn run() {
             git::git_pull,
             git::git_fetch,
             git::git_clone,
+            git::cancel_git_clone,
             git::sync_to_remote,
             git::checkout_branch,
             git::create_branch,

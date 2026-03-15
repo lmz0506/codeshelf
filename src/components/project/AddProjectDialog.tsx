@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { addProject } from "@/services/db";
 import { isGitRepo, gitInit } from "@/services/git";
 import { useAppStore } from "@/stores/appStore";
@@ -21,6 +22,11 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedTechs, setSelectedTechs] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [cloneProgress, setCloneProgress] = useState<{
+    phase: string;
+    percent: number;
+    message: string;
+  } | null>(null);
   const [error, setError] = useState("");
   const [newCategoryInput, setNewCategoryInput] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -59,15 +65,27 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
     );
   }
 
+  async function handleCancelClone() {
+    try {
+      await invoke("cancel_git_clone");
+    } catch {
+      // ignore cancel errors
+    }
+  }
+
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape" && !loading) {
-        onCancel();
+      if (event.key === "Escape") {
+        if (loading && mode === "git") {
+          handleCancelClone();
+        } else if (!loading) {
+          onCancel();
+        }
       }
     }
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [loading, onCancel]);
+  }, [loading, mode, onCancel]);
 
   async function handleSelectLocalPath() {
     try {
@@ -119,6 +137,7 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
   }
 
   async function handleConfirm() {
+    let unlisten: (() => void) | null = null;
     try {
       setLoading(true);
       setError("");
@@ -164,6 +183,14 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
           name = match ? match[1] : "Unknown";
         }
 
+        // Listen for clone progress events
+        unlisten = await listen<{ phase: string; percent: number; message: string }>(
+          "git-clone-progress",
+          (event) => {
+            setCloneProgress(event.payload);
+          }
+        );
+
         const clonePath = await invoke<string>("git_clone", {
           url: gitUrl.trim(),
           targetDir: gitTargetPath,
@@ -180,8 +207,13 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
         onConfirm(project);
       }
     } catch (err: any) {
-      setError(err.toString());
+      const errStr = err.toString();
+      if (!errStr.includes("已取消")) {
+        setError(errStr);
+      }
     } finally {
+      if (unlisten) unlisten();
+      setCloneProgress(null);
       setLoading(false);
     }
   }
@@ -260,16 +292,22 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
             </div>
           </div>
           <button
-            onClick={onCancel}
-            disabled={loading}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+            onClick={() => {
+              if (loading && mode === "git") {
+                handleCancelClone();
+              } else if (!loading) {
+                onCancel();
+              }
+            }}
+            disabled={loading && mode !== "git"}
+            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <i className="fa-solid fa-xmark text-lg"></i>
           </button>
         </div>
 
         {/* 可滚动内容区 */}
-        <div className="flex-1 overflow-y-auto add-project-scrollbar">
+        <div className={`flex-1 overflow-y-auto add-project-scrollbar ${loading ? 'pointer-events-none opacity-60' : ''}`}>
           {/* 标签切换 */}
           <div className="px-8 pt-6">
             <div className="flex gap-3 p-1 bg-gray-100 rounded-xl inline-flex">
@@ -551,14 +589,52 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
           </div>
         </div>
 
+        {/* Clone Progress Bar */}
+        {loading && mode === "git" && (
+          <div className="px-8 py-4 border-t border-blue-100 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-sm font-medium text-blue-700">
+                  {cloneProgress?.phase
+                    ? ({
+                        cloning: "准备中...",
+                        enumerating: "枚举对象...",
+                        counting: "计数对象...",
+                        compressing: "压缩对象...",
+                        receiving: "接收对象...",
+                        resolving: "解析引用...",
+                      } as Record<string, string>)[cloneProgress.phase] || "处理中..."
+                    : "准备中..."}
+                </span>
+              </div>
+              {cloneProgress && cloneProgress.percent >= 0 && (
+                <span className="text-sm font-mono text-blue-600 font-medium">
+                  {cloneProgress.percent}%
+                </span>
+              )}
+            </div>
+            <div className="w-full bg-blue-100 rounded-full h-2 overflow-hidden">
+              {cloneProgress && cloneProgress.percent >= 0 ? (
+                <div
+                  className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${cloneProgress.percent}%` }}
+                />
+              ) : (
+                <div className="add-project-progress-indeterminate bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full" />
+              )}
+            </div>
+          </div>
+        )}
+
         {/* 底部固定按钮栏 */}
         <div className="px-8 py-5 bg-gray-50 border-t border-gray-200 flex justify-end gap-3 shrink-0 sticky bottom-0 z-10">
           <button
-            onClick={onCancel}
-            disabled={loading}
-            className="px-6 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-200 transition-all"
+            onClick={loading && mode === "git" ? handleCancelClone : onCancel}
+            disabled={loading && mode !== "git"}
+            className="px-6 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            取消
+            {loading && mode === "git" ? "取消克隆" : "取消"}
           </button>
           <button
             onClick={handleConfirm}
@@ -676,6 +752,14 @@ export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps)
         }
         .add-project-scrollbar::-webkit-scrollbar-thumb:hover {
           background: #a8a8a8;
+        }
+        .add-project-progress-indeterminate {
+          width: 40%;
+          animation: addProjectProgressSlide 1.5s ease-in-out infinite;
+        }
+        @keyframes addProjectProgressSlide {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(250%); }
         }
       `}</style>
     </div>

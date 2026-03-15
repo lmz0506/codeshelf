@@ -162,3 +162,7 @@ export async function isGitRepo(path: string): Promise<boolean> {
 export async function gitInit(path: string): Promise<string> {
   return invoke("git_init", { path });
 }
+
+export async function cancelGitClone(): Promise<void> {
+  return invoke("cancel_git_clone");
+}
