@@ -28,6 +28,8 @@ import {
   HelpCircle,
   Download,
   Upload,
+  Play,
+  Star,
 } from "lucide-react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
@@ -47,8 +49,12 @@ import {
   getClaudeInstallationsCache,
   saveClaudeInstallationsCache,
   clearClaudeInstallationsCache,
+  launchClaudeInTerminal,
+  getClaudeLaunchDirs,
+  saveClaudeLaunchDirs,
 } from "@/services/toolbox";
 import type { ClaudeCodeInfo, ConfigFileInfo, ConfigProfile } from "@/types/toolbox";
+import { useAppStore } from "@/stores/appStore";
 import {
   READONLY_FILES,
   EDITABLE_FILES,
@@ -116,10 +122,19 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   const [wslClaudePath, setWslClaudePath] = useState("");
   const [wslClaudePathError, setWslClaudePathError] = useState<string | null>(null);
 
+  // 启动 Claude
+  const [launchDirs, setLaunchDirs] = useState<string[]>([]);
+  const [showLaunchMenu, setShowLaunchMenu] = useState(false);
+  const [showManageLaunchDirs, setShowManageLaunchDirs] = useState(false);
+
+  const terminalConfig = useAppStore((s) => s.terminalConfig);
+
   useEffect(() => {
     loadAll();
     // 异步加载快捷配置
     loadQuickConfigs().then(setQuickConfigs);
+    // 加载启动目录列表
+    getClaudeLaunchDirs().then(setLaunchDirs).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -672,6 +687,48 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     }
   }
 
+  // ============== 启动 Claude 相关 ==============
+
+  async function handleLaunchClaude(dir?: string) {
+    try {
+      await launchClaudeInTerminal(
+        dir,
+        terminalConfig.type,
+        terminalConfig.customPath,
+        terminalConfig.paths?.[terminalConfig.type]
+      );
+      setShowLaunchMenu(false);
+    } catch (err) {
+      console.error("启动 Claude 失败:", err);
+      alert(`启动 Claude 失败: ${err}`);
+    }
+  }
+
+  async function handleAddLaunchDir() {
+    try {
+      const selected = await open({
+        title: "选择常用目录",
+        directory: true,
+        multiple: false,
+      });
+      if (selected && typeof selected === "string") {
+        if (!launchDirs.includes(selected)) {
+          const updated = [...launchDirs, selected];
+          setLaunchDirs(updated);
+          await saveClaudeLaunchDirs(updated);
+        }
+      }
+    } catch (err) {
+      console.error("添加目录失败:", err);
+    }
+  }
+
+  async function handleRemoveLaunchDir(dir: string) {
+    const updated = launchDirs.filter((d) => d !== dir);
+    setLaunchDirs(updated);
+    await saveClaudeLaunchDirs(updated).catch(console.error);
+  }
+
   const isReadonlyFile = (fileName: string) => READONLY_FILES.includes(fileName);
   const isEditableFile = (fileName: string) => EDITABLE_FILES.includes(fileName);
   const isSettingsJson = selectedFile?.name === "settings.json";
@@ -685,6 +742,86 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
         onBack={onBack}
         actions={
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setShowLaunchMenu(!showLaunchMenu)}
+                className="re-btn flex items-center gap-2"
+                title="启动 Claude Code"
+              >
+                <Play size={16} />
+                <span>启动 Claude</span>
+                <ChevronDown size={14} />
+              </button>
+              {showLaunchMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowLaunchMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-72 bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 py-1 overflow-hidden">
+                    {/* 在配置目录启动 */}
+                    {selectedEnv?.configDir && (
+                      <button
+                        onClick={() => handleLaunchClaude(selectedEnv.configDir!)}
+                        className="w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
+                      >
+                        <Play size={14} className="text-green-500 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-gray-900 dark:text-white">在配置目录启动</div>
+                          <div className="text-xs text-gray-500 truncate">{selectedEnv.configDir}</div>
+                        </div>
+                      </button>
+                    )}
+                    {/* 选择目录启动 */}
+                    <button
+                      onClick={async () => {
+                        try {
+                          const selected = await open({
+                            title: "选择工作目录",
+                            directory: true,
+                            multiple: false,
+                          });
+                          if (selected && typeof selected === "string") {
+                            handleLaunchClaude(selected);
+                          }
+                        } catch (err) {
+                          console.error("选择目录失败:", err);
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
+                    >
+                      <FolderOpen size={14} className="text-blue-500 flex-shrink-0" />
+                      <span className="text-gray-900 dark:text-white">选择目录启动...</span>
+                    </button>
+                    {/* 常用目录列表 */}
+                    {launchDirs.length > 0 && (
+                      <>
+                        <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                        {launchDirs.map((dir) => (
+                          <button
+                            key={dir}
+                            onClick={() => handleLaunchClaude(dir)}
+                            className="w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm group"
+                          >
+                            <Star size={14} className="text-yellow-500 flex-shrink-0" />
+                            <span className="text-gray-900 dark:text-white truncate flex-1" title={dir}>{dir}</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                    {/* 管理常用目录 */}
+                    <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                    <button
+                      onClick={() => {
+                        setShowLaunchMenu(false);
+                        setShowManageLaunchDirs(true);
+                      }}
+                      className="w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
+                    >
+                      <Settings size={14} className="text-gray-400 flex-shrink-0" />
+                      <span className="text-gray-600 dark:text-gray-400">管理常用目录...</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <button
               onClick={() => setShowQuickConfigManager(true)}
               className="re-btn flex items-center gap-2"
@@ -1643,6 +1780,67 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
               >
                 <Check size={14} className="mr-1" />
                 确定
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 管理常用目录弹框 */}
+      {showManageLaunchDirs && (
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[70vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Star size={20} className="text-yellow-500" />
+                管理常用目录
+              </h3>
+              <button
+                onClick={() => setShowManageLaunchDirs(false)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {launchDirs.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  <FolderOpen size={32} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">暂无常用目录</p>
+                  <p className="text-xs mt-1">点击下方按钮添加</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {launchDirs.map((dir) => (
+                    <div
+                      key={dir}
+                      className="flex items-center gap-2 p-2 rounded-lg border border-gray-200 dark:border-gray-700 group"
+                    >
+                      <Star size={14} className="text-yellow-500 flex-shrink-0" />
+                      <span className="text-sm text-gray-900 dark:text-white truncate flex-1 font-mono" title={dir}>
+                        {dir}
+                      </span>
+                      <button
+                        onClick={() => handleRemoveLaunchDir(dir)}
+                        className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-opacity"
+                        title="移除"
+                      >
+                        <Trash2 size={14} className="text-red-500" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between p-4 border-t border-gray-200 dark:border-gray-700">
+              <Button onClick={handleAddLaunchDir} variant="secondary">
+                <Plus size={14} className="mr-1" />
+                添加目录
+              </Button>
+              <Button onClick={() => setShowManageLaunchDirs(false)} variant="secondary">
+                关闭
               </Button>
             </div>
           </div>

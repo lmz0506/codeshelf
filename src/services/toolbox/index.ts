@@ -375,6 +375,29 @@ export async function clearClaudeInstallationsCache(): Promise<void> {
   return invoke("clear_claude_installations_cache");
 }
 
+// Claude 启动目录管理
+export async function launchClaudeInTerminal(
+  workDir?: string,
+  terminalType?: string,
+  customPath?: string,
+  terminalPath?: string
+): Promise<void> {
+  return invoke("launch_claude_in_terminal", {
+    workDir,
+    terminalType,
+    customPath,
+    terminalPath,
+  });
+}
+
+export async function getClaudeLaunchDirs(): Promise<string[]> {
+  return invoke("get_claude_launch_dirs");
+}
+
+export async function saveClaudeLaunchDirs(dirs: string[]): Promise<void> {
+  return invoke("save_claude_launch_dirs", { dirs });
+}
+
 // ============== Netcat 协议测试服务 ==============
 
 import type {

@@ -101,6 +101,10 @@ impl StorageConfig {
     pub fn netcat_sessions_file(&self) -> PathBuf {
         self.data_dir.join("netcat_sessions.json")
     }
+
+    pub fn claude_launch_dirs_file(&self) -> PathBuf {
+        self.data_dir.join("claude_launch_dirs.json")
+    }
 }
 
 /// 初始化存储配置

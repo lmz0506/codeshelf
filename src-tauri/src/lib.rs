@@ -253,6 +253,10 @@ pub fn run() {
             toolbox::claude_code::get_claude_installations_cache,
             toolbox::claude_code::save_claude_installations_cache,
             toolbox::claude_code::clear_claude_installations_cache,
+            // Claude Code - Launch commands
+            toolbox::claude_code::launch_claude_in_terminal,
+            toolbox::claude_code::get_claude_launch_dirs,
+            toolbox::claude_code::save_claude_launch_dirs,
             // Toolbox - Netcat commands
             toolbox::netcat::netcat_init,
             toolbox::netcat::netcat_create_session,

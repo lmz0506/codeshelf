@@ -1539,3 +1539,260 @@ pub async fn clear_claude_installations_cache() -> Result<(), String> {
     }
     Ok(())
 }
+
+// ============== 启动 Claude Code ==============
+
+/// 在终端中启动 Claude Code
+#[tauri::command]
+pub async fn launch_claude_in_terminal(
+    work_dir: Option<String>,
+    terminal_type: Option<String>,
+    custom_path: Option<String>,
+    terminal_path: Option<String>,
+) -> Result<(), String> {
+    let dir = work_dir.unwrap_or_else(|| {
+        dirs::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string())
+    });
+
+    let term_type = terminal_type.unwrap_or_else(|| "default".to_string());
+
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NEW_CONSOLE: u32 = 0x00000010;
+
+        match term_type.as_str() {
+            "powershell" => {
+                let ps_path = terminal_path.as_deref().unwrap_or("powershell");
+                let escaped_path = dir.replace("'", "''");
+                Command::new(ps_path)
+                    .args([
+                        "-NoExit",
+                        "-Command",
+                        &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
+                    ])
+                    .creation_flags(CREATE_NEW_CONSOLE)
+                    .spawn()
+                    .map_err(|e| format!("启动终端失败: {}", e))?;
+            }
+            "cmd" => {
+                let cmd_path = terminal_path.as_deref().unwrap_or("cmd");
+                Command::new(cmd_path)
+                    .args(["/k", &format!("cd /d \"{}\" && claude", dir)])
+                    .creation_flags(CREATE_NEW_CONSOLE)
+                    .spawn()
+                    .map_err(|e| format!("启动终端失败: {}", e))?;
+            }
+            "custom" => {
+                if let Some(custom) = custom_path {
+                    Command::new(&custom)
+                        .arg(&dir)
+                        .creation_flags(CREATE_NEW_CONSOLE)
+                        .spawn()
+                        .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                } else {
+                    return Err("未提供自定义终端路径".to_string());
+                }
+            }
+            _ => {
+                // 默认: Windows Terminal → PowerShell fallback
+                let wt_path = terminal_path.as_deref().unwrap_or("wt");
+                let wt_result = Command::new(wt_path)
+                    .args(["-d", &dir, "cmd", "/k", "claude"])
+                    .spawn();
+
+                if wt_result.is_err() {
+                    let escaped_path = dir.replace("'", "''");
+                    Command::new("powershell")
+                        .args([
+                            "-NoExit",
+                            "-Command",
+                            &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
+                        ])
+                        .creation_flags(CREATE_NEW_CONSOLE)
+                        .spawn()
+                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let augmented_path = get_augmented_path();
+        let escaped_dir = dir.replace("\\", "\\\\").replace("\"", "\\\"");
+        let script_cmd = format!(
+            "cd \"{}\" && export PATH=\"{}\" && claude",
+            escaped_dir, augmented_path
+        );
+
+        match term_type.as_str() {
+            "iterm" => {
+                let apple_script = format!(
+                    r#"tell application "iTerm"
+                        activate
+                        set newWindow to (create window with default profile)
+                        tell current session of newWindow
+                            write text "{}"
+                        end tell
+                    end tell"#,
+                    script_cmd.replace("\"", "\\\"")
+                );
+                Command::new("osascript")
+                    .args(["-e", &apple_script])
+                    .spawn()
+                    .map_err(|e| format!("启动 iTerm 失败: {}", e))?;
+            }
+            "custom" => {
+                if let Some(custom) = custom_path {
+                    Command::new(&custom)
+                        .arg(&dir)
+                        .spawn()
+                        .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                } else {
+                    return Err("未提供自定义终端路径".to_string());
+                }
+            }
+            _ => {
+                // 默认: Terminal.app
+                let apple_script = format!(
+                    r#"tell application "Terminal"
+                        activate
+                        do script "{}"
+                    end tell"#,
+                    script_cmd.replace("\"", "\\\"")
+                );
+                Command::new("osascript")
+                    .args(["-e", &apple_script])
+                    .spawn()
+                    .map_err(|e| format!("启动 Terminal 失败: {}", e))?;
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let augmented_path = get_augmented_path();
+        let bash_cmd = format!(
+            "cd '{}' && export PATH='{}' && claude",
+            dir.replace("'", "'\\''"),
+            augmented_path.replace("'", "'\\''")
+        );
+
+        match term_type.as_str() {
+            "custom" => {
+                if let Some(custom) = custom_path {
+                    Command::new(&custom)
+                        .current_dir(&dir)
+                        .spawn()
+                        .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                } else {
+                    return Err("未提供自定义终端路径".to_string());
+                }
+            }
+            "powershell" => {
+                // WSL: powershell.exe
+                let ps_path = terminal_path.as_deref().unwrap_or("powershell.exe");
+                let escaped_path = dir.replace("'", "''");
+                let result = Command::new(ps_path)
+                    .args([
+                        "-NoExit",
+                        "-Command",
+                        &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
+                    ])
+                    .spawn();
+                if result.is_err() {
+                    Command::new("powershell")
+                        .args([
+                            "-NoExit",
+                            "-Command",
+                            &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
+                        ])
+                        .spawn()
+                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                }
+            }
+            "cmd" => {
+                // WSL: cmd.exe
+                let cmd_path = terminal_path.as_deref().unwrap_or("cmd.exe");
+                let result = Command::new(cmd_path)
+                    .args(["/k", &format!("cd /d {} && claude", dir)])
+                    .spawn();
+                if result.is_err() {
+                    Command::new("cmd")
+                        .args(["/k", &format!("cd /d {} && claude", dir)])
+                        .spawn()
+                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                }
+            }
+            _ => {
+                // 默认: Windows Terminal (WSL) → gnome-terminal → 其他
+                let wt_path = terminal_path.as_deref().unwrap_or("wt.exe");
+                let wt_result = Command::new(wt_path)
+                    .args(["-d", &dir, "bash", "-lc", &format!("export PATH='{}' && claude", augmented_path.replace("'", "'\\''"))])
+                    .spawn();
+
+                if wt_result.is_err() {
+                    let terminals = ["gnome-terminal", "konsole", "xterm", "xfce4-terminal"];
+                    let mut opened = false;
+
+                    for term in terminals {
+                        let result = match term {
+                            "gnome-terminal" => Command::new(term)
+                                .args(["--", "bash", "-lc", &bash_cmd])
+                                .spawn(),
+                            "konsole" => Command::new(term)
+                                .args(["-e", "bash", "-lc", &bash_cmd])
+                                .spawn(),
+                            _ => Command::new(term)
+                                .args(["-e", &format!("bash -lc '{}'", bash_cmd.replace("'", "'\\''"))])
+                                .spawn(),
+                        };
+
+                        if result.is_ok() {
+                            opened = true;
+                            break;
+                        }
+                    }
+
+                    if !opened {
+                        return Err("未找到可用的终端程序".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// 获取保存的 Claude 启动目录列表
+#[tauri::command]
+pub async fn get_claude_launch_dirs() -> Result<Vec<String>, String> {
+    let config = storage::get_storage_config()?;
+    let path = config.claude_launch_dirs_file();
+
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("读取启动目录列表失败: {}", e))?;
+
+    let dirs: Vec<String> = serde_json::from_str(&content)
+        .map_err(|e| format!("解析启动目录列表失败: {}", e))?;
+
+    Ok(dirs)
+}
+
+/// 保存 Claude 启动目录列表
+#[tauri::command]
+pub async fn save_claude_launch_dirs(dirs: Vec<String>) -> Result<(), String> {
+    let config = storage::get_storage_config()?;
+    let content = serde_json::to_string_pretty(&dirs)
+        .map_err(|e| format!("序列化启动目录列表失败: {}", e))?;
+    fs::write(config.claude_launch_dirs_file(), content)
+        .map_err(|e| format!("保存启动目录列表失败: {}", e))?;
+    Ok(())
+}
