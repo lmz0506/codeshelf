@@ -187,6 +187,7 @@ async function handleGlobalAction(actionId: string) {
 // ============== 全局快捷键注册/注销 ==============
 
 let registeredAccelerators: string[] = [];
+let shortcutsReady = false;
 
 async function registerGlobalShortcuts(shortcuts: AppShortcutBinding[]) {
   // 先注销旧的
@@ -212,7 +213,7 @@ async function registerGlobalShortcuts(shortcuts: AppShortcutBinding[]) {
     }
   }
 
-  if (failedKeys.length > 0) {
+  if (failedKeys.length > 0 && shortcutsReady) {
     const keysList = failedKeys.join("、");
     const platformTip = IS_MAC
       ? "请在「系统设置 > 隐私与安全 > 辅助功能」中授权本应用"
@@ -249,6 +250,7 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
       console.error("保存默认快捷键失败:", err);
     }
     setAppShortcuts(defaults);
+    shortcutsReady = true;
     return defaults;
   }
 
@@ -279,9 +281,11 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
       console.error("补齐快捷键失败:", err);
     }
     setAppShortcuts(patched);
+    shortcutsReady = true;
     return patched;
   }
 
+  shortcutsReady = true;
   return appShortcuts;
 }
 
