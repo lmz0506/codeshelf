@@ -9,3 +9,4 @@ export type { ToastType, ToastMessage } from "./Toast";
 export { UpdateNotification } from "./UpdateNotification";
 export { AnimatedLogo } from "./AnimatedLogo";
 export { NotificationPanel } from "./NotificationPanel";
+export { ShortcutQuickLookup } from "./ShortcutQuickLookup";

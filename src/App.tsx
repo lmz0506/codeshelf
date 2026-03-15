@@ -7,7 +7,7 @@ import { ShelfPage } from "@/pages/Shelf";
 import { DashboardPage } from "@/pages/Dashboard";
 import { SettingsPage } from "@/pages/Settings";
 import { ToolboxPage } from "@/pages/Toolbox";
-import { ToastContainer, UpdateNotification } from "@/components/ui";
+import { ToastContainer, UpdateNotification, ShortcutQuickLookup } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import type { Project, Notification, AppShortcutBinding } from "@/types";
@@ -161,6 +161,7 @@ function AppContent() {
       </MainLayout>
       <ToastContainer />
       <UpdateNotification />
+      <ShortcutQuickLookup />
     </>
   );
 }

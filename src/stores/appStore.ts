@@ -111,6 +111,10 @@ interface AppState {
   appShortcuts: AppShortcutBinding[];
   setAppShortcuts: (shortcuts: AppShortcutBinding[]) => void;
 
+  // Shortcut Quick Lookup (快捷键快速查找弹窗)
+  showShortcutQuickLookup: boolean;
+  toggleShortcutQuickLookup: () => void;
+
   // Toolbox Navigation Target (从外部快捷键导航到工具箱子工具)
   toolboxNavigateTarget: ToolType | null;
   navigateToTool: (tool: ToolType) => void;
@@ -386,6 +390,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // App Shortcuts (应用快捷键)
   appShortcuts: [],
   setAppShortcuts: (appShortcuts) => set({ appShortcuts }),
+
+  // Shortcut Quick Lookup (快捷键快速查找弹窗)
+  showShortcutQuickLookup: false,
+  toggleShortcutQuickLookup: () => set((state) => ({ showShortcutQuickLookup: !state.showShortcutQuickLookup })),
 
   // Toolbox Navigation Target
   toolboxNavigateTarget: null,

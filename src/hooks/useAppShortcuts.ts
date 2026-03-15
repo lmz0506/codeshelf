@@ -113,7 +113,10 @@ const TOOL_MAP: Record<string, ToolType> = {
 function executeAction(actionId: string) {
   const store = useAppStore.getState();
 
-  if (actionId.startsWith("nav_")) {
+  if (actionId === "tool_shortcuts") {
+    // 快捷键备忘：弹出快速查找弹窗
+    store.toggleShortcutQuickLookup();
+  } else if (actionId.startsWith("nav_")) {
     const page = actionId.replace("nav_", "") as "shelf" | "dashboard" | "toolbox" | "settings";
     store.setCurrentPage(page);
   } else if (actionId.startsWith("tool_") && TOOL_MAP[actionId]) {
@@ -130,11 +133,11 @@ async function handleGlobalAction(actionId: string) {
   const win = getCurrentWindow();
 
   if (actionId === "show_window") {
-    // 切换窗口可见性
+    // 切换窗口可见性（基于 isVisible + isMinimized，避免 isFocused 因 Alt 键闪失）
     try {
       const visible = await win.isVisible();
-      const focused = await win.isFocused();
-      if (visible && focused) {
+      const minimized = visible && await win.isMinimized();
+      if (visible && !minimized) {
         await win.hide();
       } else {
         await win.show();
@@ -162,6 +165,9 @@ async function handleGlobalAction(actionId: string) {
 // ============== 全局快捷键注册/注销 ==============
 
 let shortcutsReady = false;
+
+// 防止全局快捷键在窗口聚焦时 DOM keydown 与 OS 钩子双重触发
+let _lastLocalHandled = { id: "", time: 0 };
 
 async function registerGlobalShortcuts(shortcuts: AppShortcutBinding[]) {
   const globalBindings = shortcuts
@@ -245,8 +251,9 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
 
 /**
  * 全局键盘快捷键监听 Hook
- * - 应用内快捷键：document keydown（仅处理 non-global）
- * - 系统级快捷键：Windows 键盘钩子 + Tauri 事件（仅处理 global）
+ * - 应用内快捷键：document keydown（处理所有已启用快捷键，含 global）
+ * - 系统级快捷键：Windows 键盘钩子 + Tauri 事件（窗口不聚焦时触发）
+ * - 去重机制：窗口聚焦时 DOM 先处理，OS 钩子事件通过时间戳去重跳过
  */
 export function useAppShortcuts() {
   const appShortcuts = useAppStore((state) => state.appShortcuts);
@@ -264,15 +271,22 @@ export function useAppShortcuts() {
       if (!pressed) return;
 
       const { appShortcuts } = useAppStore.getState();
-      // 只匹配非全局快捷键（全局的由 OS 层处理，避免重复触发）
+      // 匹配所有已启用的快捷键（全局快捷键在窗口聚焦时也由 DOM 处理）
       const binding = appShortcuts.find(
-        (s) => s.enabled && !s.global && s.keys === pressed
+        (s) => s.enabled && s.keys === pressed
       );
       if (!binding) return;
 
       e.preventDefault();
       e.stopPropagation();
-      executeAction(binding.id);
+
+      if (binding.global) {
+        // 标记为本地已处理，防止 OS 钩子事件重复触发
+        _lastLocalHandled = { id: binding.id, time: Date.now() };
+        handleGlobalAction(binding.id);
+      } else {
+        executeAction(binding.id);
+      }
     }
 
     document.addEventListener("keydown", handleKeyDown, true);
@@ -284,6 +298,11 @@ export function useAppShortcuts() {
     registerGlobalShortcuts(appShortcuts);
 
     const unlistenPromise = listen<string>("global-shortcut-event", (event) => {
+      // 跳过已由 DOM keydown 处理的事件（窗口聚焦时防止重复触发）
+      const now = Date.now();
+      if (_lastLocalHandled.id === event.payload && now - _lastLocalHandled.time < 500) {
+        return;
+      }
       handleGlobalAction(event.payload);
     });
 
