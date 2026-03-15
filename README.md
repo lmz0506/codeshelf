@@ -37,11 +37,11 @@
 
 ### 必需环境
 
-| 环境 | 版本要求 | 安装方式 |
+| 环境 | 版本要求    | 安装方式 |
 |------|---------|---------|
-| Node.js | >= 18.x | [nodejs.org](https://nodejs.org/) |
+| Node.js | >= 20.x | [nodejs.org](https://nodejs.org/) |
 | Rust | >= 1.77 | [rustup.rs](https://rustup.rs/) |
-| Tauri CLI | >= 2.x | `cargo install tauri-cli` |
+| Tauri CLI | >= 2.x  | `cargo install tauri-cli` |
 
 ### 系统依赖
 
