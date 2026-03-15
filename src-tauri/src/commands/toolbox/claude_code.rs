@@ -28,7 +28,49 @@ fn new_command(program: &str) -> Command {
 /// 创建 Command（非 Windows）
 #[cfg(not(target_os = "windows"))]
 fn new_command(program: &str) -> Command {
-    Command::new(program)
+    let mut cmd = Command::new(program);
+    cmd.env("PATH", get_augmented_path());
+    cmd
+}
+
+/// 获取增强的 PATH（macOS/Linux）
+/// macOS GUI 应用从 Finder/Dock 启动时只继承最小系统 PATH，
+/// 需要手动补充常见安装目录
+#[cfg(not(target_os = "windows"))]
+fn get_augmented_path() -> String {
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    let home_str = home.to_string_lossy();
+
+    let extra_dirs = [
+        "/usr/local/bin".to_string(),
+        "/opt/homebrew/bin".to_string(),
+        format!("{}/.local/bin", home_str),
+        format!("{}/.cargo/bin", home_str),
+    ];
+
+    // 收集所有 nvm 版本目录
+    let nvm_dir_env = std::env::var("NVM_DIR")
+        .unwrap_or_else(|_| format!("{}/.nvm", home_str));
+    let mut nvm_bins: Vec<String> = Vec::new();
+    let nvm_versions = PathBuf::from(&nvm_dir_env).join("versions/node");
+    if let Ok(entries) = fs::read_dir(&nvm_versions) {
+        for entry in entries.flatten() {
+            let bin = entry.path().join("bin");
+            if bin.is_dir() {
+                nvm_bins.push(bin.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    let mut parts: Vec<&str> = current_path.split(':').collect();
+    for dir in extra_dirs.iter().chain(nvm_bins.iter()) {
+        if !parts.contains(&dir.as_str()) {
+            parts.push(dir.as_str());
+        }
+    }
+
+    parts.join(":")
 }
 
 /// 清理 WSL 命令输出中的特殊字符（\r, \0 等）
@@ -353,6 +395,15 @@ async fn check_host_claude() -> ClaudeCodeInfo {
         }
     }
 
+    // 增强 PATH 仍未找到时，尝试通过登录 shell 查找（处理 fnm/volta 等动态 PATH）
+    #[cfg(not(target_os = "windows"))]
+    if !info.installed {
+        if let Some(path) = find_claude_via_login_shell() {
+            info.installed = true;
+            info.path = Some(path);
+        }
+    }
+
     // 获取版本 - 尝试多种方式
     if info.installed {
         info.version = get_claude_version_host();
@@ -522,6 +573,28 @@ fn parse_version(raw: &str) -> String {
     }
 
     raw.to_string()
+}
+
+/// 通过登录 shell 查找 claude 命令路径（macOS/Linux）
+/// 处理用户 shell 配置文件中动态设置的 PATH（如 fnm、volta、mise 等）
+#[cfg(not(target_os = "windows"))]
+fn find_claude_via_login_shell() -> Option<String> {
+    // 按优先级尝试 zsh（macOS 默认）和 bash
+    let shells = ["zsh", "bash"];
+    for shell in &shells {
+        if let Ok(output) = Command::new(shell)
+            .args(["-lc", "which claude"])
+            .output()
+        {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() && !path.contains("not found") {
+                    return Some(path.lines().next().unwrap_or(&path).to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 /// 获取主机名
