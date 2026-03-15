@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Download, X, RefreshCw, CheckCircle, ExternalLink, AlertCircle } from "lucide-react";
+import { Download, X, RefreshCw, CheckCircle, ExternalLink, AlertCircle, FileText } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import {
   silentCheckForUpdates,
@@ -10,14 +10,21 @@ import {
 import { showToast } from "@/components/ui/Toast";
 
 const RELEASES_URL = "https://github.com/en-o/codeshelf/releases/latest";
+const DEFAULT_RELEASE_NOTE = "修复了一些问题";
 
 type UpdateState = "idle" | "checking" | "available" | "downloading" | "ready" | "error";
+
+function getReleaseNotes(info: UpdateInfo | null): string {
+  if (!info?.body || !info.body.trim()) return DEFAULT_RELEASE_NOTE;
+  return info.body.trim();
+}
 
 export function UpdateNotification() {
   const [state, setState] = useState<UpdateState>("idle");
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [progress, setProgress] = useState(0);
   const [dismissed, setDismissed] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
 
   // 启动时静默检查更新
   useEffect(() => {
@@ -28,8 +35,13 @@ export function UpdateNotification() {
       if (info?.available) {
         setUpdateInfo(info);
         setState("available");
-        // 记录到通知中心
-        showToast("info", "发现新版本", `v${info.version} 可用，正在后台下载...`);
+        const notes = getReleaseNotes(info);
+        // 记录到通知中心（含更新说明）
+        showToast(
+          "info",
+          `发现新版本 v${info.version}`,
+          notes,
+        );
         // 自动开始下载
         startDownload();
       } else {
@@ -83,6 +95,8 @@ export function UpdateNotification() {
   if (dismissed || state === "idle" || state === "checking") {
     return null;
   }
+
+  const releaseNotes = getReleaseNotes(updateInfo);
 
   return (
     <div className="fixed bottom-4 left-4 z-50 max-w-sm animate-slide-up">
@@ -141,6 +155,30 @@ export function UpdateNotification() {
             >
               <X className="w-4 h-4 text-gray-400" />
             </button>
+          </div>
+
+          {/* 更新说明 */}
+          <div className="mt-3 border-t border-gray-100 pt-3">
+            <button
+              onClick={() => setShowNotes(!showNotes)}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors w-full"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span className="font-medium">更新说明</span>
+              <svg
+                className={`w-3 h-3 ml-auto transition-transform ${showNotes ? 'rotate-180' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showNotes && (
+              <div className="mt-2 text-xs text-gray-600 whitespace-pre-wrap max-h-40 overflow-y-auto bg-gray-50 rounded-md p-2.5 leading-relaxed">
+                {releaseNotes}
+              </div>
+            )}
           </div>
 
           {/* 操作按钮 */}
