@@ -117,4 +117,5 @@ export interface AppShortcutBinding {
   keys: string;
   defaultKeys: string;
   enabled: boolean;
+  global: boolean;
 }

@@ -42,6 +42,9 @@
     "updater:default",
     "process:allow-restart",
     "process:allow-exit",
+    "global-shortcut:default",
+    "core:window:allow-is-visible",
+    "core:window:allow-is-focused",
     {
       "identifier": "fs:scope",
       "allow": [

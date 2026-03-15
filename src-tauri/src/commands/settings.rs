@@ -443,6 +443,8 @@ pub struct AppShortcutBinding {
     pub keys: String,
     pub default_keys: String,
     pub enabled: bool,
+    #[serde(default)]
+    pub global: bool,
 }
 
 #[tauri::command]

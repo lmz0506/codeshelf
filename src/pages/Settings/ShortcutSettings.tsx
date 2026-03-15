@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { RotateCcw, Keyboard, Pencil, X } from "lucide-react";
+import { RotateCcw, Keyboard, Pencil, X, Globe } from "lucide-react";
 import { Button } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import {
@@ -17,6 +17,10 @@ interface ShortcutSettingsProps {
 
 // 快捷键分组定义
 const GROUPS: { label: string; ids: string[] }[] = [
+  {
+    label: "全局",
+    ids: ["show_window"],
+  },
   {
     label: "页面导航",
     ids: ["nav_shelf", "nav_dashboard", "nav_toolbox", "nav_settings"],
@@ -107,6 +111,14 @@ export function ShortcutSettings({ onClose }: ShortcutSettingsProps) {
   function toggleEnabled(id: string) {
     const updated = shortcuts.map((s) =>
       s.id === id ? { ...s, enabled: !s.enabled } : s
+    );
+    saveAll(updated);
+  }
+
+  // 切换全局/应用内
+  function toggleGlobal(id: string) {
+    const updated = shortcuts.map((s) =>
+      s.id === id ? { ...s, global: !s.global } : s
     );
     saveAll(updated);
   }
@@ -238,6 +250,19 @@ export function ShortcutSettings({ onClose }: ShortcutSettingsProps) {
                         </button>
                       )}
 
+                      {/* 全局快捷键切换 */}
+                      <button
+                        onClick={() => toggleGlobal(shortcut.id)}
+                        className={`p-1 rounded transition-colors ${
+                          shortcut.global
+                            ? "text-green-500 hover:text-green-600 bg-green-50 dark:bg-green-900/20"
+                            : "text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 opacity-0 group-hover:opacity-100"
+                        }`}
+                        title={shortcut.global ? "全局快捷键（最小化/托盘时也生效）" : "仅窗口内生效，点击设为全局"}
+                      >
+                        <Globe size={13} />
+                      </button>
+
                       {/* 启用/禁用开关 */}
                       <button
                         onClick={() => toggleEnabled(shortcut.id)}
@@ -267,9 +292,9 @@ export function ShortcutSettings({ onClose }: ShortcutSettingsProps) {
 
       <p className="text-xs text-gray-400 mt-4">
         {/Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
-          ? "Ctrl 对应 Command 键"
-          : "快捷键仅在应用窗口聚焦时生效"}
-        ，在输入框中不会触发快捷键。
+          ? "Ctrl 对应 Command 键。"
+          : ""}
+        点击 <Globe size={11} className="inline -mt-0.5 text-green-500" /> 可将快捷键设为全局，最小化或托盘状态下也能触发。在输入框中不会触发快捷键。
       </p>
     </div>
   );
