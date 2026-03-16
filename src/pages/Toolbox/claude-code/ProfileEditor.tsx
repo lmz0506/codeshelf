@@ -35,7 +35,11 @@ const RECOMMENDED_TEMPLATE: Record<string, unknown> = {
     ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-opus-4-6",
     ANTHROPIC_MODEL: "claude-opus-4-6",
     CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+    CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    DISABLE_AUTOUPDATER: "1",
+    DISABLE_ERROR_REPORTING: "1",
+    DISABLE_TELEMETRY: "1"
   },
   model: "opus",
   effortLevel: "medium",
@@ -522,19 +526,18 @@ export function ProfileEditor(props: ProfileEditorProps) {
                           <Save size={12} />
                           <span>保存为自定义模板</span>
                         </button>
-                        {(props as ProfileEditorCreateProps).recommendedTemplate && (
-                          <button
-                            onClick={() => {
-                              (props as ProfileEditorCreateProps).onResetRecommendedTemplate?.();
-                              setEditingContent(getContentForSource("recommended", (props as ProfileEditorCreateProps).currentSettings, quickConfigs, undefined));
-                            }}
-                            className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
-                            title="恢复为内置默认推荐模板"
-                          >
-                            <RotateCcw size={12} />
-                            <span>恢复默认</span>
-                          </button>
-                        )}
+                        <button
+                          onClick={() => {
+                            (props as ProfileEditorCreateProps).onResetRecommendedTemplate?.();
+                            setEditingContent(getContentForSource("recommended", (props as ProfileEditorCreateProps).currentSettings, quickConfigs, undefined));
+                          }}
+                          disabled={!(props as ProfileEditorCreateProps).recommendedTemplate}
+                          className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="恢复为内置默认推荐模板"
+                        >
+                          <RotateCcw size={12} />
+                          <span>恢复默认</span>
+                        </button>
                       </div>
                     </div>
                   )}
