@@ -1549,7 +1549,7 @@ pub async fn launch_claude_in_terminal(
     work_dir: Option<String>,
     terminal_type: Option<String>,
     custom_path: Option<String>,
-    _terminal_path: Option<String>,
+    terminal_path: Option<String>,
     env_type: Option<String>,
     env_name: Option<String>,
 ) -> Result<(), String> {

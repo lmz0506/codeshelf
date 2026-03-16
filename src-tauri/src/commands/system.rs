@@ -99,7 +99,7 @@ pub async fn open_in_editor(path: String, editor_path: Option<String>) -> Result
 }
 
 #[tauri::command]
-pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custom_path: Option<String>, _terminal_path: Option<String>) -> Result<(), String> {
+pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custom_path: Option<String>, terminal_path: Option<String>) -> Result<(), String> {
     let term_type = terminal_type.unwrap_or_else(|| "default".to_string());
 
     #[cfg(target_os = "windows")]
