@@ -304,6 +304,136 @@ mod win {
     }
 }
 
+// ============== macOS/Linux 实现 ==============
+
+#[cfg(not(target_os = "windows"))]
+mod non_win {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+
+    /// 快捷键 ID → action_id 映射，供 handler 查找
+    pub struct GlobalShortcutState(pub Mutex<HashMap<u32, String>>);
+
+    impl GlobalShortcutState {
+        pub fn new() -> Self {
+            Self(Mutex::new(HashMap::new()))
+        }
+    }
+
+    /// 按键名称 → Code 枚举
+    fn key_name_to_code(name: &str) -> Result<Code, String> {
+        // 单个字母 a-z
+        if name.len() == 1 {
+            let ch = name.chars().next().unwrap();
+            if ch.is_ascii_lowercase() {
+                return match ch {
+                    'a' => Ok(Code::KeyA), 'b' => Ok(Code::KeyB), 'c' => Ok(Code::KeyC),
+                    'd' => Ok(Code::KeyD), 'e' => Ok(Code::KeyE), 'f' => Ok(Code::KeyF),
+                    'g' => Ok(Code::KeyG), 'h' => Ok(Code::KeyH), 'i' => Ok(Code::KeyI),
+                    'j' => Ok(Code::KeyJ), 'k' => Ok(Code::KeyK), 'l' => Ok(Code::KeyL),
+                    'm' => Ok(Code::KeyM), 'n' => Ok(Code::KeyN), 'o' => Ok(Code::KeyO),
+                    'p' => Ok(Code::KeyP), 'q' => Ok(Code::KeyQ), 'r' => Ok(Code::KeyR),
+                    's' => Ok(Code::KeyS), 't' => Ok(Code::KeyT), 'u' => Ok(Code::KeyU),
+                    'v' => Ok(Code::KeyV), 'w' => Ok(Code::KeyW), 'x' => Ok(Code::KeyX),
+                    'y' => Ok(Code::KeyY), 'z' => Ok(Code::KeyZ),
+                    _ => Err(format!("未知按键: {}", name)),
+                };
+            }
+            if ch.is_ascii_digit() {
+                return match ch {
+                    '0' => Ok(Code::Digit0), '1' => Ok(Code::Digit1), '2' => Ok(Code::Digit2),
+                    '3' => Ok(Code::Digit3), '4' => Ok(Code::Digit4), '5' => Ok(Code::Digit5),
+                    '6' => Ok(Code::Digit6), '7' => Ok(Code::Digit7), '8' => Ok(Code::Digit8),
+                    '9' => Ok(Code::Digit9),
+                    _ => unreachable!(),
+                };
+            }
+        }
+
+        // F1-F24
+        if let Some(rest) = name.strip_prefix('f') {
+            if let Ok(n) = rest.parse::<u32>() {
+                return match n {
+                    1 => Ok(Code::F1), 2 => Ok(Code::F2), 3 => Ok(Code::F3),
+                    4 => Ok(Code::F4), 5 => Ok(Code::F5), 6 => Ok(Code::F6),
+                    7 => Ok(Code::F7), 8 => Ok(Code::F8), 9 => Ok(Code::F9),
+                    10 => Ok(Code::F10), 11 => Ok(Code::F11), 12 => Ok(Code::F12),
+                    13 => Ok(Code::F13), 14 => Ok(Code::F14), 15 => Ok(Code::F15),
+                    16 => Ok(Code::F16), 17 => Ok(Code::F17), 18 => Ok(Code::F18),
+                    19 => Ok(Code::F19), 20 => Ok(Code::F20), 21 => Ok(Code::F21),
+                    22 => Ok(Code::F22), 23 => Ok(Code::F23), 24 => Ok(Code::F24),
+                    _ => Err(format!("未知功能键: F{}", n)),
+                };
+            }
+        }
+
+        // 特殊键映射
+        match name {
+            "space" => Ok(Code::Space),
+            "enter" | "return" => Ok(Code::Enter),
+            "escape" | "esc" => Ok(Code::Escape),
+            "tab" => Ok(Code::Tab),
+            "backspace" => Ok(Code::Backspace),
+            "delete" | "del" => Ok(Code::Delete),
+            "insert" => Ok(Code::Insert),
+            "home" => Ok(Code::Home),
+            "end" => Ok(Code::End),
+            "pageup" => Ok(Code::PageUp),
+            "pagedown" => Ok(Code::PageDown),
+            "up" => Ok(Code::ArrowUp),
+            "down" => Ok(Code::ArrowDown),
+            "left" => Ok(Code::ArrowLeft),
+            "right" => Ok(Code::ArrowRight),
+            "capslock" => Ok(Code::CapsLock),
+            "numlock" => Ok(Code::NumLock),
+            "scrolllock" => Ok(Code::ScrollLock),
+            "printscreen" => Ok(Code::PrintScreen),
+            "pause" => Ok(Code::Pause),
+            // 符号键
+            ";" | "semicolon" => Ok(Code::Semicolon),
+            "=" | "equal" => Ok(Code::Equal),
+            "," | "comma" => Ok(Code::Comma),
+            "-" | "minus" => Ok(Code::Minus),
+            "." | "period" => Ok(Code::Period),
+            "/" | "slash" => Ok(Code::Slash),
+            "`" | "backquote" => Ok(Code::Backquote),
+            "[" | "bracketleft" => Ok(Code::BracketLeft),
+            "\\" | "backslash" => Ok(Code::Backslash),
+            "]" | "bracketright" => Ok(Code::BracketRight),
+            "'" | "quote" => Ok(Code::Quote),
+            _ => Err(format!("未知按键: {}", name)),
+        }
+    }
+
+    /// 解析快捷键字符串，如 "ctrl+alt+c" → Shortcut
+    /// macOS 映射: "ctrl" → Command (META), "alt" → Option (ALT)
+    pub fn parse_shortcut(keys: &str) -> Result<Shortcut, String> {
+        let mut modifiers = Modifiers::empty();
+        let mut main_key: Option<Code> = None;
+
+        for part in keys.split('+') {
+            let part = part.trim().to_lowercase();
+            match part.as_str() {
+                "ctrl" | "control" => modifiers |= Modifiers::META,  // macOS Command 键
+                "alt" => modifiers |= Modifiers::ALT,                // macOS Option 键
+                "shift" => modifiers |= Modifiers::SHIFT,
+                _ => {
+                    if main_key.is_some() {
+                        return Err(format!("多个非修饰键: {}", keys));
+                    }
+                    main_key = Some(key_name_to_code(&part)?);
+                }
+            }
+        }
+
+        match main_key {
+            Some(code) => Ok(Shortcut::new(Some(modifiers), code)),
+            None => Err(format!("缺少主键: {}", keys)),
+        }
+    }
+}
+
 // ============== 公共 API ==============
 
 #[cfg(target_os = "windows")]
@@ -312,6 +442,9 @@ pub use win::KeyboardHookManager;
 #[cfg(not(target_os = "windows"))]
 #[allow(dead_code)]
 pub struct KeyboardHookManager(pub std::sync::Mutex<Option<()>>);
+
+#[cfg(not(target_os = "windows"))]
+pub use non_win::GlobalShortcutState;
 
 // --- start_hook ---
 
@@ -371,8 +504,34 @@ pub async fn register_global_shortcuts(
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 pub async fn register_global_shortcuts(
-    _shortcuts: Vec<ShortcutInput>,
+    app: tauri::AppHandle,
+    shortcuts: Vec<ShortcutInput>,
 ) -> Result<(), String> {
+    use tauri::Manager;
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+    let global_shortcut = app.global_shortcut();
+
+    // 清除旧注册
+    global_shortcut
+        .unregister_all()
+        .map_err(|e| format!("注销快捷键失败: {}", e))?;
+
+    // 更新映射
+    let state = app.state::<GlobalShortcutState>();
+    let mut map = state.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
+    map.clear();
+
+    for s in &shortcuts {
+        let shortcut = non_win::parse_shortcut(&s.keys)?;
+        let shortcut_id = shortcut.id();
+        global_shortcut
+            .register(shortcut)
+            .map_err(|e| format!("注册快捷键 {} 失败: {}", s.keys, e))?;
+        map.insert(shortcut_id, s.id.clone());
+    }
+
+    log::info!("已注册 {} 个全局快捷键 (macOS)", shortcuts.len());
     Ok(())
 }
 
@@ -391,6 +550,20 @@ pub async fn unregister_all_global_shortcuts() -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub async fn unregister_all_global_shortcuts() -> Result<(), String> {
+pub async fn unregister_all_global_shortcuts(
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use tauri::Manager;
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+    app.global_shortcut()
+        .unregister_all()
+        .map_err(|e| format!("注销快捷键失败: {}", e))?;
+
+    let state = app.state::<GlobalShortcutState>();
+    let mut map = state.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
+    map.clear();
+
+    log::info!("已注销所有全局快捷键 (macOS)");
     Ok(())
 }

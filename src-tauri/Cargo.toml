@@ -47,6 +47,9 @@ sysinfo = "0.30"
 socket2 = "0.5"
 base64 = "0.22"
 
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+tauri-plugin-global-shortcut = "2"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",

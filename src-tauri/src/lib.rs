@@ -156,6 +156,28 @@ pub fn run() {
             // 初始化 Netcat 状态
             app.manage(toolbox::netcat::NetcatState::new());
 
+            // 初始化 macOS/Linux 全局快捷键插件
+            #[cfg(not(target_os = "windows"))]
+            {
+                app.manage(keyboard_hook::GlobalShortcutState::new());
+
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_handler(|app, shortcut, event| {
+                            if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                                if let Some(state) = app.try_state::<keyboard_hook::GlobalShortcutState>() {
+                                    if let Ok(map) = state.0.lock() {
+                                        if let Some(action_id) = map.get(&shortcut.id()) {
+                                            let _ = app.emit("global-shortcut-event", action_id);
+                                        }
+                                    }
+                                }
+                            }
+                        })
+                        .build()
+                )?;
+            }
+
             // 启动 Windows 键盘钩子（全局快捷键）
             #[cfg(target_os = "windows")]
             {
