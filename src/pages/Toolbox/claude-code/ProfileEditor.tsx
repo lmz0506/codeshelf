@@ -13,6 +13,7 @@ import {
   WrapText,
   AlertCircle,
   Loader2,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { ConfigProfile } from "@/types/toolbox";
@@ -49,6 +50,9 @@ interface ProfileEditorCreateProps extends ProfileEditorBaseProps {
   mode: "create";
   existingNames: string[];
   currentSettings: string;
+  recommendedTemplate?: string;
+  onSaveRecommendedTemplate?: (content: string) => Promise<void>;
+  onResetRecommendedTemplate?: () => Promise<void>;
   onSave: (name: string, description: string | undefined, content: string) => Promise<void>;
 }
 
@@ -80,6 +84,7 @@ function getContentForSource(
   source: InitialSource,
   currentSettings: string,
   quickConfigs: QuickConfigOption[],
+  recommendedTemplate?: string,
 ): string {
   switch (source) {
     case "empty":
@@ -101,8 +106,17 @@ function getContentForSource(
       });
       return JSON.stringify(settings, null, 2);
     }
-    case "recommended":
+    case "recommended": {
+      if (recommendedTemplate) {
+        try {
+          const parsed = JSON.parse(recommendedTemplate);
+          return JSON.stringify(parsed, null, 2);
+        } catch {
+          // fallback to built-in
+        }
+      }
       return JSON.stringify(RECOMMENDED_TEMPLATE, null, 2);
+    }
   }
 }
 

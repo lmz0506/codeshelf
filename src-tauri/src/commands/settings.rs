@@ -482,3 +482,42 @@ pub async fn save_app_shortcuts(shortcuts: Vec<AppShortcutBinding>) -> Result<()
         .map_err(|e| format!("保存应用快捷键配置失败: {}", e))?;
     Ok(())
 }
+
+// ============== 推荐模板管理 ==============
+
+#[tauri::command]
+pub async fn get_recommended_template() -> Result<Option<String>, String> {
+    let config = get_storage_config()?;
+    let path = config.recommended_template_file();
+
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("读取推荐模板失败: {}", e))?;
+
+    Ok(Some(content))
+}
+
+#[tauri::command]
+pub async fn save_recommended_template(content: String) -> Result<(), String> {
+    let config = get_storage_config()?;
+    config.ensure_dirs()?;
+
+    fs::write(config.recommended_template_file(), content)
+        .map_err(|e| format!("保存推荐模板失败: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn reset_recommended_template() -> Result<(), String> {
+    let config = get_storage_config()?;
+    let path = config.recommended_template_file();
+
+    if path.exists() {
+        fs::remove_file(&path)
+            .map_err(|e| format!("删除推荐模板失败: {}", e))?;
+    }
+    Ok(())
+}

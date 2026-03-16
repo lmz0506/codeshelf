@@ -402,6 +402,19 @@ export async function saveClaudeLaunchDirs(dirs: string[]): Promise<void> {
   return invoke("save_claude_launch_dirs", { dirs });
 }
 
+// Claude 推荐模板管理
+export async function getRecommendedTemplate(): Promise<string | null> {
+  return invoke("get_recommended_template");
+}
+
+export async function saveRecommendedTemplate(content: string): Promise<void> {
+  return invoke("save_recommended_template", { content });
+}
+
+export async function resetRecommendedTemplate(): Promise<void> {
+  return invoke("reset_recommended_template");
+}
+
 // ============== Netcat 协议测试服务 ==============
 
 import type {

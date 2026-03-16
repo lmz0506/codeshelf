@@ -380,6 +380,10 @@ pub fn run() {
             // Settings - App Shortcuts commands
             settings::get_app_shortcuts,
             settings::save_app_shortcuts,
+            // Settings - Recommended Template commands
+            settings::get_recommended_template,
+            settings::save_recommended_template,
+            settings::reset_recommended_template,
             // Keyboard hook commands
             keyboard_hook::register_global_shortcuts,
             keyboard_hook::unregister_all_global_shortcuts,
