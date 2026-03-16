@@ -63,6 +63,22 @@ pub async fn open_in_editor(path: String, editor_path: Option<String>) -> Result
         return "code".to_string();
     });
 
+    #[cfg(target_os = "macos")]
+    {
+        if editor.ends_with(".app") {
+            // macOS .app 应用包：用 open -a 启动
+            Command::new("open")
+                .args(["-a", &editor, &path])
+                .spawn()
+                .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
+        } else {
+            Command::new(&editor)
+                .arg(&path)
+                .spawn()
+                .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
+        }
+    }
+
     #[cfg(target_os = "windows")]
     {
         Command::new(&editor)
@@ -71,7 +87,7 @@ pub async fn open_in_editor(path: String, editor_path: Option<String>) -> Result
             .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
         Command::new(&editor)
             .arg(&path)
