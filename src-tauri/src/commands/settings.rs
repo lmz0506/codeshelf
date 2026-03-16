@@ -274,6 +274,7 @@ pub struct AppSettingsInput {
     pub view_mode: Option<String>,
     pub sidebar_collapsed: Option<bool>,
     pub scan_depth: Option<u32>,
+    pub auto_update: Option<bool>,
 }
 
 #[tauri::command]
@@ -300,6 +301,7 @@ pub async fn save_app_settings(input: AppSettingsInput) -> Result<AppSettings, S
     if let Some(view_mode) = input.view_mode { settings.view_mode = view_mode; }
     if let Some(sidebar_collapsed) = input.sidebar_collapsed { settings.sidebar_collapsed = sidebar_collapsed; }
     if let Some(scan_depth) = input.scan_depth { settings.scan_depth = scan_depth; }
+    if let Some(auto_update) = input.auto_update { settings.auto_update = auto_update; }
 
     let config = get_storage_config()?;
     config.ensure_dirs()?;

@@ -3,6 +3,7 @@ import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2, ExternalLink } 
 import { checkForUpdates, downloadAndInstallUpdate, type UpdateInfo } from "@/services/updater";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-shell";
+import { useAppStore } from "@/stores/appStore";
 
 export function UpdateSettings() {
   const [checking, setChecking] = useState(false);
@@ -11,6 +12,8 @@ export function UpdateSettings() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string>("...");
+  const autoUpdate = useAppStore((state) => state.autoUpdate);
+  const setAutoUpdate = useAppStore((state) => state.setAutoUpdate);
 
   useEffect(() => {
     getVersion().then(setCurrentVersion).catch(() => setCurrentVersion("未知"));
@@ -123,6 +126,30 @@ export function UpdateSettings() {
           )}
         </div>
       )}
+
+      {/* 自动更新开关 */}
+      <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-900">自动检查更新</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {autoUpdate ? "启动时自动检查并下载更新" : "已关闭自动更新，你仍可手动检查更新"}
+            </p>
+          </div>
+          <button
+            onClick={() => setAutoUpdate(!autoUpdate)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              autoUpdate ? "bg-blue-500" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                autoUpdate ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
 
       {/* 说明 */}
       <div className="p-3 bg-blue-50/50 border border-blue-200/50 rounded-lg">

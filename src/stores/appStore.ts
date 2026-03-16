@@ -111,6 +111,10 @@ interface AppState {
   appShortcuts: AppShortcutBinding[];
   setAppShortcuts: (shortcuts: AppShortcutBinding[]) => void;
 
+  // Auto Update (自动更新)
+  autoUpdate: boolean;
+  setAutoUpdate: (autoUpdate: boolean) => void;
+
   // Shortcut Quick Lookup (快捷键快速查找弹窗)
   showShortcutQuickLookup: boolean;
   toggleShortcutQuickLookup: () => void;
@@ -136,6 +140,7 @@ const saveAppSettings = debounce(async (settings: {
   view_mode?: string;
   sidebar_collapsed?: boolean;
   scan_depth?: number;
+  auto_update?: boolean;
 }) => {
   try {
     await invoke("save_app_settings", { input: settings });
@@ -384,6 +389,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   clearAllNotifications: () => {
     set({ notifications: [] });
     invoke("clear_notifications").catch(console.error);
+  },
+
+  // Auto Update (自动更新)
+  autoUpdate: true,
+  setAutoUpdate: (autoUpdate) => {
+    set({ autoUpdate });
+    saveAppSettings({ auto_update: autoUpdate });
   },
 
   // App Shortcuts (应用快捷键)

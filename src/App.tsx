@@ -29,6 +29,7 @@ interface AppSettings {
   view_mode: string;
   sidebar_collapsed: boolean;
   scan_depth: number;
+  auto_update: boolean;
 }
 
 // 后端返回的 UI 状态类型
@@ -95,6 +96,7 @@ async function initializeApp() {
       viewMode: (settings.view_mode || "grid") as "grid" | "list",
       sidebarCollapsed: settings.sidebar_collapsed || false,
       scanDepth: settings.scan_depth || 3,
+      autoUpdate: settings.auto_update !== false,
       labels: labels || [],
       categories: categories || [],
       editors: editors || [],

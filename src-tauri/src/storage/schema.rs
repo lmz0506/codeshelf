@@ -50,6 +50,12 @@ pub struct AppSettings {
     pub view_mode: String,
     pub sidebar_collapsed: bool,
     pub scan_depth: u32,
+    #[serde(default = "default_true")]
+    pub auto_update: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -59,6 +65,7 @@ impl Default for AppSettings {
             view_mode: "grid".to_string(),
             sidebar_collapsed: false,
             scan_depth: 3,
+            auto_update: true,
         }
     }
 }

@@ -8,6 +8,7 @@ import {
   type UpdateInfo,
 } from "@/services/updater";
 import { showToast } from "@/components/ui/Toast";
+import { useAppStore } from "@/stores/appStore";
 
 const RELEASES_URL = "https://github.com/en-o/codeshelf/releases/latest";
 const DEFAULT_RELEASE_NOTE = "修复了一些问题";
@@ -25,9 +26,12 @@ export function UpdateNotification() {
   const [progress, setProgress] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const autoUpdate = useAppStore((state) => state.autoUpdate);
 
-  // 启动时静默检查更新
+  // 启动时静默检查更新（仅在自动更新开启时）
   useEffect(() => {
+    if (!autoUpdate) return;
+
     async function checkUpdate() {
       setState("checking");
       const info = await silentCheckForUpdates();
