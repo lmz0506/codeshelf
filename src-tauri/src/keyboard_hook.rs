@@ -7,6 +7,7 @@
 use serde::Deserialize;
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct ShortcutInput {
     pub id: String,
     pub keys: String,
@@ -309,6 +310,7 @@ mod win {
 pub use win::KeyboardHookManager;
 
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 pub struct KeyboardHookManager(pub std::sync::Mutex<Option<()>>);
 
 // --- start_hook ---
@@ -319,6 +321,7 @@ pub fn start_hook(app_handle: tauri::AppHandle) -> Result<win::HookState, String
 }
 
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 pub fn start_hook(_app_handle: tauri::AppHandle) -> Result<(), String> {
     log::warn!("键盘钩子仅支持 Windows 平台");
     Ok(())

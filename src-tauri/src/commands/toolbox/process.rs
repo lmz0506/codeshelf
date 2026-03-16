@@ -471,6 +471,7 @@ async fn get_port_occupation_windows() -> Result<Vec<PortOccupation>, String> {
 }
 
 /// 获取状态优先级（值越小优先级越高）
+#[cfg(target_os = "windows")]
 fn state_priority(state: &str) -> u8 {
     match state {
         "LISTENING" => 0,

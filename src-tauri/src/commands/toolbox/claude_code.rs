@@ -74,6 +74,7 @@ fn get_augmented_path() -> String {
 }
 
 /// 清理 WSL 命令输出中的特殊字符（\r, \0 等）
+#[cfg(target_os = "windows")]
 fn clean_wsl_output(output: &[u8]) -> String {
     String::from_utf8_lossy(output)
         .trim()
@@ -883,7 +884,7 @@ fn is_wsl_unc_path(path: &str) -> bool {
 
 /// 读取配置文件内容
 #[tauri::command]
-pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: String) -> Result<String, String> {
+pub async fn read_claude_config_file(env_type: EnvType, _env_name: String, path: String) -> Result<String, String> {
     // 如果是 UNC 路径，直接用 Windows API 读取
     if is_wsl_unc_path(&path) {
         return std::fs::read_to_string(&path)
@@ -918,7 +919,7 @@ pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: 
 
 /// 写入配置文件内容
 #[tauri::command]
-pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path: String, content: String) -> Result<(), String> {
+pub async fn write_claude_config_file(env_type: EnvType, _env_name: String, path: String, content: String) -> Result<(), String> {
     // 如果是 UNC 路径，直接用 Windows API 写入
     if is_wsl_unc_path(&path) {
         if let Some(parent) = std::path::Path::new(&path).parent() {
@@ -973,7 +974,7 @@ pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path:
 
 /// 打开配置目录
 #[tauri::command]
-pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_dir: String) -> Result<(), String> {
+pub async fn open_claude_config_dir(env_type: EnvType, _env_name: String, config_dir: String) -> Result<(), String> {
     // 如果是 UNC 路径，直接用 explorer 打开
     if is_wsl_unc_path(&config_dir) {
         let path = PathBuf::from(&config_dir);
@@ -1394,7 +1395,7 @@ pub async fn get_wsl_config_dir(_distro: String) -> Result<WslConfigDirResult, S
 
 /// 扫描指定配置目录的配置文件
 #[tauri::command]
-pub async fn scan_claude_config_dir(env_type: EnvType, env_name: String, config_dir: String) -> Result<Vec<ConfigFileInfo>, String> {
+pub async fn scan_claude_config_dir(env_type: EnvType, _env_name: String, config_dir: String) -> Result<Vec<ConfigFileInfo>, String> {
     // 如果是 UNC 路径，直接用 Windows API 扫描
     if is_wsl_unc_path(&config_dir) {
         let path = PathBuf::from(&config_dir);
@@ -1548,7 +1549,7 @@ pub async fn launch_claude_in_terminal(
     work_dir: Option<String>,
     terminal_type: Option<String>,
     custom_path: Option<String>,
-    terminal_path: Option<String>,
+    _terminal_path: Option<String>,
     env_type: Option<String>,
     env_name: Option<String>,
 ) -> Result<(), String> {
