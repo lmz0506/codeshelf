@@ -168,7 +168,7 @@ export function NotificationPanel() {
                               {n.title}
                             </p>
                             {n.message && (
-                              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 break-words">
+                              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 break-words whitespace-pre-wrap">
                                 {n.message}
                               </p>
                             )}

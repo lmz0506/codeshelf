@@ -21,6 +21,7 @@ jobs:
     outputs:
       release_id: ${{ steps.create_release.outputs.result }}
       version: ${{ steps.get_version.outputs.version }}
+      release_notes: ${{ steps.release_notes.outputs.notes }}
     steps:
       - uses: actions/checkout@v6
 
@@ -155,6 +156,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
+          releaseBody: ${{ needs.create-release.outputs.release_notes }}
           updaterJsonKeepUniversal: true
           args: ${{ matrix.args }} --config ${{ matrix.config }}
 

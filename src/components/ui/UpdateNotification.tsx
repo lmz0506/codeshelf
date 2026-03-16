@@ -62,8 +62,14 @@ export function UpdateNotification() {
         setProgress(Math.round((downloaded / total) * 100));
       });
       setState("ready");
-      // 记录下载完成
-      showToast("success", "更新下载完成", "点击「立即安装并重启」完成更新");
+      setShowNotes(true);
+      // 记录下载完成（含更新说明，写入通知中心）
+      const notes = getReleaseNotes(updateInfo);
+      showToast(
+        "success",
+        `v${updateInfo?.version} 更新已就绪`,
+        notes,
+      );
     } catch (error) {
       console.error("Download failed:", error);
       setState("error");
