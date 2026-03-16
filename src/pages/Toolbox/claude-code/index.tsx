@@ -571,8 +571,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     const content = JSON.stringify(settings, null, 2);
     await saveRecommendedTemplate(content);
     setRecommendedTemplate(content);
-    setCopiedText("已设为推荐模板");
-    setTimeout(() => setCopiedText(null), 2000);
+    alert(`已将「${profile.name}」设为推荐模板`);
   }
 
   async function confirmDeleteProfile() {
