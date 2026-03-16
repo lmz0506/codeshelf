@@ -363,18 +363,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       createdAt: new Date().toISOString(),
     };
-    set((state) => {
-      const updated = [newNotification, ...state.notifications].slice(0, 10);
-      // 同步到后端
-      invoke("add_notification", {
-        input: {
-          notification_type: notification.type,
-          title: notification.title,
-          message: notification.message,
-        }
-      }).catch(console.error);
-      return { notifications: updated };
-    });
+    set((state) => ({
+      notifications: [newNotification, ...state.notifications].slice(0, 10),
+    }));
+    // 同步到后端（message 必须为 string，undefined 会导致 Rust 反序列化失败）
+    invoke("add_notification", {
+      input: {
+        notification_type: notification.type,
+        title: notification.title,
+        message: notification.message || "",
+      }
+    }).catch(console.error);
   },
   removeNotification: (id) => {
     set((state) => ({

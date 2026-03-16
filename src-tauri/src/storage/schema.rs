@@ -79,6 +79,7 @@ pub struct Notification {
     pub id: String,
     pub notification_type: String,
     pub title: String,
+    #[serde(default)]
     pub message: String,
     pub created_at: String,
 }

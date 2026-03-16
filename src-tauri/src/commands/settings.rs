@@ -362,6 +362,7 @@ pub async fn save_ui_state(input: UiStateInput) -> Result<UiState, String> {
 pub struct NotificationInput {
     pub notification_type: String,
     pub title: String,
+    #[serde(default)]
     pub message: String,
 }
 
