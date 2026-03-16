@@ -1,5 +1,6 @@
 // Claude Code 配置管理器 - 主组件
 
+import { showToast } from "@/components/ui/Toast";
 import { useState, useEffect } from "react";
 import {
   Terminal,
@@ -571,7 +572,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     const content = JSON.stringify(settings, null, 2);
     await saveRecommendedTemplate(content);
     setRecommendedTemplate(content);
-    alert(`已将「${profile.name}」设为推荐模板`);
+    showToast("success", "设为推荐模板", `已将「${profile.name}」的配置设为推荐模板`);
   }
 
   async function confirmDeleteProfile() {
@@ -1192,6 +1193,12 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                             {profiles.map((profile) => {
                               const isActive = activeProfileId === profile.id;
+                              const profileSettingsStr = (() => {
+                                const s = { ...(profile.settings as Record<string, unknown>) };
+                                delete s.__active;
+                                return JSON.stringify(s, null, 2);
+                              })();
+                              const isTemplate = !!recommendedTemplate && profileSettingsStr === recommendedTemplate;
                               return (
                                 <div
                                   key={profile.id}
@@ -1253,10 +1260,14 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                                     </button>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleSetAsTemplate(profile); }}
-                                      className="p-1.5 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded text-yellow-600 text-xs flex items-center gap-1"
-                                      title="设为推荐模板"
+                                      className={`p-1.5 rounded text-xs flex items-center gap-1 ${
+                                        isTemplate
+                                          ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600"
+                                          : "hover:bg-yellow-50 dark:hover:bg-yellow-900/20 text-yellow-600"
+                                      }`}
+                                      title={isTemplate ? "当前推荐模板" : "设为推荐模板"}
                                     >
-                                      <Star size={12} />
+                                      <Star size={12} fill={isTemplate ? "currentColor" : "none"} />
                                     </button>
                                     {!isActive && (
                                       <button
