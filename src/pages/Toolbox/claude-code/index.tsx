@@ -52,6 +52,9 @@ import {
   launchClaudeInTerminal,
   getClaudeLaunchDirs,
   saveClaudeLaunchDirs,
+  getRecommendedTemplate,
+  saveRecommendedTemplate,
+  resetRecommendedTemplate,
 } from "@/services/toolbox";
 import type { ClaudeCodeInfo, ConfigFileInfo, ConfigProfile } from "@/types/toolbox";
 import { useAppStore } from "@/stores/appStore";
@@ -98,6 +101,9 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   // 新建档案
   const [showCreateProfile, setShowCreateProfile] = useState(false);
 
+  // 推荐模板
+  const [recommendedTemplate, setRecommendedTemplate] = useState<string | null>(null);
+
   // 删除确认
   const [deleteConfirmProfile, setDeleteConfirmProfile] = useState<ConfigProfile | null>(null);
 
@@ -138,6 +144,8 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
     loadQuickConfigs().then(setQuickConfigs);
     // 加载启动目录列表
     getClaudeLaunchDirs().then(setLaunchDirs).catch(console.error);
+    // 加载推荐模板
+    getRecommendedTemplate().then(setRecommendedTemplate).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -545,6 +553,26 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
       console.error("创建档案失败:", err);
       alert(`创建配置档案失败: ${err}`);
     }
+  }
+
+  async function handleSaveRecommendedTemplate(content: string) {
+    await saveRecommendedTemplate(content);
+    setRecommendedTemplate(content);
+  }
+
+  async function handleResetRecommendedTemplate() {
+    await resetRecommendedTemplate();
+    setRecommendedTemplate(null);
+  }
+
+  async function handleSetAsTemplate(profile: ConfigProfile) {
+    const settings = { ...(profile.settings as Record<string, unknown>) };
+    delete settings.__active;
+    const content = JSON.stringify(settings, null, 2);
+    await saveRecommendedTemplate(content);
+    setRecommendedTemplate(content);
+    setCopiedText("已设为推荐模板");
+    setTimeout(() => setCopiedText(null), 2000);
   }
 
   async function confirmDeleteProfile() {
@@ -1224,6 +1252,13 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
                                     >
                                       <Download size={12} />
                                     </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleSetAsTemplate(profile); }}
+                                      className="p-1.5 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded text-yellow-600 text-xs flex items-center gap-1"
+                                      title="设为推荐模板"
+                                    >
+                                      <Star size={12} />
+                                    </button>
                                     {!isActive && (
                                       <button
                                         onClick={(e) => {
@@ -1348,6 +1383,9 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
           quickConfigs={quickConfigs}
           existingNames={profiles.map(p => p.name)}
           currentSettings={currentSettings}
+          recommendedTemplate={recommendedTemplate ?? undefined}
+          onSaveRecommendedTemplate={handleSaveRecommendedTemplate}
+          onResetRecommendedTemplate={handleResetRecommendedTemplate}
           onSave={handleCreateProfileFromEditor}
           onClose={() => setShowCreateProfile(false)}
         />

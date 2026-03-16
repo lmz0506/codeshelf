@@ -171,7 +171,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
   useEffect(() => {
     if (mode === "create") {
       const p = props as ProfileEditorCreateProps;
-      setEditingContent(getContentForSource(initialSource, p.currentSettings, quickConfigs));
+      setEditingContent(getContentForSource(initialSource, p.currentSettings, quickConfigs, p.recommendedTemplate));
     }
   }, [initialSource]);
 
@@ -497,6 +497,47 @@ export function ProfileEditor(props: ProfileEditorProps) {
                       </div>
                     </label>
                   </div>
+                  {/* 推荐模板操作区 */}
+                  {initialSource === "recommended" && (
+                    <div className="mt-2 p-2.5 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800 rounded-lg space-y-2">
+                      <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                        <span>当前模板:</span>
+                        {(props as ProfileEditorCreateProps).recommendedTemplate ? (
+                          <span className="text-yellow-600 dark:text-yellow-400 font-medium">(自定义)</span>
+                        ) : (
+                          <span className="text-blue-600 dark:text-blue-400 font-medium">(默认)</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            if (!jsonError) {
+                              (props as ProfileEditorCreateProps).onSaveRecommendedTemplate?.(editingContent);
+                            }
+                          }}
+                          disabled={!!jsonError}
+                          className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-800/30 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="将当前 JSON 编辑区内容保存为自定义推荐模板"
+                        >
+                          <Save size={12} />
+                          <span>保存为自定义模板</span>
+                        </button>
+                        {(props as ProfileEditorCreateProps).recommendedTemplate && (
+                          <button
+                            onClick={() => {
+                              (props as ProfileEditorCreateProps).onResetRecommendedTemplate?.();
+                              setEditingContent(getContentForSource("recommended", (props as ProfileEditorCreateProps).currentSettings, quickConfigs, undefined));
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+                            title="恢复为内置默认推荐模板"
+                          >
+                            <RotateCcw size={12} />
+                            <span>恢复默认</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
