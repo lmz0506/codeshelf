@@ -4,7 +4,7 @@ import type { Project } from "@/types";
 import type { ClaudeCodeInfo } from "@/types/toolbox";
 import { useAppStore } from "@/stores/appStore";
 import { openInTerminal } from "@/services/db";
-import { launchClaudeInTerminal, getClaudeInstallationsCache } from "@/services/toolbox";
+import { launchClaudeInTerminal, getClaudeInstallationsCache, checkAllClaudeInstallations, saveClaudeInstallationsCache } from "@/services/toolbox";
 import { showToast } from "@/components/ui";
 
 interface TerminalContextMenuProps {
@@ -21,14 +21,33 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getClaudeInstallationsCache()
-      .then((cached) => {
-        // 只显示有版本号的可用环境
-        setClaudeEnvs(cached?.filter((e) => e.installed && e.version) || []);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    loadClaudeEnvs();
   }, []);
+
+  async function loadClaudeEnvs() {
+    try {
+      // 先尝试从缓存读取
+      let cached = await getClaudeInstallationsCache();
+      // 如果没有缓存，自动扫描一次
+      if (!cached) {
+        try {
+          const scanned = await checkAllClaudeInstallations();
+          if (scanned && scanned.length > 0) {
+            await saveClaudeInstallationsCache(scanned);
+            cached = scanned;
+          }
+        } catch {
+          // 扫描失败也没关系，用空列表
+        }
+      }
+      // 只显示已安装且有版本号的环境
+      setClaudeEnvs(cached?.filter((e) => e.installed && e.version) || []);
+    } catch (error) {
+      console.error("Failed to load Claude envs:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   // 点击外部关闭
   useEffect(() => {
@@ -74,9 +93,15 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
 
   async function handleLaunchClaude(env: ClaudeCodeInfo) {
     try {
-      const termType = terminalConfig.type === "default" ? undefined : terminalConfig.type;
-      const termPath = terminalConfig.paths?.[terminalConfig.type as keyof typeof terminalConfig.paths];
-      await launchClaudeInTerminal(project.path, termType, terminalConfig.customPath, termPath, env.envType, env.envName);
+      // 与工具箱页面保持完全一致的调用方式
+      await launchClaudeInTerminal(
+        project.path,
+        terminalConfig.type,
+        terminalConfig.customPath,
+        terminalConfig.paths?.[terminalConfig.type],
+        env.envType,
+        env.envName
+      );
       showToast("success", "已启动", `Claude Code (${env.envName}) 已在终端中打开`);
       onClose();
     } catch (error) {
@@ -112,7 +137,12 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
       </button>
 
       {/* Claude Code 环境 */}
-      {!loading && claudeEnvs.length > 0 && (
+      {loading ? (
+        <>
+          <div className="editor-context-menu-divider" />
+          <div className="editor-context-menu-empty">检测 Claude Code...</div>
+        </>
+      ) : claudeEnvs.length > 0 ? (
         <>
           <div className="editor-context-menu-divider" />
           <div className="editor-context-menu-header">Claude Code</div>
@@ -153,7 +183,7 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
             </button>
           )}
         </>
-      )}
+      ) : null}
     </div>
   );
 }
