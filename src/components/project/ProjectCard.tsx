@@ -1,13 +1,12 @@
 import { useState, useEffect } from "react";
-import { Plus, Copy } from "lucide-react";
+import { Plus, Copy, FolderOpen, Terminal, Trash2 } from "lucide-react";
 import type { Project, GitStatus } from "@/types";
 import { getGitStatus, getRemotes } from "@/services/git";
 import { openInTerminal, openInExplorer, openInEditor, toggleFavorite, removeProject, deleteProjectDirectory, updateProject } from "@/services/db";
-import { launchClaudeInTerminal, getClaudeInstallationsCache } from "@/services/toolbox";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { LabelSelector } from "./LabelSelector";
 import { EditorContextMenu } from "./EditorContextMenu";
-import { ClaudeEnvSelector } from "./ClaudeEnvSelector";
+import { TerminalContextMenu } from "./TerminalContextMenu";
 import { useAppStore } from "@/stores/appStore";
 import { getEditorForProject, getEditorConfigForProject, getEditorIcon } from "@/utils/editor";
 
@@ -24,10 +23,13 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
   const [showEditorMenu, setShowEditorMenu] = useState<{ x: number; y: number } | null>(null);
-  const [showClaudeEnvSelector, setShowClaudeEnvSelector] = useState<{ x: number; y: number } | null>(null);
+  const [showTerminalMenu, setShowTerminalMenu] = useState<{ x: number; y: number } | null>(null);
   const [editingLabels, setEditingLabels] = useState<string[]>([]);
   const [copiedPath, setCopiedPath] = useState(false);
   const { terminalConfig, editors } = useAppStore();
+
+  // 从 store 读取最新的 project 数据（解决切换编辑器后不刷新的问题）
+  const storeProject = useAppStore((state) => state.projects.find((p) => p.id === project.id)) || project;
 
   useEffect(() => {
     loadGitInfo();
@@ -77,7 +79,6 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
     try {
       const termType = terminalConfig.type === "default" ? undefined : terminalConfig.type;
       const termPath = terminalConfig.paths?.[terminalConfig.type as keyof typeof terminalConfig.paths];
-      console.log("Opening terminal:", { path: project.path, termType, customPath: terminalConfig.customPath, termPath });
       await openInTerminal(project.path, termType, terminalConfig.customPath, termPath);
     } catch (error) {
       console.error("Failed to open terminal:", error);
@@ -98,7 +99,7 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
   async function handleOpenEditor(e: React.MouseEvent) {
     e.stopPropagation();
     try {
-      const editorPath = getEditorForProject(project, editors);
+      const editorPath = getEditorForProject(storeProject, editors);
       await openInEditor(project.path, editorPath);
     } catch (error) {
       console.error("Failed to open editor:", error);
@@ -112,44 +113,17 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
     setShowEditorMenu({ x: e.clientX, y: e.clientY });
   }
 
+  function handleTerminalContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowTerminalMenu({ x: e.clientX, y: e.clientY });
+  }
+
   async function handleCopyPath(e: React.MouseEvent) {
     e.stopPropagation();
     await navigator.clipboard.writeText(project.path);
     setCopiedPath(true);
     setTimeout(() => setCopiedPath(false), 1500);
-  }
-
-  async function handleOpenClaude(e: React.MouseEvent) {
-    e.stopPropagation();
-    try {
-      const cached = await getClaudeInstallationsCache();
-      const installed = cached?.filter((env) => env.installed) || [];
-      if (installed.length === 0) {
-        alert("未检测到 Claude Code 安装，请先在工具箱中检查");
-        return;
-      }
-      // 如果有项目级默认环境，直接使用
-      if (project.claudeEnvName) {
-        const env = installed.find((e) => e.envName === project.claudeEnvName);
-        if (env) {
-          const termType = terminalConfig.type === "default" ? undefined : terminalConfig.type;
-          const termPath = terminalConfig.paths?.[terminalConfig.type as keyof typeof terminalConfig.paths];
-          await launchClaudeInTerminal(project.path, termType, terminalConfig.customPath, termPath, env.envType, env.envName);
-          return;
-        }
-      }
-      if (installed.length === 1) {
-        const env = installed[0];
-        const termType = terminalConfig.type === "default" ? undefined : terminalConfig.type;
-        const termPath = terminalConfig.paths?.[terminalConfig.type as keyof typeof terminalConfig.paths];
-        await launchClaudeInTerminal(project.path, termType, terminalConfig.customPath, termPath, env.envType, env.envName);
-      } else {
-        setShowClaudeEnvSelector({ x: e.clientX, y: e.clientY });
-      }
-    } catch (error) {
-      console.error("Failed to launch Claude Code:", error);
-      alert("启动 Claude Code 失败：" + error);
-    }
   }
 
   async function handleDelete(deleteDirectory: boolean) {
@@ -199,9 +173,8 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
     }
   }
 
-  // exact 1:1 reproduction from example.html CSS
-  const currentEditor = getEditorConfigForProject(project, editors);
-  const editorIconText = currentEditor ? getEditorIcon(currentEditor.name) : "✏️";
+  const currentEditor = getEditorConfigForProject(storeProject, editors);
+  const editorIconText = currentEditor ? getEditorIcon(currentEditor.name) : "Ed";
   const editorTitle = currentEditor ? `用 ${currentEditor.name} 打开（右键选择）` : "打开编辑器（右键选择编辑器）";
 
   return (
@@ -291,36 +264,25 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
               title="打开文件夹"
               onClick={handleOpenExplorer}
             >
-              📁
+              <FolderOpen size={15} />
             </button>
             <button
               className="re-icon-btn"
-              title="终端"
+              title="终端（右键打开 Claude Code）"
               onClick={handleOpenTerminal}
+              onContextMenu={handleTerminalContextMenu}
             >
-              💻
+              <Terminal size={15} />
             </button>
             <button
-              className="re-icon-btn re-icon-btn-claude"
-              title="Claude Code（右键选择环境）"
-              onClick={handleOpenClaude}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setShowClaudeEnvSelector({ x: e.clientX, y: e.clientY });
-              }}
-            >
-              <span className="claude-icon-text">C</span>
-            </button>
-            <button
-              className="re-icon-btn"
+              className="re-icon-btn re-icon-btn-danger"
               title="删除"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowDeleteDialog(true);
               }}
             >
-              🗑️
+              <Trash2 size={14} />
             </button>
           </div>
         </div>
@@ -336,17 +298,17 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
 
       {showEditorMenu && (
         <EditorContextMenu
-          project={project}
+          project={storeProject}
           position={showEditorMenu}
           onClose={() => setShowEditorMenu(null)}
         />
       )}
 
-      {showClaudeEnvSelector && (
-        <ClaudeEnvSelector
-          project={project}
-          position={showClaudeEnvSelector}
-          onClose={() => setShowClaudeEnvSelector(null)}
+      {showTerminalMenu && (
+        <TerminalContextMenu
+          project={storeProject}
+          position={showTerminalMenu}
+          onClose={() => setShowTerminalMenu(null)}
         />
       )}
 

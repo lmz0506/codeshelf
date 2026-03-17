@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, GitBranch, History, Code, Tag as TagIcon, RefreshCw, CloudUpload, FolderOpen, User, Clock, Edit2, FileText, Database, Loader2, GitCommit, Plus, Trash2, Check, Copy, Minus, Maximize2, Minimize2, ChevronDown, ChevronRight, ExternalLink, Files, Mail, ArrowRightLeft } from "lucide-react";
+import { X, GitBranch, History, Terminal, RefreshCw, CloudUpload, FolderOpen, User, Clock, Edit2, FileText, Database, Loader2, GitCommit, Plus, Trash2, Check, Copy, Minus, Maximize2, Minimize2, ChevronDown, ChevronRight, ExternalLink, Files, Mail, ArrowRightLeft } from "lucide-react";
 import { CategorySelector } from "./CategorySelector";
 import { LabelSelector } from "./LabelSelector";
 import { SyncRemoteModal } from "./SyncRemoteModal";
@@ -8,13 +8,12 @@ import { BranchSwitchModal } from "./BranchSwitchModal";
 import { GitCommitModal } from "./GitCommitModal";
 import { AddRemoteModal } from "./AddRemoteModal";
 import { EditorContextMenu } from "./EditorContextMenu";
-import { ClaudeEnvSelector } from "./ClaudeEnvSelector";
+import { TerminalContextMenu } from "./TerminalContextMenu";
 import { showToast } from "@/components/ui";
 import type { Project, GitStatus, CommitInfo, RemoteInfo } from "@/types";
 import { getGitStatus, getCommitHistory, getRemotes, gitPull, gitPush, removeRemote } from "@/services/git";
 import { openInEditor, openInExplorer, openInTerminal, updateProject, openUrl } from "@/services/db";
 import { getEditorForProject, getEditorConfigForProject, getEditorIcon } from "@/utils/editor";
-import { launchClaudeInTerminal, getClaudeInstallationsCache } from "@/services/toolbox";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -41,13 +40,15 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [showAddRemoteModal, setShowAddRemoteModal] = useState(false);
   const [showEditorMenu, setShowEditorMenu] = useState<{ x: number; y: number } | null>(null);
-  const [showClaudeEnvSelector, setShowClaudeEnvSelector] = useState<{ x: number; y: number } | null>(null);
+  const [showTerminalMenu, setShowTerminalMenu] = useState<{ x: number; y: number } | null>(null);
   const [readmeContent, setReadmeContent] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>(project.tags);
   const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
   // 用于显示的本地项目数据（编辑后立即更新）
   const [localProject, setLocalProject] = useState<Project>(project);
   const { editors, terminalConfig, markProjectDirty, projects, recentDetailProjectIds, addRecentDetailProject } = useAppStore();
+  // 从 store 读取最新项目数据（编辑器/Claude 环境切换后立即刷新）
+  const storeProject = projects.find((p) => p.id === project.id) || project;
 
   // 提交卡片展开状态
   const [expandedCommit, setExpandedCommit] = useState<string | null>(null);
@@ -684,7 +685,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
               </button>
               <button
                 onClick={() => {
-                  const editorPath = getEditorForProject(project, editors);
+                  const editorPath = getEditorForProject(storeProject, editors);
                   openInEditor(project.path, editorPath);
                 }}
                 onContextMenu={(e) => {
@@ -693,18 +694,18 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
                 }}
                 className="quick-action-btn-compact"
                 title={(() => {
-                  const ed = getEditorConfigForProject(project, editors);
+                  const ed = getEditorConfigForProject(storeProject, editors);
                   return ed ? `用 ${ed.name} 打开（右键选择）` : "在编辑器中打开（右键选择编辑器）";
                 })()}
               >
                 <span className="editor-icon-text" style={{ fontSize: 10, width: 14, height: 14, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
                   {(() => {
-                    const ed = getEditorConfigForProject(project, editors);
-                    return ed ? getEditorIcon(ed.name) : <Code size={14} />;
+                    const ed = getEditorConfigForProject(storeProject, editors);
+                    return ed ? getEditorIcon(ed.name) : "Ed";
                   })()}
                 </span>
                 <span>{(() => {
-                  const ed = getEditorConfigForProject(project, editors);
+                  const ed = getEditorConfigForProject(storeProject, editors);
                   return ed ? ed.name : "编辑器";
                 })()}</span>
               </button>
@@ -734,55 +735,15 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
                     showToast("error", "打开终端失败", String(error));
                   }
                 }}
-                className="quick-action-btn-compact"
-                title="打开终端"
-              >
-                <TagIcon size={14} />
-                <span>终端</span>
-              </button>
-              <button
-                onClick={async (e) => {
-                  try {
-                    const cached = await getClaudeInstallationsCache();
-                    const installed = cached?.filter((env) => env.installed) || [];
-                    if (installed.length === 0) {
-                      showToast("error", "未检测到", "未检测到 Claude Code 安装，请先在工具箱中检查");
-                      return;
-                    }
-                    // 如果有项目级默认环境，直接使用
-                    if (project.claudeEnvName) {
-                      const env = installed.find((e) => e.envName === project.claudeEnvName);
-                      if (env) {
-                        const termType = terminalConfig.type === "default" ? undefined : terminalConfig.type;
-                        const termPath = terminalConfig.paths?.[terminalConfig.type as keyof typeof terminalConfig.paths];
-                        await launchClaudeInTerminal(project.path, termType, terminalConfig.customPath, termPath, env.envType, env.envName);
-                        showToast("success", "已启动", `Claude Code (${env.envName}) 已在终端中打开`);
-                        return;
-                      }
-                    }
-                    if (installed.length === 1) {
-                      const env = installed[0];
-                      const termType = terminalConfig.type === "default" ? undefined : terminalConfig.type;
-                      const termPath = terminalConfig.paths?.[terminalConfig.type as keyof typeof terminalConfig.paths];
-                      await launchClaudeInTerminal(project.path, termType, terminalConfig.customPath, termPath, env.envType, env.envName);
-                      showToast("success", "已启动", "Claude Code 已在终端中打开");
-                    } else {
-                      setShowClaudeEnvSelector({ x: e.clientX, y: e.clientY });
-                    }
-                  } catch (error) {
-                    console.error("Failed to launch Claude Code:", error);
-                    showToast("error", "启动失败", String(error));
-                  }
-                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  setShowClaudeEnvSelector({ x: e.clientX, y: e.clientY });
+                  setShowTerminalMenu({ x: e.clientX, y: e.clientY });
                 }}
                 className="quick-action-btn-compact"
-                title="打开 Claude Code（右键选择环境）"
+                title="终端（右键打开 Claude Code）"
               >
-                <span className="claude-icon-text" style={{ fontSize: 10, width: 14, height: 14 }}>C</span>
-                <span>Claude</span>
+                <Terminal size={14} />
+                <span>终端</span>
               </button>
             </div>
           </div>
@@ -1104,18 +1065,18 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
       {/* Editor Context Menu */}
       {showEditorMenu && (
         <EditorContextMenu
-          project={project}
+          project={storeProject}
           position={showEditorMenu}
           onClose={() => setShowEditorMenu(null)}
         />
       )}
 
-      {/* Claude Env Selector */}
-      {showClaudeEnvSelector && (
-        <ClaudeEnvSelector
-          project={project}
-          position={showClaudeEnvSelector}
-          onClose={() => setShowClaudeEnvSelector(null)}
+      {/* Terminal Context Menu (includes Claude Code) */}
+      {showTerminalMenu && (
+        <TerminalContextMenu
+          project={storeProject}
+          position={showTerminalMenu}
+          onClose={() => setShowTerminalMenu(null)}
         />
       )}
     </div>
