@@ -17,6 +17,8 @@ pub struct Project {
     pub created_at: String,
     pub updated_at: String,
     pub last_opened: Option<String>,
+    #[serde(default)]
+    pub editor_id: Option<String>,
 }
 
 // ============== 编辑器配置数据 ==============

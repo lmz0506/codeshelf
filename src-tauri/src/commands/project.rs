@@ -102,6 +102,7 @@ pub fn create_project(input: CreateProjectInput) -> Result<Project, String> {
         created_at: now.clone(),
         updated_at: now,
         last_opened: None,
+        editor_id: None,
     };
 
     projects.push(project.clone());
@@ -258,6 +259,7 @@ pub fn import_projects(new_projects: Vec<CreateProjectInput>) -> Result<Vec<Proj
             created_at: now.clone(),
             updated_at: now,
             last_opened: None,
+            editor_id: None,
         };
 
         projects.push(project.clone());
@@ -275,4 +277,23 @@ pub fn reload_projects() -> Result<Vec<Project>, String> {
     let mut projects = PROJECTS.lock().map_err(|e| e.to_string())?;
     *projects = new_projects;
     Ok(projects.clone())
+}
+
+/// 设置项目级默认编辑器
+#[tauri::command]
+pub fn set_project_editor(id: String, editor_id: Option<String>) -> Result<Project, String> {
+    let mut projects = PROJECTS.lock().map_err(|e| e.to_string())?;
+
+    let project = projects
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or("项目不存在")?;
+
+    project.editor_id = editor_id;
+    project.updated_at = current_iso_time();
+
+    let updated = project.clone();
+    save_projects_to_file(&projects)?;
+
+    Ok(updated)
 }

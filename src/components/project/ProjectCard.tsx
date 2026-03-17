@@ -5,7 +5,9 @@ import { getGitStatus, getRemotes } from "@/services/git";
 import { openInTerminal, openInExplorer, openInEditor, toggleFavorite, removeProject, deleteProjectDirectory, updateProject } from "@/services/db";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { LabelSelector } from "./LabelSelector";
+import { EditorContextMenu } from "./EditorContextMenu";
 import { useAppStore } from "@/stores/appStore";
+import { getEditorForProject } from "@/utils/editor";
 
 interface ProjectCardProps {
   project: Project;
@@ -19,6 +21,7 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
   const [remoteType, setRemoteType] = useState<"github" | "gitee" | "gitlab" | "other" | "none">("none");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
+  const [showEditorMenu, setShowEditorMenu] = useState<{ x: number; y: number } | null>(null);
   const [editingLabels, setEditingLabels] = useState<string[]>([]);
   const { terminalConfig, editors } = useAppStore();
 
@@ -91,12 +94,18 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
   async function handleOpenEditor(e: React.MouseEvent) {
     e.stopPropagation();
     try {
-      const editorPath = editors.length > 0 ? editors[0].path : undefined;
+      const editorPath = getEditorForProject(project, editors);
       await openInEditor(project.path, editorPath);
     } catch (error) {
       console.error("Failed to open editor:", error);
       alert("打开编辑器失败：" + error);
     }
+  }
+
+  function handleEditorContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowEditorMenu({ x: e.clientX, y: e.clientY });
   }
 
   async function handleDelete(deleteDirectory: boolean) {
@@ -216,8 +225,9 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
           <div className="re-card-actions">
             <button
               className="re-icon-btn"
-              title="打开编辑器"
+              title="打开编辑器（右键选择编辑器）"
               onClick={handleOpenEditor}
+              onContextMenu={handleEditorContextMenu}
             >
               ✏️
             </button>
@@ -254,6 +264,14 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
           projectName={project.name}
           onConfirm={handleDelete}
           onCancel={() => setShowDeleteDialog(false)}
+        />
+      )}
+
+      {showEditorMenu && (
+        <EditorContextMenu
+          project={project}
+          position={showEditorMenu}
+          onClose={() => setShowEditorMenu(null)}
         />
       )}
 

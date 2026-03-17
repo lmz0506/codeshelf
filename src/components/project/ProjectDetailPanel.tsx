@@ -7,10 +7,12 @@ import { MarkdownRenderer } from "./MarkdownRenderer";
 import { BranchSwitchModal } from "./BranchSwitchModal";
 import { GitCommitModal } from "./GitCommitModal";
 import { AddRemoteModal } from "./AddRemoteModal";
+import { EditorContextMenu } from "./EditorContextMenu";
 import { showToast } from "@/components/ui";
 import type { Project, GitStatus, CommitInfo, RemoteInfo } from "@/types";
 import { getGitStatus, getCommitHistory, getRemotes, gitPull, gitPush, removeRemote } from "@/services/git";
 import { openInEditor, openInExplorer, openInTerminal, updateProject, openUrl } from "@/services/db";
+import { getEditorForProject } from "@/utils/editor";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -36,6 +38,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [showAddRemoteModal, setShowAddRemoteModal] = useState(false);
+  const [showEditorMenu, setShowEditorMenu] = useState<{ x: number; y: number } | null>(null);
   const [readmeContent, setReadmeContent] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>(project.tags);
   const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
@@ -678,11 +681,15 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
               </button>
               <button
                 onClick={() => {
-                  const editorPath = editors.length > 0 ? editors[0].path : undefined;
+                  const editorPath = getEditorForProject(project, editors);
                   openInEditor(project.path, editorPath);
                 }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setShowEditorMenu({ x: e.clientX, y: e.clientY });
+                }}
                 className="quick-action-btn-compact"
-                title="在编辑器中打开"
+                title="在编辑器中打开（右键选择编辑器）"
               >
                 <Code size={14} />
                 <span>编辑器</span>
@@ -1033,6 +1040,15 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
           projectPath={project.path}
           onClose={() => setShowAddRemoteModal(false)}
           onSuccess={loadProjectDetails}
+        />
+      )}
+
+      {/* Editor Context Menu */}
+      {showEditorMenu && (
+        <EditorContextMenu
+          project={project}
+          position={showEditorMenu}
+          onClose={() => setShowEditorMenu(null)}
         />
       )}
     </div>

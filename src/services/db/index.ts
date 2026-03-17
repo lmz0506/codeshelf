@@ -45,6 +45,10 @@ export async function reloadProjects(): Promise<Project[]> {
   return invoke("reload_projects");
 }
 
+export async function setProjectEditor(id: string, editorId: string | null): Promise<Project> {
+  return invoke("set_project_editor", { id, editorId });
+}
+
 export async function openInEditor(path: string, editorPath?: string): Promise<void> {
   return invoke("open_in_editor", { path, editorPath });
 }

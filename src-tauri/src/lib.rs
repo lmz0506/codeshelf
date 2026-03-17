@@ -243,6 +243,7 @@ pub fn run() {
             project::batch_delete_projects,
             project::import_projects,
             project::reload_projects,
+            project::set_project_editor,
             // Stats commands
             stats::get_dashboard_stats,
             stats::refresh_dashboard_stats,
