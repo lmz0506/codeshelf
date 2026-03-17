@@ -99,6 +99,7 @@ pub async fn open_in_editor(path: String, editor_path: Option<String>) -> Result
 }
 
 #[tauri::command]
+#[allow(unused_variables)]
 pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custom_path: Option<String>, terminal_path: Option<String>) -> Result<(), String> {
     let term_type = terminal_type.unwrap_or_else(|| "default".to_string());
 

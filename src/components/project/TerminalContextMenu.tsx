@@ -14,7 +14,7 @@ interface TerminalContextMenuProps {
 }
 
 export function TerminalContextMenu({ project, position, onClose }: TerminalContextMenuProps) {
-  const { terminalConfig, setProjectClaudeEnv } = useAppStore();
+  const { terminalConfig } = useAppStore();
   const menuRef = useRef<HTMLDivElement>(null);
   const [adjustedPos, setAdjustedPos] = useState(position);
   const [claudeEnvs, setClaudeEnvs] = useState<ClaudeCodeInfo[]>([]);
@@ -26,9 +26,7 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
 
   async function loadClaudeEnvs() {
     try {
-      // 先尝试从缓存读取
       let cached = await getClaudeInstallationsCache();
-      // 如果没有缓存，自动扫描一次
       if (!cached) {
         try {
           const scanned = await checkAllClaudeInstallations();
@@ -37,10 +35,9 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
             cached = scanned;
           }
         } catch {
-          // 扫描失败也没关系，用空列表
+          // scan failure is ok
         }
       }
-      // 只显示已安装且有版本号的环境
       setClaudeEnvs(cached?.filter((e) => e.installed && e.version) || []);
     } catch (error) {
       console.error("Failed to load Claude envs:", error);
@@ -49,7 +46,6 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
     }
   }
 
-  // 点击外部关闭
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -60,7 +56,6 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
     return () => document.removeEventListener("mousedown", handleClick);
   }, [onClose]);
 
-  // 调整位置避免溢出
   useEffect(() => {
     if (menuRef.current) {
       const rect = menuRef.current.getBoundingClientRect();
@@ -70,7 +65,6 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
     }
   }, [position, claudeEnvs]);
 
-  // ESC 关闭
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -93,7 +87,6 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
 
   async function handleLaunchClaude(env: ClaudeCodeInfo) {
     try {
-      // 与工具箱页面保持完全一致的调用方式
       await launchClaudeInTerminal(
         project.path,
         terminalConfig.type,
@@ -108,16 +101,6 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
       console.error("Failed to launch Claude Code:", error);
       showToast("error", "启动失败", String(error));
     }
-  }
-
-  function handleSetDefaultClaude(envName: string) {
-    setProjectClaudeEnv(project.id, envName);
-    showToast("success", "已设置", `「${project.name}」默认 Claude 环境: ${envName}`);
-  }
-
-  function handleClearDefaultClaude() {
-    setProjectClaudeEnv(project.id, null);
-    showToast("success", "已清除", `「${project.name}」将自动选择 Claude 环境`);
   }
 
   return (
@@ -146,42 +129,18 @@ export function TerminalContextMenu({ project, position, onClose }: TerminalCont
         <>
           <div className="editor-context-menu-divider" />
           <div className="editor-context-menu-header">Claude Code</div>
-          {claudeEnvs.map((env, i) => {
-            const isDefault = project.claudeEnvName === env.envName;
-            return (
-              <div key={i} className="editor-context-menu-item-row">
-                <button
-                  className={`editor-context-menu-item ${isDefault ? "editor-context-menu-item-active" : ""}`}
-                  onClick={() => handleLaunchClaude(env)}
-                  title={`v${env.version}`}
-                >
-                  <span className="claude-icon-text" style={{ fontSize: 10, width: 18, height: 18, flexShrink: 0 }}>C</span>
-                  <span className="editor-context-menu-item-name">{env.envName}</span>
-                  {isDefault && (
-                    <span className="editor-context-menu-badge">默认</span>
-                  )}
-                  <span className="editor-context-menu-badge-global">v{env.version}</span>
-                </button>
-                {!isDefault && (
-                  <button
-                    className="editor-context-menu-set-default"
-                    onClick={() => handleSetDefaultClaude(env.envName)}
-                    title="设为此项目默认 Claude 环境"
-                  >
-                    默认
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          {project.claudeEnvName && (
+          {claudeEnvs.map((env, i) => (
             <button
-              className="editor-context-menu-item editor-context-menu-item-clear"
-              onClick={handleClearDefaultClaude}
+              key={i}
+              className="editor-context-menu-item"
+              onClick={() => handleLaunchClaude(env)}
+              title={`v${env.version}`}
             >
-              清除默认环境
+              <span className="claude-icon-text" style={{ fontSize: 10, width: 18, height: 18, flexShrink: 0 }}>C</span>
+              <span className="editor-context-menu-item-name">{env.envName}</span>
+              <span className="editor-context-menu-badge-global">v{env.version}</span>
             </button>
-          )}
+          ))}
         </>
       ) : null}
     </div>
