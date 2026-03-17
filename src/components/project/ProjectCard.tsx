@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Copy } from "lucide-react";
 import type { Project, GitStatus } from "@/types";
 import { getGitStatus, getRemotes } from "@/services/git";
 import { openInTerminal, openInExplorer, openInEditor, toggleFavorite, removeProject, deleteProjectDirectory, updateProject } from "@/services/db";
+import { launchClaudeInTerminal, getClaudeInstallationsCache } from "@/services/toolbox";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { LabelSelector } from "./LabelSelector";
 import { EditorContextMenu } from "./EditorContextMenu";
+import { ClaudeEnvSelector } from "./ClaudeEnvSelector";
 import { useAppStore } from "@/stores/appStore";
-import { getEditorForProject } from "@/utils/editor";
+import { getEditorForProject, getEditorConfigForProject, getEditorIcon } from "@/utils/editor";
 
 interface ProjectCardProps {
   project: Project;
@@ -22,7 +24,9 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
   const [showEditorMenu, setShowEditorMenu] = useState<{ x: number; y: number } | null>(null);
+  const [showClaudeEnvSelector, setShowClaudeEnvSelector] = useState<{ x: number; y: number } | null>(null);
   const [editingLabels, setEditingLabels] = useState<string[]>([]);
+  const [copiedPath, setCopiedPath] = useState(false);
   const { terminalConfig, editors } = useAppStore();
 
   useEffect(() => {
@@ -108,6 +112,46 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
     setShowEditorMenu({ x: e.clientX, y: e.clientY });
   }
 
+  async function handleCopyPath(e: React.MouseEvent) {
+    e.stopPropagation();
+    await navigator.clipboard.writeText(project.path);
+    setCopiedPath(true);
+    setTimeout(() => setCopiedPath(false), 1500);
+  }
+
+  async function handleOpenClaude(e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      const cached = await getClaudeInstallationsCache();
+      const installed = cached?.filter((env) => env.installed) || [];
+      if (installed.length === 0) {
+        alert("未检测到 Claude Code 安装，请先在工具箱中检查");
+        return;
+      }
+      // 如果有项目级默认环境，直接使用
+      if (project.claudeEnvName) {
+        const env = installed.find((e) => e.envName === project.claudeEnvName);
+        if (env) {
+          const termType = terminalConfig.type === "default" ? undefined : terminalConfig.type;
+          const termPath = terminalConfig.paths?.[terminalConfig.type as keyof typeof terminalConfig.paths];
+          await launchClaudeInTerminal(project.path, termType, terminalConfig.customPath, termPath, env.envType, env.envName);
+          return;
+        }
+      }
+      if (installed.length === 1) {
+        const env = installed[0];
+        const termType = terminalConfig.type === "default" ? undefined : terminalConfig.type;
+        const termPath = terminalConfig.paths?.[terminalConfig.type as keyof typeof terminalConfig.paths];
+        await launchClaudeInTerminal(project.path, termType, terminalConfig.customPath, termPath, env.envType, env.envName);
+      } else {
+        setShowClaudeEnvSelector({ x: e.clientX, y: e.clientY });
+      }
+    } catch (error) {
+      console.error("Failed to launch Claude Code:", error);
+      alert("启动 Claude Code 失败：" + error);
+    }
+  }
+
   async function handleDelete(deleteDirectory: boolean) {
     try {
       if (deleteDirectory) {
@@ -156,6 +200,10 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
   }
 
   // exact 1:1 reproduction from example.html CSS
+  const currentEditor = getEditorConfigForProject(project, editors);
+  const editorIconText = currentEditor ? getEditorIcon(currentEditor.name) : "✏️";
+  const editorTitle = currentEditor ? `用 ${currentEditor.name} 打开（右键选择）` : "打开编辑器（右键选择编辑器）";
+
   return (
     <>
       <div
@@ -214,7 +262,14 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
         </div>
 
         <div className="re-card-path">
-          {project.path}
+          <span className="re-card-path-text">{project.path}</span>
+          <button
+            className={`re-card-path-copy ${copiedPath ? "re-card-path-copied" : ""}`}
+            title="复制路径"
+            onClick={handleCopyPath}
+          >
+            {copiedPath ? "✓" : <Copy size={11} />}
+          </button>
         </div>
 
         <div className="re-card-footer">
@@ -224,12 +279,12 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
 
           <div className="re-card-actions">
             <button
-              className="re-icon-btn"
-              title="打开编辑器（右键选择编辑器）"
+              className="re-icon-btn re-icon-btn-editor"
+              title={editorTitle}
               onClick={handleOpenEditor}
               onContextMenu={handleEditorContextMenu}
             >
-              ✏️
+              <span className="editor-icon-text">{editorIconText}</span>
             </button>
             <button
               className="re-icon-btn"
@@ -244,6 +299,18 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
               onClick={handleOpenTerminal}
             >
               💻
+            </button>
+            <button
+              className="re-icon-btn re-icon-btn-claude"
+              title="Claude Code（右键选择环境）"
+              onClick={handleOpenClaude}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowClaudeEnvSelector({ x: e.clientX, y: e.clientY });
+              }}
+            >
+              <span className="claude-icon-text">C</span>
             </button>
             <button
               className="re-icon-btn"
@@ -272,6 +339,14 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
           project={project}
           position={showEditorMenu}
           onClose={() => setShowEditorMenu(null)}
+        />
+      )}
+
+      {showClaudeEnvSelector && (
+        <ClaudeEnvSelector
+          project={project}
+          position={showClaudeEnvSelector}
+          onClose={() => setShowClaudeEnvSelector(null)}
         />
       )}
 

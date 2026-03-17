@@ -491,6 +491,42 @@ body {
   word-break: break-all;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   border: 1px solid #f3f4f6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.re-card-path-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.re-card-path-copy {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 11px;
+}
+
+.re-card-path-copy:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.re-card-path-copied {
+  color: #22c55e !important;
+  background: #f0fdf4 !important;
 }
 
 .re-card-footer {
@@ -2325,4 +2361,56 @@ body {
 
 .dark .editor-context-menu-divider {
   background: #334155;
+}
+
+/* ============== 编辑器图标文字 ============== */
+.editor-icon-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: white;
+  line-height: 1;
+  letter-spacing: -0.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.re-icon-btn-editor {
+  padding: 0 !important;
+}
+
+/* ============== Claude Code 图标 ============== */
+.claude-icon-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  font-weight: 800;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #d97706, #ea580c);
+  color: white;
+  line-height: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.re-icon-btn-claude {
+  padding: 0 !important;
+}
+
+/* 暗色 - 路径复制 */
+.dark .re-card-path-copy:hover {
+  background: #475569;
+  color: #e2e8f0;
+}
+
+.dark .re-card-path-copied {
+  color: #4ade80 !important;
+  background: #052e16 !important;
 }

@@ -49,6 +49,10 @@ export async function setProjectEditor(id: string, editorId: string | null): Pro
   return invoke("set_project_editor", { id, editorId });
 }
 
+export async function setProjectClaudeEnv(id: string, claudeEnvName: string | null): Promise<Project> {
+  return invoke("set_project_claude_env", { id, claudeEnvName });
+}
+
 export async function openInEditor(path: string, editorPath?: string): Promise<void> {
   return invoke("open_in_editor", { path, editorPath });
 }

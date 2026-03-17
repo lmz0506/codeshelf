@@ -103,6 +103,7 @@ pub fn create_project(input: CreateProjectInput) -> Result<Project, String> {
         updated_at: now,
         last_opened: None,
         editor_id: None,
+        claude_env_name: None,
     };
 
     projects.push(project.clone());
@@ -260,6 +261,7 @@ pub fn import_projects(new_projects: Vec<CreateProjectInput>) -> Result<Vec<Proj
             updated_at: now,
             last_opened: None,
             editor_id: None,
+            claude_env_name: None,
         };
 
         projects.push(project.clone());
@@ -290,6 +292,25 @@ pub fn set_project_editor(id: String, editor_id: Option<String>) -> Result<Proje
         .ok_or("项目不存在")?;
 
     project.editor_id = editor_id;
+    project.updated_at = current_iso_time();
+
+    let updated = project.clone();
+    save_projects_to_file(&projects)?;
+
+    Ok(updated)
+}
+
+/// 设置项目级 Claude Code 环境
+#[tauri::command]
+pub fn set_project_claude_env(id: String, claude_env_name: Option<String>) -> Result<Project, String> {
+    let mut projects = PROJECTS.lock().map_err(|e| e.to_string())?;
+
+    let project = projects
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or("项目不存在")?;
+
+    project.claude_env_name = claude_env_name;
     project.updated_at = current_iso_time();
 
     let updated = project.clone();

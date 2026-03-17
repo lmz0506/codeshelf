@@ -244,6 +244,7 @@ pub fn run() {
             project::import_projects,
             project::reload_projects,
             project::set_project_editor,
+            project::set_project_claude_env,
             // Stats commands
             stats::get_dashboard_stats,
             stats::refresh_dashboard_stats,

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Project, ViewMode, Notification, AppShortcutBinding } from "@/types";
 import type { ToolType } from "@/types/toolbox";
 import { markProjectDirty as markDirty } from "@/services/stats";
-import { setProjectEditor as setProjectEditorApi } from "@/services/db";
+import { setProjectEditor as setProjectEditorApi, setProjectClaudeEnv as setProjectClaudeEnvApi } from "@/services/db";
 
 export type Theme = "light" | "dark";
 
@@ -43,6 +43,7 @@ interface AppState {
   removeProject: (id: string) => void;
   updateProject: (id: string, updates: Partial<Project>) => void;
   setProjectEditor: (projectId: string, editorId: string | null) => void;
+  setProjectClaudeEnv: (projectId: string, claudeEnvName: string | null) => void;
 
   // Recent Detail Projects (最近打开详情的项目)
   recentDetailProjectIds: string[];
@@ -186,6 +187,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       ),
     }));
     setProjectEditorApi(projectId, editorId).catch(console.error);
+  },
+  setProjectClaudeEnv: (projectId, claudeEnvName) => {
+    set((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === projectId ? { ...p, claudeEnvName: claudeEnvName ?? undefined } : p
+      ),
+    }));
+    setProjectClaudeEnvApi(projectId, claudeEnvName).catch(console.error);
   },
 
   // Recent Detail Projects (最近打开详情的项目，最多保留9个)

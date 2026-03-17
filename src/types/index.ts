@@ -10,6 +10,7 @@ export interface Project {
   updatedAt: string;
   lastOpened?: string;
   editorId?: string;
+  claudeEnvName?: string;
   remoteUrl?: string;
   remoteType?: "github" | "gitee" | "gitlab" | "other" | "none";
 }
