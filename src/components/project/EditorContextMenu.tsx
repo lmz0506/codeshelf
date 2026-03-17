@@ -4,6 +4,7 @@ import type { EditorConfig } from "@/stores/appStore";
 import { useAppStore } from "@/stores/appStore";
 import { openInEditor } from "@/services/db";
 import { getEditorForProject } from "@/utils/editor";
+import { showToast } from "@/components/ui";
 
 interface EditorContextMenuProps {
   project: Project;
@@ -57,12 +58,15 @@ export function EditorContextMenu({ project, position, onClose }: EditorContextM
   }
 
   function handleSetDefault(editorId: string) {
+    const editor = editors.find((e) => e.id === editorId);
     setProjectEditor(project.id, editorId);
+    showToast("success", "已设置", `「${project.name}」默认编辑器已设为 ${editor?.name ?? "未知"}`);
     onClose();
   }
 
   function handleClearDefault() {
     setProjectEditor(project.id, null);
+    showToast("success", "已清除", `「${project.name}」将使用全局默认编辑器`);
     onClose();
   }
 
