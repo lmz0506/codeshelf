@@ -39,6 +39,23 @@ fn new_command(program: &str) -> Command {
 #[cfg(not(target_os = "windows"))]
 fn get_augmented_path() -> String {
     let current_path = std::env::var("PATH").unwrap_or_default();
+    let extra = get_extra_path_dirs();
+
+    let mut parts: Vec<&str> = current_path.split(':').collect();
+    for dir in &extra {
+        if !parts.contains(&dir.as_str()) {
+            parts.push(dir.as_str());
+        }
+    }
+
+    parts.join(":")
+}
+
+/// 获取需要额外添加到 PATH 的目录列表（不包含现有 PATH）
+#[cfg(not(target_os = "windows"))]
+fn get_extra_path_dirs() -> Vec<String> {
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let current_parts: Vec<&str> = current_path.split(':').collect();
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
     let home_str = home.to_string_lossy();
 
@@ -63,14 +80,10 @@ fn get_augmented_path() -> String {
         }
     }
 
-    let mut parts: Vec<&str> = current_path.split(':').collect();
-    for dir in extra_dirs.iter().chain(nvm_bins.iter()) {
-        if !parts.contains(&dir.as_str()) {
-            parts.push(dir.as_str());
-        }
-    }
-
-    parts.join(":")
+    extra_dirs.iter().chain(nvm_bins.iter())
+        .filter(|d| !current_parts.contains(&d.as_str()))
+        .cloned()
+        .collect()
 }
 
 /// 清理 WSL 命令输出中的特殊字符（\r, \0 等）
@@ -1543,6 +1556,38 @@ pub async fn clear_claude_installations_cache() -> Result<(), String> {
 
 // ============== 启动 Claude Code ==============
 
+/// 将 Windows 路径转换为 WSL 路径
+/// 例如: C:\work\blog → /mnt/c/work/blog
+/// 如果路径已经是 Linux 格式 (/home/...) 则不转换
+#[cfg(target_os = "windows")]
+fn windows_path_to_wsl(path: &str) -> String {
+    // 已经是 Linux 路径，直接返回
+    if path.starts_with('/') {
+        return path.to_string();
+    }
+    // 匹配 C:\ 或 C:/ 格式
+    if path.len() >= 3 && path.as_bytes()[1] == b':' {
+        let drive = (path.as_bytes()[0] as char).to_lowercase().next().unwrap();
+        let rest = &path[2..];
+        let linux_rest = rest.replace('\\', "/");
+        return format!("/mnt/{}{}", drive, linux_rest);
+    }
+    // 匹配 \\wsl$ 或 \\wsl.localhost 的 UNC 路径
+    if path.starts_with("\\\\wsl") {
+        // \\wsl$\Ubuntu\home\user → /home/user
+        // 跳过 \\wsl$\distro 或 \\wsl.localhost\distro 部分
+        let normalized = path.replace('\\', "/");
+        if let Some(pos) = normalized[2..].find('/') {
+            let after_host = &normalized[2 + pos + 1..]; // skip "//wsl$" or "//wsl.localhost"
+            if let Some(pos2) = after_host.find('/') {
+                return after_host[pos2..].to_string();
+            }
+        }
+    }
+    // 无法转换，原样返回
+    path.to_string()
+}
+
 /// 在终端中启动 Claude Code
 #[tauri::command]
 pub async fn launch_claude_in_terminal(
@@ -1576,8 +1621,9 @@ pub async fn launch_claude_in_terminal(
 
         if is_wsl_env {
             // WSL 环境: 必须通过 wsl.exe 在 Linux 上下文中执行
-            // Windows 终端无法直接访问 Linux 路径 (如 /home/user/...)
-            let escaped_dir = dir.replace("'", "'\\''");
+            // Windows 路径 (C:\work\blog) 需要转换为 WSL 路径 (/mnt/c/work/blog)
+            let wsl_dir = windows_path_to_wsl(&dir);
+            let escaped_dir = wsl_dir.replace("'", "'\\''");
             let wsl_bash_cmd = format!("cd '{}' && claude", escaped_dir);
 
             let mut wsl_args: Vec<String> = Vec::new();
@@ -1682,11 +1728,17 @@ pub async fn launch_claude_in_terminal(
 
     #[cfg(target_os = "macos")]
     {
-        let augmented_path = get_augmented_path();
+        let extra_dirs = get_extra_path_dirs();
         let escaped_dir = dir.replace("\\", "\\\\").replace("\"", "\\\"");
+        // 只 prepend 额外的目录，避免命令过长刷屏
+        let path_prefix = if extra_dirs.is_empty() {
+            String::new()
+        } else {
+            format!("export PATH=\"{}:$PATH\" && ", extra_dirs.join(":"))
+        };
         let script_cmd = format!(
-            "cd \"{}\" && export PATH=\"{}\" && claude",
-            escaped_dir, augmented_path
+            "cd \"{}\" && {}claude",
+            escaped_dir, path_prefix
         );
 
         match term_type.as_str() {
@@ -1707,6 +1759,7 @@ pub async fn launch_claude_in_terminal(
                     .map_err(|e| format!("启动 iTerm 失败: {}", e))?;
             }
             "custom" => {
+                let full_path = get_augmented_path();
                 if let Some(custom) = custom_path {
                     if custom.ends_with(".app") {
                         // macOS .app 应用包：尝试找到包内可执行文件并启动
@@ -1721,7 +1774,7 @@ pub async fn launch_claude_in_terminal(
                         if let Some(exec_path) = executable {
                             Command::new(&exec_path)
                                 .current_dir(&dir)
-                                .env("PATH", &augmented_path)
+                                .env("PATH", &full_path)
                                 .spawn()
                                 .map_err(|e| format!("启动自定义终端失败: {}", e))?;
                         } else {
@@ -1734,7 +1787,7 @@ pub async fn launch_claude_in_terminal(
                     } else {
                         Command::new(&custom)
                             .current_dir(&dir)
-                            .env("PATH", &augmented_path)
+                            .env("PATH", &full_path)
                             .spawn()
                             .map_err(|e| format!("启动自定义终端失败: {}", e))?;
                     }
@@ -1761,11 +1814,16 @@ pub async fn launch_claude_in_terminal(
 
     #[cfg(target_os = "linux")]
     {
-        let augmented_path = get_augmented_path();
+        let extra_dirs = get_extra_path_dirs();
+        let path_prefix = if extra_dirs.is_empty() {
+            String::new()
+        } else {
+            format!("export PATH='{}:$PATH' && ", extra_dirs.join(":"))
+        };
         let bash_cmd = format!(
-            "cd '{}' && export PATH='{}' && claude",
+            "cd '{}' && {}claude",
             dir.replace("'", "'\\''"),
-            augmented_path.replace("'", "'\\''")
+            path_prefix
         );
 
         // 检测是否在 WSL 环境中
