@@ -16,6 +16,85 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ====== macOS 风格窗口控制按钮 ====== */
+.mac-window-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid #e5e7eb;
+  height: 24px;
+}
+
+.mac-btn {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  padding: 0;
+  position: relative;
+}
+
+.mac-btn svg {
+  width: 10px;
+  height: 10px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  stroke-width: 2.5px;
+}
+
+.mac-window-controls:hover .mac-btn svg {
+  opacity: 1;
+}
+
+.mac-btn-close {
+  background-color: #FF5F57;
+}
+.mac-btn-close:hover {
+  background-color: #FF3B30;
+}
+.mac-btn-close svg {
+  color: #4D0000;
+}
+
+.mac-btn-minimize {
+  background-color: #FEBC2E;
+}
+.mac-btn-minimize:hover {
+  background-color: #F0A500;
+}
+.mac-btn-minimize svg {
+  color: #985600;
+}
+
+.mac-btn-maximize {
+  background-color: #28C840;
+}
+.mac-btn-maximize:hover {
+  background-color: #1AAB29;
+}
+.mac-btn-maximize svg {
+  color: #006500;
+}
+
+/* 非 hover 时显示为灰色小圆点（可选，取消注释启用） */
+/*
+.mac-btn-close,
+.mac-btn-minimize,
+.mac-btn-maximize {
+  background-color: #d4d4d4;
+}
+.mac-window-controls:hover .mac-btn-close { background-color: #FF5F57; }
+.mac-window-controls:hover .mac-btn-minimize { background-color: #FEBC2E; }
+.mac-window-controls:hover .mac-btn-maximize { background-color: #28C840; }
+*/
+
 /* ====== 动画 ====== */
 @keyframes shimmer {
   0% {
@@ -136,11 +215,14 @@ body {
   height: 100%;
   overflow: hidden;
   margin-left: 200px;
-  background: #f9fafb;
+  margin: 6px 6px 6px 206px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .re-main-wrap.expanded {
-  margin-left: 0;
+  margin-left: 6px;
 }
 
 .re-header {
@@ -153,7 +235,7 @@ body {
   padding: 16px 24px;
   background: white;
   border-bottom: 1px solid #e5e7eb;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border-radius: 12px 12px 0 0;
 }
 
 .re-header .toggle {
@@ -580,6 +662,7 @@ body {
   border-top: 1px solid #e5e7eb;
   flex-shrink: 0;
   background: white;
+  border-radius: 0 0 12px 12px;
 }
 
 /* ============================================

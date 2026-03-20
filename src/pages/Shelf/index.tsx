@@ -1,15 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { ProjectCard, ScanResultDialog, ProjectDetailPanel, AddProjectDialog, AddCategoryDialog, CategorySelector, LabelSelector } from "@/components/project";
 import { FloatingCategoryBall, showToast } from "@/components/ui";
-import { Minus, X, MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark, Maximize2, Minimize2 } from "lucide-react";
+import { MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import type { Project, GitRepo, GitStatus } from "@/types";
 import { getProjects, addProject, removeProject, updateProject } from "@/services/db";
 import { scanDirectory, getGitStatus } from "@/services/git";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Dropdown, FilterPopover } from "@/components/ui";
-
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { MacWindowControls } from "@/components/layout/MacWindowControls";
 
 export function ShelfPage() {
   const {
@@ -50,9 +49,6 @@ export function ShelfPage() {
   const [batchLabels, setBatchLabels] = useState<string[]>([]);
   const [batchLabelMode, setBatchLabelMode] = useState<"replace" | "append">("append");
 
-  // 全屏状态
-  const [isMaximized, setIsMaximized] = useState(false);
-
   // 标签筛选状态
   const [selectedLabelFilters, setSelectedLabelFilters] = useState<string[]>([]);
 
@@ -73,29 +69,6 @@ export function ShelfPage() {
       setSelectedProjectId(null);
     }
   }, [selectedProjectId, projects]);
-
-  // 检查窗口最大化状态
-  useEffect(() => {
-    checkMaximized();
-    // 监听窗口 resize 事件来更新最大化状态
-    const handleResize = () => {
-      checkMaximized();
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  async function checkMaximized() {
-    const appWindow = getCurrentWindow();
-    const maximized = await appWindow.isMaximized();
-    setIsMaximized(maximized);
-  }
-
-  async function handleToggleMaximize() {
-    const appWindow = getCurrentWindow();
-    await appWindow.toggleMaximize();
-    checkMaximized();
-  }
 
   // 当启用 onlyModified 筛选时，加载所有项目的 git 状态
   useEffect(() => {
@@ -510,30 +483,7 @@ export function ShelfPage() {
             <span>项目</span>
           </button>
 
-          {/* Integrated Window Controls */}
-          <div className="flex items-center ml-2 border-l border-gray-200 pl-3 gap-1 h-6">
-            <button
-              onClick={handleToggleMaximize}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
-              title={isMaximized ? "还原" : "最大化"}
-            >
-              {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </button>
-            <button
-              onClick={() => getCurrentWindow()?.minimize()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
-              title="最小化"
-            >
-              <Minus size={14} />
-            </button>
-            <button
-              onClick={() => getCurrentWindow()?.close()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white rounded-md transition-colors text-gray-400"
-              title="关闭"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          <MacWindowControls />
         </div>
       </header>
 

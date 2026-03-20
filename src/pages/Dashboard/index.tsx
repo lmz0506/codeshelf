@@ -3,8 +3,6 @@ import {
   FolderGit2,
   GitCommit,
   ArrowUpCircle,
-  Minus,
-  X,
   User,
   Clock,
   FolderOpen,
@@ -21,7 +19,7 @@ import {
   type RecentCommit,
 } from "@/services/stats";
 import type { DashboardStats, DailyActivity } from "@/types";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { MacWindowControls } from "@/components/layout/MacWindowControls";
 
 export function DashboardPage() {
   const { projects, sidebarCollapsed, setSidebarCollapsed, navigateToProject } = useAppStore();
@@ -196,23 +194,7 @@ export function DashboardPage() {
             <span>{refreshing ? '刷新中...' : '刷新'}</span>
           </button>
 
-          {/* Integrated Window Controls */}
-          <div className="flex items-center ml-4 border-l border-gray-200 pl-3 gap-1 h-6">
-            <button
-              onClick={() => getCurrentWindow()?.minimize()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
-              title="最小化"
-            >
-              <Minus size={14} />
-            </button>
-            <button
-              onClick={() => getCurrentWindow()?.close()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white rounded-md transition-colors text-gray-400"
-              title="关闭"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          <MacWindowControls />
         </div>
       </header>
 
