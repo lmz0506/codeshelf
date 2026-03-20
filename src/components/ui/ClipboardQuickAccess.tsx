@@ -87,7 +87,8 @@ export function ClipboardQuickAccess() {
     return entries.filter(
       (e) =>
         e.content.toLowerCase().includes(q) ||
-        e.contentPreview.toLowerCase().includes(q)
+        e.contentPreview.toLowerCase().includes(q) ||
+        (e.note && e.note.toLowerCase().includes(q))
     );
   }, [entries, search]);
 
@@ -267,6 +268,11 @@ export function ClipboardQuickAccess() {
                       <p className="text-sm text-gray-700 dark:text-gray-300 truncate">
                         {entry.contentPreview}
                       </p>
+                      {entry.note && (
+                        <p className="text-[11px] text-blue-400 dark:text-blue-500 truncate mt-0.5">
+                          {entry.note}
+                        </p>
+                      )}
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[10px] text-gray-400">
                           {formatRelativeTime(entry.timestamp)}

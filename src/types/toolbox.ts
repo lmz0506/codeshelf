@@ -343,6 +343,7 @@ export interface ClipboardEntry {
   timestamp: number;
   pinned: boolean;
   charCount: number;
+  note?: string;
 }
 
 export interface ClipboardSettings {

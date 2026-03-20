@@ -10,6 +10,9 @@ import {
   ChevronDown,
   ChevronRight,
   Filter,
+  StickyNote,
+  Check,
+  X,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { ToolPanelHeader } from "./index";
@@ -22,6 +25,7 @@ import {
   getClipboardSettings,
   saveClipboardSettings,
   writeToClipboard,
+  updateClipboardNote,
 } from "@/services/toolbox";
 import type { ClipboardEntry, ClipboardSettings } from "@/types/toolbox";
 
@@ -52,6 +56,8 @@ export function ClipboardManager({ onBack }: { onBack: () => void }) {
   const [showSettings, setShowSettings] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteInput, setNoteInput] = useState("");
 
   const loadData = async () => {
     try {
@@ -91,7 +97,8 @@ export function ClipboardManager({ onBack }: { onBack: () => void }) {
       items = items.filter(
         (e) =>
           e.content.toLowerCase().includes(q) ||
-          e.contentPreview.toLowerCase().includes(q)
+          e.contentPreview.toLowerCase().includes(q) ||
+          (e.note && e.note.toLowerCase().includes(q))
       );
     }
     return items;
@@ -123,6 +130,26 @@ export function ClipboardManager({ onBack }: { onBack: () => void }) {
     } catch (err) {
       showToast("error", "删除失败", String(err));
     }
+  }
+
+  function startEditNote(entry: ClipboardEntry) {
+    setEditingNoteId(entry.id);
+    setNoteInput(entry.note || "");
+  }
+
+  async function saveNote(id: string) {
+    try {
+      const updated = await updateClipboardNote(id, noteInput);
+      setEntries((prev) => prev.map((e) => (e.id === id ? updated : e)));
+      setEditingNoteId(null);
+    } catch (err) {
+      showToast("error", "保存备注失败", String(err));
+    }
+  }
+
+  function cancelEditNote() {
+    setEditingNoteId(null);
+    setNoteInput("");
   }
 
   async function handleClearHistory() {
@@ -310,7 +337,56 @@ export function ClipboardManager({ onBack }: { onBack: () => void }) {
                             已置顶（永久保留）
                           </span>
                         )}
+                        {!isExpanded && entry.note && (
+                          <span className="text-[10px] text-blue-400 flex items-center gap-0.5 truncate max-w-[150px]">
+                            <StickyNote size={10} />
+                            {entry.note}
+                          </span>
+                        )}
                       </div>
+                      {/* 展开时显示备注编辑区 */}
+                      {isExpanded && (
+                        <div className="mt-2">
+                          {editingNoteId === entry.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={noteInput}
+                                onChange={(e) => setNoteInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveNote(entry.id);
+                                  if (e.key === "Escape") cancelEditNote();
+                                }}
+                                autoFocus
+                                placeholder="输入备注..."
+                                className="flex-1 px-2 py-1 text-xs rounded border border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                              <button
+                                onClick={() => saveNote(entry.id)}
+                                className="p-1 rounded hover:bg-green-50 dark:hover:bg-green-900/20 text-green-500 transition-colors"
+                                title="保存"
+                              >
+                                <Check size={14} />
+                              </button>
+                              <button
+                                onClick={cancelEditNote}
+                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 transition-colors"
+                                title="取消"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => startEditNote(entry)}
+                              className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-500 transition-colors"
+                            >
+                              <StickyNote size={12} />
+                              {entry.note ? entry.note : "添加备注"}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* 操作按钮 */}

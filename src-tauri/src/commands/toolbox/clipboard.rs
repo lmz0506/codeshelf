@@ -153,6 +153,7 @@ pub async fn add_clipboard_entry(content: String) -> Result<ClipboardEntry, Stri
         content,
         timestamp: now,
         pinned: false,
+        note: None,
     };
 
     entries.insert(0, entry.clone());
@@ -163,6 +164,20 @@ pub async fn add_clipboard_entry(content: String) -> Result<ClipboardEntry, Stri
 
     write_history_file(&entries)?;
     Ok(entry)
+}
+
+#[tauri::command]
+pub async fn update_clipboard_note(id: String, note: String) -> Result<ClipboardEntry, String> {
+    let mut entries = read_history_file()?;
+
+    let entry = entries.iter_mut().find(|e| e.id == id)
+        .ok_or_else(|| format!("剪贴板条目 {} 不存在", id))?;
+
+    entry.note = if note.trim().is_empty() { None } else { Some(note) };
+    let updated = entry.clone();
+
+    write_history_file(&entries)?;
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -309,6 +324,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                                 content: text,
                                 timestamp: now,
                                 pinned: false,
+                                note: None,
                             };
 
                             entries.insert(0, entry);

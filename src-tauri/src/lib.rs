@@ -365,6 +365,7 @@ pub fn run() {
             toolbox::clipboard::get_clipboard_settings,
             toolbox::clipboard::save_clipboard_settings,
             toolbox::clipboard::write_to_clipboard,
+            toolbox::clipboard::update_clipboard_note,
             // Settings commands
             settings::get_labels,
             settings::save_labels,

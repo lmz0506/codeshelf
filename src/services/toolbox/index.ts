@@ -562,6 +562,10 @@ export async function writeToClipboard(content: string): Promise<void> {
   return invoke("write_to_clipboard", { content });
 }
 
+export async function updateClipboardNote(id: string, note: string): Promise<ClipboardEntry> {
+  return invoke("update_clipboard_note", { id, note });
+}
+
 // ============== 工具函数 ==============
 
 export function formatBytes(bytes: number): string {

@@ -160,6 +160,8 @@ pub struct ClipboardEntry {
     pub timestamp: i64,
     pub pinned: bool,
     pub char_count: usize,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
