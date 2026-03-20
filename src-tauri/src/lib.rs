@@ -34,6 +34,24 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            // macOS: 设置窗口背景透明以支持圆角
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    use objc2_app_kit::{NSColor, NSWindow};
+                    use objc2_foundation::MainThreadMarker;
+
+                    if let Ok(ns_win) = window.ns_window() {
+                        let _mtm = MainThreadMarker::new().expect("must be on main thread");
+                        let ns_window: &NSWindow = unsafe { &*(ns_win as *const NSWindow) };
+                        let clear = NSColor::clearColor();
+                        ns_window.setBackgroundColor(Some(&clear));
+                        ns_window.setOpaque(false);
+                        ns_window.setHasShadow(true);
+                    }
+                }
+            }
+
             // 初始化存储系统
             if let Err(e) = storage::init_storage() {
                 eprintln!("存储系统初始化警告: {}", e);
