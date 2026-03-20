@@ -44,7 +44,7 @@ export function ClipboardManager({ onBack }: { onBack: () => void }) {
   const [entries, setEntries] = useState<ClipboardEntry[]>([]);
   const [settings, setSettings] = useState<ClipboardSettings>({
     enabled: true,
-    maxItems: 20,
+    maxItems: 50,
     monitorIntervalMs: 800,
   });
   const [search, setSearch] = useState("");
@@ -171,7 +171,7 @@ export function ClipboardManager({ onBack }: { onBack: () => void }) {
             <button
               onClick={handleClearHistory}
               className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-red-500 transition-colors"
-              title="清空非置顶记录"
+              title="清空非置顶记录（置顶条目会保留）"
             >
               <Trash2 size={16} />
             </button>
@@ -307,7 +307,7 @@ export function ClipboardManager({ onBack }: { onBack: () => void }) {
                         {entry.pinned && (
                           <span className="text-[10px] text-amber-500 flex items-center gap-0.5">
                             <Pin size={10} />
-                            已置顶
+                            已置顶（永久保留）
                           </span>
                         )}
                       </div>
@@ -329,7 +329,7 @@ export function ClipboardManager({ onBack }: { onBack: () => void }) {
                             ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20"
                             : "text-gray-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20"
                         }`}
-                        title={entry.pinned ? "取消置顶" : "置顶"}
+                        title={entry.pinned ? "取消置顶" : "置顶（不会被队列挤掉）"}
                       >
                         {entry.pinned ? <PinOff size={14} /> : <Pin size={14} />}
                       </button>

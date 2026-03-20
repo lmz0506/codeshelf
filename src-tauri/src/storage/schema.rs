@@ -174,7 +174,7 @@ impl Default for ClipboardSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            max_items: 20,
+            max_items: 50,
             monitor_interval_ms: 800,
         }
     }
