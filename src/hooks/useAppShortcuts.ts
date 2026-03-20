@@ -231,7 +231,20 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
   const { appShortcuts, setAppShortcuts } = useAppStore.getState();
 
   if (appShortcuts.length === 0) {
-    // 首次使用
+    // store 为空，先尝试从后端加载已保存的数据
+    try {
+      const saved: AppShortcutBinding[] = await invoke("get_app_shortcuts");
+      if (saved && saved.length > 0) {
+        setAppShortcuts(saved);
+        shortcutsReady = true;
+        // 继续往下检查是否需要补齐新条目
+        return ensureAppShortcutsPatched(saved, setAppShortcuts);
+      }
+    } catch {
+      // 读取失败，使用默认值
+    }
+
+    // 后端也没有数据，首次使用，写入默认值
     const defaults = DEFAULT_APP_SHORTCUTS;
     try {
       await invoke("save_app_shortcuts", { shortcuts: defaults });
@@ -243,6 +256,13 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
     return defaults;
   }
 
+  return ensureAppShortcutsPatched(appShortcuts, setAppShortcuts);
+}
+
+async function ensureAppShortcutsPatched(
+  appShortcuts: AppShortcutBinding[],
+  setAppShortcuts: (s: AppShortcutBinding[]) => void
+): Promise<AppShortcutBinding[]> {
   // 检查是否有新增的默认条目（版本升级时）
   const existingIds = new Set(appShortcuts.map((s) => s.id));
   const newEntries = DEFAULT_APP_SHORTCUTS.filter((d) => !existingIds.has(d.id));
