@@ -149,6 +149,37 @@ pub fn current_iso_time() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+// ============== 剪贴板历史数据 ==============
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardEntry {
+    pub id: String,
+    pub content: String,
+    pub content_preview: String,
+    pub timestamp: i64,
+    pub pinned: bool,
+    pub char_count: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardSettings {
+    pub enabled: bool,
+    pub max_items: u32,
+    pub monitor_interval_ms: u64,
+}
+
+impl Default for ClipboardSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_items: 20,
+            monitor_interval_ms: 800,
+        }
+    }
+}
+
 /// 生成唯一 ID
 pub fn generate_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};

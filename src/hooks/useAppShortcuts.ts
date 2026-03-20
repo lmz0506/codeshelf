@@ -26,6 +26,7 @@ export const DEFAULT_APP_SHORTCUTS: AppShortcutBinding[] = [
   { id: "tool_claude", label: "Claude Code", description: "快速打开 Claude Code 配置管理", keys: "ctrl+shift+4", defaultKeys: "ctrl+shift+4", enabled: true, global: false },
   { id: "tool_netcat", label: "Netcat", description: "快速打开 Netcat 协议测试", keys: "ctrl+shift+5", defaultKeys: "ctrl+shift+5", enabled: true, global: false },
   { id: "tool_shortcuts", label: "快捷键备忘", description: "快速打开快捷键备忘录", keys: "ctrl+shift+6", defaultKeys: "ctrl+shift+6", enabled: true, global: false },
+  { id: "tool_clipboard", label: "剪贴板历史", description: "打开剪贴板快速访问", keys: "ctrl+shift+v", defaultKeys: "ctrl+shift+v", enabled: true, global: true },
   // 其他
   { id: "toggle_sidebar", label: "切换侧边栏", description: "展开/收起侧边栏", keys: "ctrl+b", defaultKeys: "ctrl+b", enabled: true, global: false },
 ];
@@ -108,6 +109,7 @@ const TOOL_MAP: Record<string, ToolType> = {
   tool_claude: "claude",
   tool_netcat: "netcat",
   tool_shortcuts: "shortcuts",
+  tool_clipboard: "clipboard",
 };
 
 function executeAction(actionId: string) {
@@ -116,6 +118,9 @@ function executeAction(actionId: string) {
   if (actionId === "tool_shortcuts") {
     // 快捷键备忘：弹出快速查找弹窗
     store.toggleShortcutQuickLookup();
+  } else if (actionId === "tool_clipboard") {
+    // 剪贴板历史：弹出快速访问弹窗
+    store.toggleClipboardQuickAccess();
   } else if (actionId.startsWith("nav_")) {
     const page = actionId.replace("nav_", "") as "shelf" | "dashboard" | "toolbox" | "settings";
     store.setCurrentPage(page);

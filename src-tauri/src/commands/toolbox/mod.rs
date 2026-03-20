@@ -8,6 +8,7 @@ pub mod server;
 pub mod claude_code;
 pub mod netcat;
 pub mod shortcuts;
+pub mod clipboard;
 
 use serde::{Deserialize, Serialize};
 

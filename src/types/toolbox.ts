@@ -211,7 +211,7 @@ export interface ConfigProfile {
 
 // ============== 工具箱页面状态 ==============
 
-export type ToolType = "monitor" | "downloader" | "server" | "claude" | "netcat" | "shortcuts";
+export type ToolType = "monitor" | "downloader" | "server" | "claude" | "netcat" | "shortcuts" | "clipboard";
 
 export interface ToolInfo {
   id: ToolType;
@@ -332,4 +332,21 @@ export interface ShortcutInput {
   description?: string;
   keys?: string;
   platform?: string;
+}
+
+// ============== 剪贴板历史 ==============
+
+export interface ClipboardEntry {
+  id: string;
+  content: string;
+  contentPreview: string;
+  timestamp: number;
+  pinned: boolean;
+  charCount: number;
+}
+
+export interface ClipboardSettings {
+  enabled: boolean;
+  maxItems: number;
+  monitorIntervalMs: number;
 }

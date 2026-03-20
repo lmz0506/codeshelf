@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   Radio,
   Keyboard,
+  ClipboardList,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/stores/appStore";
@@ -22,6 +23,7 @@ import { SystemMonitor } from "./SystemMonitor";
 import { ClaudeCodeManager } from "./ClaudeCodeManager";
 import NetcatTool from "./NetcatTool";
 import { ShortcutsMemo } from "./ShortcutsMemo";
+import { ClipboardManager } from "./ClipboardManager";
 
 const tools = [
   {
@@ -67,6 +69,13 @@ const tools = [
     icon: Keyboard,
     color: "bg-amber-500",
   },
+  {
+    id: "clipboard" as ToolType,
+    name: "剪贴板历史",
+    description: "自动记录复制内容，支持搜索、置顶、持久化存储，快捷键快速呼出",
+    icon: ClipboardList,
+    color: "bg-teal-500",
+  },
 ];
 
 export function ToolboxPage() {
@@ -104,6 +113,8 @@ export function ToolboxPage() {
         return <NetcatToolPanel onBack={() => setActiveTool(null)} />;
       case "shortcuts":
         return <ShortcutsMemo onBack={() => setActiveTool(null)} />;
+      case "clipboard":
+        return <ClipboardManager onBack={() => setActiveTool(null)} />;
       default:
         return null;
     }

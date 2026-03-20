@@ -10,3 +10,4 @@ export { UpdateNotification } from "./UpdateNotification";
 export { AnimatedLogo } from "./AnimatedLogo";
 export { NotificationPanel } from "./NotificationPanel";
 export { ShortcutQuickLookup } from "./ShortcutQuickLookup";
+export { ClipboardQuickAccess } from "./ClipboardQuickAccess";

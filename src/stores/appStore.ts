@@ -122,6 +122,10 @@ interface AppState {
   showShortcutQuickLookup: boolean;
   toggleShortcutQuickLookup: () => void;
 
+  // Clipboard Quick Access (剪贴板快速访问弹窗)
+  showClipboardQuickAccess: boolean;
+  toggleClipboardQuickAccess: () => void;
+
   // Toolbox Navigation Target (从外部快捷键导航到工具箱子工具)
   toolboxNavigateTarget: ToolType | null;
   navigateToTool: (tool: ToolType) => void;
@@ -424,6 +428,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // Shortcut Quick Lookup (快捷键快速查找弹窗)
   showShortcutQuickLookup: false,
   toggleShortcutQuickLookup: () => set((state) => ({ showShortcutQuickLookup: !state.showShortcutQuickLookup })),
+
+  // Clipboard Quick Access (剪贴板快速访问弹窗)
+  showClipboardQuickAccess: false,
+  toggleClipboardQuickAccess: () => set((state) => ({ showClipboardQuickAccess: !state.showClipboardQuickAccess })),
 
   // Toolbox Navigation Target
   toolboxNavigateTarget: null,

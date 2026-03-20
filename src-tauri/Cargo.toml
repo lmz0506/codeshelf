@@ -46,6 +46,7 @@ tower-http = { version = "0.5", features = ["cors", "compression-gzip", "fs", "t
 sysinfo = "0.30"
 socket2 = "0.5"
 base64 = "0.22"
+arboard = "3"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 tauri-plugin-global-shortcut = "2"

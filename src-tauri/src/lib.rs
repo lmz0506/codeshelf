@@ -79,11 +79,12 @@ pub fn run() {
             let tool_claude = MenuItem::with_id(app, "tool_claude", "Claude Code", true, None::<&str>)?;
             let tool_netcat = MenuItem::with_id(app, "tool_netcat", "Netcat", true, None::<&str>)?;
             let tool_shortcuts = MenuItem::with_id(app, "tool_shortcuts", "快捷键备忘", true, None::<&str>)?;
+            let tool_clipboard = MenuItem::with_id(app, "tool_clipboard", "剪贴板历史", true, None::<&str>)?;
             let toolbox_submenu = Submenu::with_items(
                 app,
                 "工具箱",
                 true,
-                &[&tool_monitor, &tool_downloader, &tool_server, &tool_claude, &tool_netcat, &tool_shortcuts],
+                &[&tool_monitor, &tool_downloader, &tool_server, &tool_claude, &tool_netcat, &tool_shortcuts, &tool_clipboard],
             )?;
 
             let sep1 = PredefinedMenuItem::separator(app)?;
@@ -194,6 +195,9 @@ pub fn run() {
             }
 
             println!("Tauri app setup completed with tray icon");
+
+            // 启动剪贴板监控
+            commands::toolbox::clipboard::start_clipboard_monitor(app.handle().clone());
 
             Ok(())
         })
@@ -352,6 +356,15 @@ pub fn run() {
             toolbox::shortcuts::delete_shortcut,
             toolbox::shortcuts::reset_shortcuts,
             toolbox::shortcuts::get_current_platform,
+            // Toolbox - Clipboard commands
+            toolbox::clipboard::get_clipboard_history,
+            toolbox::clipboard::add_clipboard_entry,
+            toolbox::clipboard::delete_clipboard_entry,
+            toolbox::clipboard::toggle_pin_clipboard_entry,
+            toolbox::clipboard::clear_clipboard_history,
+            toolbox::clipboard::get_clipboard_settings,
+            toolbox::clipboard::save_clipboard_settings,
+            toolbox::clipboard::write_to_clipboard,
             // Settings commands
             settings::get_labels,
             settings::save_labels,
