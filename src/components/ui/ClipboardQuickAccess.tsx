@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Search, Pin, PinOff, ExternalLink, ClipboardList, Copy } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/stores/appStore";
 import { eventToKeys } from "@/hooks/useAppShortcuts";
 import { getClipboardHistory, writeToClipboard, togglePinClipboardEntry } from "@/services/toolbox";
@@ -28,6 +29,16 @@ export function ClipboardQuickAccess() {
   const show = useAppStore((s) => s.showClipboardQuickAccess);
   const toggle = useAppStore((s) => s.toggleClipboardQuickAccess);
   const navigateToTool = useAppStore((s) => s.navigateToTool);
+
+  // 关闭弹窗：如果是全局快捷键从隐藏状态唤起的，自动藏回窗口
+  const closePopup = useCallback(() => {
+    toggle();
+    const { popupAutoHideWindow, setPopupAutoHideWindow } = useAppStore.getState();
+    if (popupAutoHideWindow) {
+      setPopupAutoHideWindow(false);
+      getCurrentWindow().hide().catch(console.error);
+    }
+  }, [toggle]);
 
   const [entries, setEntries] = useState<ClipboardEntry[]>([]);
   const [search, setSearch] = useState("");
@@ -97,11 +108,11 @@ export function ClipboardQuickAccess() {
     try {
       await writeToClipboard(entry.content);
       showToast("success", "已复制到剪贴板");
-      toggle();
+      closePopup();
     } catch (err) {
       showToast("error", "复制失败", String(err));
     }
-  }, [toggle]);
+  }, [closePopup]);
 
   // 置顶
   const handleTogglePin = useCallback(async (id: string, e?: React.MouseEvent) => {
@@ -122,7 +133,7 @@ export function ClipboardQuickAccess() {
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopImmediatePropagation();
-        toggle();
+        closePopup();
         return;
       }
 
@@ -136,7 +147,7 @@ export function ClipboardQuickAccess() {
         if (binding && pressed === binding.keys) {
           e.preventDefault();
           e.stopImmediatePropagation();
-          toggle();
+          closePopup();
           return;
         }
       }
@@ -182,11 +193,13 @@ export function ClipboardQuickAccess() {
     }
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [show, toggle, filtered, activeIndex, handleCopy, handleTogglePin]);
+  }, [show, closePopup, filtered, activeIndex, handleCopy, handleTogglePin]);
 
   if (!show) return null;
 
   function goToFullPage() {
+    // 跳转完整页面时清除自动隐藏标记（用户需要看到主界面）
+    useAppStore.getState().setPopupAutoHideWindow(false);
     toggle();
     navigateToTool("clipboard");
   }
@@ -195,7 +208,7 @@ export function ClipboardQuickAccess() {
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] bg-black/40"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) toggle();
+        if (e.target === e.currentTarget) closePopup();
       }}
     >
       <div

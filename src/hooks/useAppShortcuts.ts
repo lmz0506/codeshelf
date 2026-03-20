@@ -132,6 +132,11 @@ function executeAction(actionId: string) {
 }
 
 /**
+ * 弹窗类快捷键 — 只打开/收起弹窗，不暴露主界面
+ */
+const POPUP_ACTIONS = new Set(["tool_shortcuts", "tool_clipboard"]);
+
+/**
  * 全局快捷键触发：先唤起窗口，再执行动作
  */
 async function handleGlobalAction(actionId: string) {
@@ -152,6 +157,27 @@ async function handleGlobalAction(actionId: string) {
     } catch (err) {
       console.error("切换窗口失败:", err);
     }
+    return;
+  }
+
+  // 弹窗类动作：记住窗口之前是否隐藏，关闭弹窗时自动藏回去
+  if (POPUP_ACTIONS.has(actionId)) {
+    try {
+      const visible = await win.isVisible();
+      const minimized = visible && await win.isMinimized();
+      const wasHidden = !visible || minimized;
+
+      if (wasHidden) {
+        // 窗口之前是隐藏的 → 标记关闭弹窗后自动隐藏
+        useAppStore.getState().setPopupAutoHideWindow(true);
+        await win.show();
+        await win.unminimize();
+        await win.setFocus();
+      }
+    } catch (err) {
+      console.error("唤起窗口失败:", err);
+    }
+    executeAction(actionId);
     return;
   }
 
