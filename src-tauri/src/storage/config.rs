@@ -125,6 +125,14 @@ impl StorageConfig {
     pub fn recommended_template_file(&self) -> PathBuf {
         self.data_dir.join("recommended_template.json")
     }
+
+    pub fn clipboard_history_file(&self) -> PathBuf {
+        self.data_dir.join("clipboard_history.json")
+    }
+
+    pub fn clipboard_settings_file(&self) -> PathBuf {
+        self.data_dir.join("clipboard_settings.json")
+    }
 }
 
 /// 初始化存储配置
