@@ -236,7 +236,7 @@ body {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 16px 24px;
+  padding: 10px 24px;
   background: white;
   border-bottom: 1px solid #e5e7eb;
   border-radius: 12px 12px 0 0;
