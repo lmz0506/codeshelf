@@ -1,18 +1,19 @@
 import { useState, useRef } from "react";
 import { useAppStore } from "@/stores/appStore";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, GripVertical } from "lucide-react";
 
 interface AddCategoryDialogProps {
   onClose: () => void;
 }
 
 export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
-  const { categories, addCategory, removeCategory } = useAppStore();
+  const { categories, addCategory, removeCategory, setCategories } = useAppStore();
   const [newCategory, setNewCategory] = useState("");
   const [error, setError] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [deletingCategory, setDeletingCategory] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -59,10 +60,9 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
   function saveEdit(index: number) {
     const newName = editValue.trim();
     if (newName && newName !== categories[index]) {
-      // Remove old and add new (simple approach)
-      const oldName = categories[index];
-      removeCategory(oldName);
-      addCategory(newName);
+      const updated = [...categories];
+      updated[index] = newName;
+      setCategories(updated);
     }
     setEditingIndex(null);
     setEditValue("");
@@ -81,6 +81,36 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
 
   function cancelDelete() {
     setDeletingCategory(null);
+  }
+
+  // 拖拽排序
+  function handleDragStart(e: React.DragEvent, index: number) {
+    e.dataTransfer.setData("text/plain", String(index));
+    e.dataTransfer.effectAllowed = "move";
+    setDraggedIndex(index);
+  }
+
+  function handleDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    if (draggedIndex !== null && draggedIndex !== index) {
+      setDragOverIndex(index);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent, targetIndex: number) {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+    const updated = [...categories];
+    const [moved] = updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, moved);
+    setCategories(updated);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handleDragEnd() {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   }
 
   return (
@@ -154,13 +184,16 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
                     <div
                       key={category}
                       draggable
-                      onDragStart={() => setDraggedIndex(index)}
-                      onDragEnd={() => setDraggedIndex(null)}
-                      className={`category-item group bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between hover:border-blue-300 cursor-move transition-all ${
-                        draggedIndex === index ? "opacity-50 bg-slate-100" : ""
-                      }`}
+                      onDragStart={(e) => handleDragStart(e, index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDrop={(e) => handleDrop(e, index)}
+                      onDragEnd={handleDragEnd}
+                      className={`category-item group bg-white border rounded-xl p-3 flex items-center justify-between hover:border-blue-300 cursor-move transition-all ${
+                        draggedIndex === index ? "opacity-50 bg-slate-100 border-slate-200" : "border-slate-200"
+                      } ${dragOverIndex === index ? "border-blue-400 shadow-[0_-2px_0_0_#3b82f6_inset]" : ""}`}
                     >
                       <div className="flex items-center gap-3">
+                        <GripVertical size={16} className="text-slate-300 flex-shrink-0" />
                         <div className={`w-8 h-8 ${color.bg} ${color.text} rounded-lg flex items-center justify-center`}>
                           <i className="fa-solid fa-folder text-sm"></i>
                         </div>

@@ -269,7 +269,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // Categories (项目分类)
   categories: [],
-  setCategories: (categories) => set({ categories }),
+  setCategories: (categories) => {
+    set({ categories });
+    invoke("save_categories", { categories }).catch(console.error);
+  },
   addCategory: (category) => {
     const state = get();
     if (!state.categories.includes(category)) {

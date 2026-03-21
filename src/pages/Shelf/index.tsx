@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ProjectCard, ScanResultDialog, ProjectDetailPanel, AddProjectDialog, AddCategoryDialog, CategorySelector, LabelSelector } from "@/components/project";
 import { FloatingCategoryBall, showToast } from "@/components/ui";
-import { MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark } from "lucide-react";
+import { MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import type { Project, GitRepo, GitStatus } from "@/types";
 import { getProjects, addProject, removeProject, updateProject } from "@/services/db";
@@ -18,6 +18,7 @@ export function ShelfPage() {
     setSearchQuery,
     scanDepth,
     categories: storedCategories,
+    setCategories,
     labels: storedLabels,
     markProjectDirty,
     selectedProjectId,
@@ -34,6 +35,10 @@ export function ShelfPage() {
   const [showFloatingBall, setShowFloatingBall] = useState(false);
   const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
   const categoryBarRef = useRef<HTMLDivElement>(null);
+  const catListRef = useRef<HTMLDivElement>(null);
+  const [catScrollState, setCatScrollState] = useState({ left: false, right: false });
+  const [dragCat, setDragCat] = useState<string | null>(null);
+  const [dragOverCat, setDragOverCat] = useState<string | null>(null);
   // Git 状态缓存，用于筛选功能
   const [gitStatusMap, setGitStatusMap] = useState<Record<string, GitStatus>>({});
 
@@ -114,6 +119,71 @@ export function ShelfPage() {
   // Extract unique categories (tags) from projects and stored categories
   const categories = Array.from(new Set([...storedCategories, ...projects.flatMap(p => p.tags)]));
   const activeCat = selectedTags.length === 0 ? "全部" : selectedTags[0];
+
+  // 分类栏滚动检测
+  const updateCatScroll = useCallback(() => {
+    const el = catListRef.current;
+    if (!el) return;
+    const hasOverflow = el.scrollWidth > el.clientWidth + 1;
+    setCatScrollState({
+      left: el.scrollLeft > 2,
+      right: hasOverflow && el.scrollLeft < el.scrollWidth - el.clientWidth - 2,
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = catListRef.current;
+    if (!el) return;
+    updateCatScroll();
+    el.addEventListener("scroll", updateCatScroll, { passive: true });
+    const ro = new ResizeObserver(updateCatScroll);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", updateCatScroll);
+      ro.disconnect();
+    };
+  }, [updateCatScroll, categories.length]);
+
+  const scrollCatList = (dir: "left" | "right") => {
+    const el = catListRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === "left" ? -200 : 200, behavior: "smooth" });
+  };
+
+  // 分类拖拽排序
+  const handleCatDragStart = (e: React.DragEvent, cat: string) => {
+    e.dataTransfer.setData("text/plain", cat);
+    e.dataTransfer.effectAllowed = "move";
+    setDragCat(cat);
+  };
+
+  const handleCatDragOver = (e: React.DragEvent, cat: string) => {
+    e.preventDefault();
+    if (dragCat && cat !== dragCat && cat !== "全部") {
+      setDragOverCat(cat);
+    }
+  };
+
+  const handleCatDrop = (e: React.DragEvent, targetCat: string) => {
+    e.preventDefault();
+    if (!dragCat || dragCat === targetCat || targetCat === "全部") return;
+
+    const ordered = [...categories];
+    const fromIdx = ordered.indexOf(dragCat);
+    const toIdx = ordered.indexOf(targetCat);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    ordered.splice(fromIdx, 1);
+    ordered.splice(toIdx, 0, dragCat);
+    setCategories(ordered);
+    setDragCat(null);
+    setDragOverCat(null);
+  };
+
+  const handleCatDragEnd = () => {
+    setDragCat(null);
+    setDragOverCat(null);
+  };
 
   // 收集所有可用的标签（从 store 和项目中）
   const allLabels = Array.from(new Set([
@@ -489,18 +559,35 @@ export function ShelfPage() {
 
       {/* Category Bar */}
       <div ref={categoryBarRef} className="re-cat-bar">
-        <span className="text-sm text-gray-500">分类：</span>
-        <div className="re-cat-list">
-          {["全部", ...categories].map((c) => (
-            <span
-              key={c}
-              className={`re-cat ${c === activeCat ? "active" : ""}`}
-              onClick={() => setSelectedTags(c === "全部" ? [] : [c])}
-            >
-              {c}
-            </span>
-          ))}
+        <span className="text-sm text-gray-500 flex-shrink-0">分类：</span>
+        {catScrollState.left && (
+          <button className="re-cat-arrow" onClick={() => scrollCatList("left")}>
+            <ChevronLeft size={14} />
+          </button>
+        )}
+        <div className={`re-cat-scroll-wrap ${catScrollState.left ? 'fade-left' : ''} ${catScrollState.right ? 'fade-right' : ''}`}>
+          <div ref={catListRef} className="re-cat-list">
+            {["全部", ...categories].map((c) => (
+              <span
+                key={c}
+                draggable={c !== "全部"}
+                onDragStart={(e) => handleCatDragStart(e, c)}
+                onDragOver={(e) => handleCatDragOver(e, c)}
+                onDrop={(e) => handleCatDrop(e, c)}
+                onDragEnd={handleCatDragEnd}
+                className={`re-cat ${c === activeCat ? "active" : ""} ${dragCat === c ? "dragging" : ""} ${dragOverCat === c ? "drag-over" : ""}`}
+                onClick={() => setSelectedTags(c === "全部" ? [] : [c])}
+              >
+                {c}
+              </span>
+            ))}
+          </div>
         </div>
+        {catScrollState.right && (
+          <button className="re-cat-arrow" onClick={() => scrollCatList("right")}>
+            <ChevronRight size={14} />
+          </button>
+        )}
       </div>
 
       {/* Batch Action Bar */}

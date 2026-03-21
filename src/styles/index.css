@@ -385,7 +385,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 24px;
+  padding: 12px 24px;
   background: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   margin: 20px 24px 0 24px;
@@ -393,10 +393,85 @@ body {
   border: 1px solid #e5e7eb;
 }
 
+.re-cat-scroll-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
 .re-cat-list {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-behavior: smooth;
+  padding: 2px 0;
+}
+
+.re-cat-list::-webkit-scrollbar {
+  display: none;
+}
+
+/* 分类滚动渐隐遮罩 */
+.re-cat-scroll-wrap::before,
+.re-cat-scroll-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.re-cat-scroll-wrap::before {
+  left: 0;
+  background: linear-gradient(to right, white 20%, transparent);
+}
+
+.re-cat-scroll-wrap::after {
+  right: 0;
+  background: linear-gradient(to left, white 20%, transparent);
+}
+
+.re-cat-scroll-wrap.fade-left::before {
+  opacity: 1;
+}
+
+.re-cat-scroll-wrap.fade-right::after {
+  opacity: 1;
+}
+
+/* 分类滚动箭头 */
+.re-cat-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid #e5e7eb;
+  background: white;
+  color: #6b7280;
+  cursor: pointer;
+  flex-shrink: 0;
+  z-index: 2;
+  transition: all 0.2s;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.re-cat-arrow:hover {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #d1d5db;
 }
 
 .re-cat {
@@ -407,6 +482,8 @@ body {
   color: #6b7280;
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: 0.2s;
   border: 1px solid transparent;
 }
@@ -415,6 +492,19 @@ body {
 .re-cat:hover {
   background: #3b82f6;
   color: white;
+}
+
+.re-cat[draggable="true"] {
+  cursor: grab;
+}
+
+.re-cat.dragging {
+  opacity: 0.4;
+}
+
+.re-cat.drag-over {
+  box-shadow: -2px 0 0 0 #3b82f6;
+  border-left: 2px solid #3b82f6;
 }
 
 /* 批量操作栏 */
@@ -1863,6 +1953,25 @@ body {
   border-bottom-color: #334155;
 }
 
+.dark .re-cat-scroll-wrap::before {
+  background: linear-gradient(to right, #1e293b 20%, transparent);
+}
+
+.dark .re-cat-scroll-wrap::after {
+  background: linear-gradient(to left, #1e293b 20%, transparent);
+}
+
+.dark .re-cat-arrow {
+  background: #334155;
+  border-color: #475569;
+  color: #94a3b8;
+}
+
+.dark .re-cat-arrow:hover {
+  background: #475569;
+  color: #e2e8f0;
+}
+
 .dark .re-cat {
   background: #334155;
   border-color: #475569;
@@ -1878,6 +1987,11 @@ body {
   background: #1e40af;
   border-color: #3b82f6;
   color: #93c5fd;
+}
+
+.dark .re-cat.drag-over {
+  box-shadow: -2px 0 0 0 #3b82f6;
+  border-left: 2px solid #3b82f6;
 }
 
 /* 卡片 */
