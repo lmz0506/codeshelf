@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useAppStore } from "@/stores/appStore";
-import { AlertTriangle, GripVertical } from "lucide-react";
+import { AlertTriangle, ChevronUp, ChevronDown } from "lucide-react";
 
 interface AddCategoryDialogProps {
   onClose: () => void;
@@ -12,8 +12,6 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
   const [error, setError] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [deletingCategory, setDeletingCategory] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -83,34 +81,20 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
     setDeletingCategory(null);
   }
 
-  // 拖拽排序
-  function handleDragStart(e: React.DragEvent, index: number) {
-    e.dataTransfer.setData("text/plain", String(index));
-    e.dataTransfer.effectAllowed = "move";
-    setDraggedIndex(index);
-  }
-
-  function handleDragOver(e: React.DragEvent, index: number) {
-    e.preventDefault();
-    if (draggedIndex !== null && draggedIndex !== index) {
-      setDragOverIndex(index);
-    }
-  }
-
-  function handleDrop(e: React.DragEvent, targetIndex: number) {
-    e.preventDefault();
-    if (draggedIndex === null || draggedIndex === targetIndex) return;
+  // 上移分类
+  function moveUp(index: number) {
+    if (index <= 0) return;
     const updated = [...categories];
-    const [moved] = updated.splice(draggedIndex, 1);
-    updated.splice(targetIndex, 0, moved);
+    [updated[index - 1], updated[index]] = [updated[index], updated[index - 1]];
     setCategories(updated);
-    setDraggedIndex(null);
-    setDragOverIndex(null);
   }
 
-  function handleDragEnd() {
-    setDraggedIndex(null);
-    setDragOverIndex(null);
+  // 下移分类
+  function moveDown(index: number) {
+    if (index >= categories.length - 1) return;
+    const updated = [...categories];
+    [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
+    setCategories(updated);
   }
 
   return (
@@ -183,17 +167,28 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
                   return (
                     <div
                       key={category}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, index)}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={(e) => handleDrop(e, index)}
-                      onDragEnd={handleDragEnd}
-                      className={`category-item group bg-white border rounded-xl p-3 flex items-center justify-between hover:border-blue-300 cursor-move transition-all ${
-                        draggedIndex === index ? "opacity-50 bg-slate-100 border-slate-200" : "border-slate-200"
-                      } ${dragOverIndex === index ? "border-blue-400 shadow-[0_-2px_0_0_#3b82f6_inset]" : ""}`}
+                      className="category-item group bg-white border rounded-xl p-3 flex items-center justify-between hover:border-blue-300 border-slate-200"
                     >
                       <div className="flex items-center gap-3">
-                        <GripVertical size={16} className="text-slate-300 flex-shrink-0" />
+                        {/* 上下移动按钮 */}
+                        <div className="flex flex-col gap-0.5 flex-shrink-0">
+                          <button
+                            onClick={() => moveUp(index)}
+                            disabled={index === 0}
+                            className="p-0.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                            title="上移"
+                          >
+                            <ChevronUp size={14} />
+                          </button>
+                          <button
+                            onClick={() => moveDown(index)}
+                            disabled={index === categories.length - 1}
+                            className="p-0.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                            title="下移"
+                          >
+                            <ChevronDown size={14} />
+                          </button>
+                        </div>
                         <div className={`w-8 h-8 ${color.bg} ${color.text} rounded-lg flex items-center justify-center`}>
                           <i className="fa-solid fa-folder text-sm"></i>
                         </div>
@@ -259,7 +254,6 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
           transition: all 0.2s ease;
         }
         .category-item:hover {
-          transform: translateY(-1px);
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
         }
         .category-input:focus {

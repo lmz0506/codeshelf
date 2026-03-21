@@ -18,7 +18,6 @@ export function ShelfPage() {
     setSearchQuery,
     scanDepth,
     categories: storedCategories,
-    setCategories,
     labels: storedLabels,
     markProjectDirty,
     selectedProjectId,
@@ -37,8 +36,6 @@ export function ShelfPage() {
   const categoryBarRef = useRef<HTMLDivElement>(null);
   const catListRef = useRef<HTMLDivElement>(null);
   const [catScrollState, setCatScrollState] = useState({ left: false, right: false });
-  const [dragCat, setDragCat] = useState<string | null>(null);
-  const [dragOverCat, setDragOverCat] = useState<string | null>(null);
   // Git 状态缓存，用于筛选功能
   const [gitStatusMap, setGitStatusMap] = useState<Record<string, GitStatus>>({});
 
@@ -148,41 +145,6 @@ export function ShelfPage() {
     const el = catListRef.current;
     if (!el) return;
     el.scrollBy({ left: dir === "left" ? -200 : 200, behavior: "smooth" });
-  };
-
-  // 分类拖拽排序
-  const handleCatDragStart = (e: React.DragEvent, cat: string) => {
-    e.dataTransfer.setData("text/plain", cat);
-    e.dataTransfer.effectAllowed = "move";
-    setDragCat(cat);
-  };
-
-  const handleCatDragOver = (e: React.DragEvent, cat: string) => {
-    e.preventDefault();
-    if (dragCat && cat !== dragCat && cat !== "全部") {
-      setDragOverCat(cat);
-    }
-  };
-
-  const handleCatDrop = (e: React.DragEvent, targetCat: string) => {
-    e.preventDefault();
-    if (!dragCat || dragCat === targetCat || targetCat === "全部") return;
-
-    const ordered = [...categories];
-    const fromIdx = ordered.indexOf(dragCat);
-    const toIdx = ordered.indexOf(targetCat);
-    if (fromIdx === -1 || toIdx === -1) return;
-
-    ordered.splice(fromIdx, 1);
-    ordered.splice(toIdx, 0, dragCat);
-    setCategories(ordered);
-    setDragCat(null);
-    setDragOverCat(null);
-  };
-
-  const handleCatDragEnd = () => {
-    setDragCat(null);
-    setDragOverCat(null);
   };
 
   // 收集所有可用的标签（从 store 和项目中）
@@ -570,12 +532,7 @@ export function ShelfPage() {
             {["全部", ...categories].map((c) => (
               <span
                 key={c}
-                draggable={c !== "全部"}
-                onDragStart={(e) => handleCatDragStart(e, c)}
-                onDragOver={(e) => handleCatDragOver(e, c)}
-                onDrop={(e) => handleCatDrop(e, c)}
-                onDragEnd={handleCatDragEnd}
-                className={`re-cat ${c === activeCat ? "active" : ""} ${dragCat === c ? "dragging" : ""} ${dragOverCat === c ? "drag-over" : ""}`}
+                className={`re-cat ${c === activeCat ? "active" : ""}`}
                 onClick={() => setSelectedTags(c === "全部" ? [] : [c])}
               >
                 {c}
