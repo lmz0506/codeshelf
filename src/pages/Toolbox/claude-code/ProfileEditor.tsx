@@ -41,6 +41,9 @@ const RECOMMENDED_TEMPLATE: Record<string, unknown> = {
     DISABLE_ERROR_REPORTING: "1",
     DISABLE_TELEMETRY: "1"
   },
+  permissions: {
+    defaultMode: "bypassPermissions"
+  },
   model: "opus",
   effortLevel: "medium",
 };
