@@ -160,24 +160,47 @@ async function handleGlobalAction(actionId: string) {
     return;
   }
 
-  // 弹窗类动作：记住窗口之前是否隐藏，关闭弹窗时自动藏回去
+  // 弹窗类动作：不带主窗口，再次按下快捷键可以关闭
   if (POPUP_ACTIONS.has(actionId)) {
+    const store = useAppStore.getState();
+    const isPopupShowing =
+      (actionId === "tool_clipboard" && store.showClipboardQuickAccess) ||
+      (actionId === "tool_shortcuts" && store.showShortcutQuickLookup);
+
+    if (isPopupShowing) {
+      // 弹窗已打开 → 关闭弹窗，并在需要时自动隐藏窗口
+      executeAction(actionId);
+      if (store.popupAutoHideWindow) {
+        store.setPopupAutoHideWindow(false);
+        try {
+          await win.hide();
+        } catch (err) {
+          console.error("隐藏窗口失败:", err);
+        }
+      }
+      return;
+    }
+
+    // 弹窗未打开 → 打开弹窗
     try {
       const visible = await win.isVisible();
       const minimized = visible && await win.isMinimized();
       const wasHidden = !visible || minimized;
 
       if (wasHidden) {
-        // 窗口之前是隐藏的 → 标记关闭弹窗后自动隐藏
-        useAppStore.getState().setPopupAutoHideWindow(true);
+        store.setPopupAutoHideWindow(true);
+        // 先设置弹窗状态，让遮罩层先渲染，再显示窗口，避免闪现主界面
+        executeAction(actionId);
         await win.show();
         await win.unminimize();
         await win.setFocus();
+      } else {
+        executeAction(actionId);
       }
     } catch (err) {
       console.error("唤起窗口失败:", err);
+      executeAction(actionId);
     }
-    executeAction(actionId);
     return;
   }
 
@@ -330,6 +353,10 @@ export function useAppShortcuts() {
 
       e.preventDefault();
       e.stopPropagation();
+      // 弹窗类操作阻止事件继续传播到弹窗组件的 keydown 监听器，避免重复 toggle
+      if (POPUP_ACTIONS.has(binding.id)) {
+        e.stopImmediatePropagation();
+      }
 
       if (binding.global) {
         // 标记为本地已处理，防止 OS 钩子事件重复触发

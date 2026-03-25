@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Search, Keyboard, ExternalLink } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/stores/appStore";
-import { eventToKeys } from "@/hooks/useAppShortcuts";
 import { getShortcuts, getCurrentPlatform } from "@/services/toolbox";
 import type { ShortcutEntry } from "@/types/toolbox";
 
@@ -86,19 +85,6 @@ export function ShortcutQuickLookup() {
         e.stopImmediatePropagation();
         closePopup();
         return;
-      }
-      // 再次按下 tool_shortcuts 快捷键时关闭
-      const pressed = eventToKeys(e);
-      if (pressed) {
-        const { appShortcuts } = useAppStore.getState();
-        const binding = appShortcuts.find(
-          (s) => s.id === "tool_shortcuts" && s.enabled
-        );
-        if (binding && pressed === binding.keys) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          closePopup();
-        }
       }
     }
     document.addEventListener("keydown", handleKeyDown, true);

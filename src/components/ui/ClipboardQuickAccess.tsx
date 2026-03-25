@@ -3,7 +3,6 @@ import { Search, Pin, PinOff, ExternalLink, ClipboardList, Copy } from "lucide-r
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/stores/appStore";
-import { eventToKeys } from "@/hooks/useAppShortcuts";
 import { getClipboardHistory, writeToClipboard, togglePinClipboardEntry } from "@/services/toolbox";
 import { showToast } from "@/components/ui/Toast";
 import type { ClipboardEntry } from "@/types/toolbox";
@@ -136,21 +135,6 @@ export function ClipboardQuickAccess() {
         e.stopImmediatePropagation();
         closePopup();
         return;
-      }
-
-      // 再次按下触发快捷键 → 关闭
-      const pressed = eventToKeys(e);
-      if (pressed) {
-        const { appShortcuts } = useAppStore.getState();
-        const binding = appShortcuts.find(
-          (s) => s.id === "tool_clipboard" && s.enabled
-        );
-        if (binding && pressed === binding.keys) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          closePopup();
-          return;
-        }
       }
 
       const len = filtered.length;
