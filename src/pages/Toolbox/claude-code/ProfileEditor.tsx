@@ -30,10 +30,10 @@ const RECOMMENDED_TEMPLATE: Record<string, unknown> = {
   env: {
     ANTHROPIC_AUTH_TOKEN: "sa-token",
     ANTHROPIC_BASE_URL: "你的地址",
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-opus-4-6",
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-6",
-    ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-opus-4-6",
-    ANTHROPIC_MODEL: "claude-opus-4-6",
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-opus-4-6[1m]",
+    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-6[1m]",
+    ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-opus-4-6[1m]",
+    ANTHROPIC_MODEL: "claude-opus-4-6[1m]",
     CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
     CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
@@ -44,7 +44,7 @@ const RECOMMENDED_TEMPLATE: Record<string, unknown> = {
   permissions: {
     defaultMode: "bypassPermissions"
   },
-  model: "opus",
+  model: "opus[1m]",
   effortLevel: "medium",
 };
 
