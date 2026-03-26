@@ -126,6 +126,14 @@ impl StorageConfig {
         self.data_dir.join("recommended_template.json")
     }
 
+    pub fn ai_providers_file(&self) -> PathBuf {
+        self.data_dir.join("ai_providers.json")
+    }
+
+    pub fn conversations_dir(&self) -> PathBuf {
+        self.data_dir.join("conversations")
+      }
+  
     pub fn clipboard_history_file(&self) -> PathBuf {
         self.data_dir.join("clipboard_history.json")
     }

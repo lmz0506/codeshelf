@@ -138,14 +138,119 @@ await openInTerminal("/path/to/project");
 
 ---
 
-### Git 服务 (src/services/git/index.ts)
+### AI 供应商与聊天服务 (src/services/chat/index.ts)
 
-#### scanDirectory(path)
-扫描目录查找 Git 仓库
+#### getChatHistoryDir()
+获取当前会话历史目录
 
 ```typescript
-async function scanDirectory(path: string): Promise<GitRepo[]>
+async function getChatHistoryDir(): Promise<string>
 ```
+
+**返回值**: 当前会话历史目录路径
+
+---
+
+#### migrateChatHistoryDir(newDir)
+迁移会话历史目录（目标目录必须为空）
+
+```typescript
+async function migrateChatHistoryDir(newDir: string): Promise<string>
+```
+
+**参数**:
+- `newDir` - 新目录路径
+
+**返回值**: 迁移后的目录路径
+
+---
+
+#### listChatSessions()
+获取会话列表摘要
+
+```typescript
+async function listChatSessions(): Promise<ChatSessionSummary[]>
+```
+
+---
+
+#### getChatSession(sessionId)
+获取指定会话详情
+
+```typescript
+async function getChatSession(sessionId: string): Promise<ChatSession>
+```
+
+---
+
+#### createChatSession(input)
+创建会话
+
+```typescript
+async function createChatSession(input: CreateChatSessionInput): Promise<ChatSession>
+```
+
+**参数**:
+- `input.title` - 会话标题（可选）
+- `input.providerId` - 供应商 ID
+- `input.modelId` - 模型 ID
+
+---
+
+#### saveChatSession(session)
+保存会话
+
+```typescript
+async function saveChatSession(session: ChatSession): Promise<ChatSession>
+```
+
+---
+
+#### renameChatSession(sessionId, title)
+重命名会话
+
+```typescript
+async function renameChatSession(sessionId: string, title: string): Promise<ChatSession>
+```
+
+---
+
+#### deleteChatSession(sessionId)
+删除会话
+
+```typescript
+async function deleteChatSession(sessionId: string): Promise<void>
+```
+
+---
+
+#### chatStream(request)
+发起流式聊天
+
+```typescript
+async function chatStream(request: ChatStreamRequest): Promise<void>
+```
+
+**参数**:
+- `request.requestId` - 请求 ID
+- `request.providerId` - 供应商 ID
+- `request.model` - 模型名
+- `request.baseUrl` - Base URL
+- `request.apiKey` - API Key（可选）
+- `request.thinking` - 是否启用思考（可选）
+- `request.messages` - 消息数组
+
+---
+
+#### chatCancel(requestId)
+取消流式请求
+
+```typescript
+async function chatCancel(requestId: string): Promise<void>
+```
+
+---
+
 
 **参数**:
 - `path` - 要扫描的目录路径
@@ -557,6 +662,91 @@ interface DailyActivity {
 
 ## 组件 Props
 
+### AiModelConfig
+AI 模型配置
+
+```typescript
+interface AiModelConfig {
+  id: string;
+  model: string;
+  enabled: boolean;
+  isDefault: boolean;
+  thinking: boolean;
+}
+```
+
+---
+
+### AiProviderConfig
+AI 供应商配置
+
+```typescript
+interface AiProviderConfig {
+  id: string;
+  name: string;
+  providerType: "preset" | "custom";
+  presetKey?: "bailian" | "deepseek" | "openai" | "ollama" | "moonshot";
+  baseUrl: string;
+  apiKey?: string;
+  enabled: boolean;
+  isDefaultProvider: boolean;
+  models: AiModelConfig[];
+}
+```
+
+---
+
+### ChatMessage
+聊天消息
+
+```typescript
+interface ChatMessage {
+  id: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  createdAt: string;
+  tokens?: number;
+  thinking?: boolean;
+  thinkingContent?: string;
+}
+```
+
+---
+
+### ChatSession
+聊天会话
+
+```typescript
+interface ChatSession {
+  id: string;
+  title: string;
+  providerId: string;
+  modelId: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatMessage[];
+}
+```
+
+---
+
+### ChatSessionSummary
+聊天会话摘要
+
+```typescript
+interface ChatSessionSummary {
+  id: string;
+  title: string;
+  providerId: string;
+  modelId: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+```
+
+---
+
 ### ProjectCard
 
 ```typescript
@@ -640,6 +830,24 @@ const result = await invoke<ReturnType>("command_name", { param1, param2 });
 - `git_push(path, remote, branch, force)` - 推送
 - `git_pull(path, remote, branch)` - 拉取
 - `git_fetch(path, remote)` - 获取更新
+
+### AI 供应商管理
+
+- `get_ai_providers()` - 获取 AI 供应商配置
+- `save_ai_providers(providers)` - 保存 AI 供应商配置
+
+### 会话与聊天
+
+- `get_chat_history_dir()` - 获取会话历史目录
+- `migrate_chat_history_dir(new_dir)` - 迁移会话历史目录（目标需为空）
+- `list_chat_sessions()` - 会话列表摘要
+- `get_chat_session(session_id)` - 获取会话详情
+- `create_chat_session(input)` - 创建会话
+- `save_chat_session(session)` - 保存会话
+- `rename_chat_session(session_id, title)` - 重命名会话
+- `delete_chat_session(session_id)` - 删除会话
+- `chat_stream(request)` - 发起流式聊天
+- `chat_cancel(request_id)` - 取消流式请求
 
 ### 命令示例
 
