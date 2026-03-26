@@ -13,6 +13,7 @@ export interface ChatStreamRequest {
   baseUrl: string;
   apiKey?: string;
   thinking?: boolean;
+  stream?: boolean;
   messages: ChatStreamMessage[];
   temperature?: number;
   maxTokens?: number;

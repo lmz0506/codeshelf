@@ -72,6 +72,7 @@ function createModelTemplate(name: string, thinking = false): AiModelConfig {
     enabled: true,
     isDefault: false,
     thinking,
+    stream: true,
   };
 }
 
@@ -271,6 +272,14 @@ function ProviderFormDrawer({
                         onChange={(e) => onModelChange(model.id, { thinking: e.target.checked })}
                       />
                       thinking
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={model.stream !== false}
+                        onChange={(e) => onModelChange(model.id, { stream: e.target.checked })}
+                      />
+                      流式
                     </label>
                     <button
                       className="text-xs text-red-500 hover:text-red-600"
@@ -643,7 +652,7 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
                     key={model.id}
                     className={"px-2 py-0.5 rounded-full text-[10px] " + (model.enabled ? "bg-gray-100 text-gray-700" : "bg-gray-50 text-gray-400")}
                   >
-                    {model.model}{model.isDefault ? "（默认）" : ""}{model.thinking ? " / thinking" : ""}
+                    {model.model}{model.isDefault ? "（默认）" : ""}{model.thinking ? " / thinking" : ""}{model.stream === false ? " / 非流式" : ""}
                   </span>
                 ))}
               </div>

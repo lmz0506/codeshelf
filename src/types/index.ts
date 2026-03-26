@@ -116,6 +116,7 @@ export interface AiModelConfig {
   enabled: boolean;
   isDefault: boolean;
   thinking: boolean;
+  stream: boolean;
 }
 
 export interface AiProviderConfig {

@@ -23,6 +23,7 @@ pub struct ChatStreamRequest {
     pub base_url: String,
     pub api_key: Option<String>,
     pub thinking: Option<bool>,
+    pub stream: Option<bool>,
     pub messages: Vec<ChatStreamMessage>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
@@ -273,10 +274,12 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
         }
     }
 
+    let use_stream = request.stream.unwrap_or(true);
+
     let mut payload = serde_json::json!({
         "model": request.model,
         "messages": request.messages,
-        "stream": true,
+        "stream": use_stream,
     });
 
     if let Some(temperature) = request.temperature {
@@ -338,6 +341,73 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
             return;
         }
 
+        if !use_stream {
+            // Non-streaming: read the full response body at once
+            let text = match response.text().await {
+                Ok(t) => t,
+                Err(err) => {
+                    send_error(format!("读取响应失败: {}", err)).await;
+                    return;
+                }
+            };
+            let parsed: serde_json::Value = match serde_json::from_str(&text) {
+                Ok(v) => v,
+                Err(err) => {
+                    send_error(format!("解析响应失败: {}", err)).await;
+                    return;
+                }
+            };
+            let content = parsed
+                .get("choices")
+                .and_then(|v| v.get(0))
+                .and_then(|v| v.get("message"))
+                .and_then(|v| v.get("content"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let reasoning = parsed
+                .get("choices")
+                .and_then(|v| v.get(0))
+                .and_then(|v| v.get("message"))
+                .and_then(|v| v.get("reasoning_content"))
+                .and_then(|v| v.as_str());
+            if let Some(r) = reasoning {
+                let _ = app_handle.emit(
+                    "chat-stream",
+                    ChatStreamEvent {
+                        request_id: request_id.clone(),
+                        delta: None,
+                        done: false,
+                        error: None,
+                        thinking_delta: Some(r.to_string()),
+                    },
+                );
+            }
+            if !content.is_empty() {
+                let _ = app_handle.emit(
+                    "chat-stream",
+                    ChatStreamEvent {
+                        request_id: request_id.clone(),
+                        delta: Some(content.to_string()),
+                        done: false,
+                        error: None,
+                        thinking_delta: None,
+                    },
+                );
+            }
+            let _ = app_handle.emit(
+                "chat-stream",
+                ChatStreamEvent {
+                    request_id: request_id.clone(),
+                    delta: None,
+                    done: true,
+                    error: None,
+                    thinking_delta: None,
+                },
+            );
+            return;
+        }
+
+        // Streaming mode
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
 

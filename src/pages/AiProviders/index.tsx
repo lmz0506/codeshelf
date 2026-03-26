@@ -14,18 +14,44 @@ import {
   renameChatSession,
   saveChatSession,
 } from "@/services/chat";
-import type { AiProviderConfig, ChatMessage, ChatSession, ChatSessionSummary } from "@/types";
+import type { AiModelConfig, AiProviderConfig, ChatMessage, ChatSession, ChatSessionSummary } from "@/types";
 
-function getDefaultProvider(providers: AiProviderConfig[]) {
-  const enabled = providers.filter((p) => p.enabled);
-  if (enabled.length === 0) return null;
-  return enabled.find((p) => p.isDefaultProvider) ?? enabled[0];
+interface ModelOption {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  model: AiModelConfig;
+  baseUrl: string;
+  apiKey?: string;
+  key: string;
 }
 
-function getDefaultModel(provider: NonNullable<ReturnType<typeof getDefaultProvider>>) {
-  const enabledModels = provider.models.filter((m) => m.enabled);
-  if (enabledModels.length === 0) return null;
-  return enabledModels.find((m) => m.isDefault) ?? enabledModels[0];
+function buildModelOptions(providers: AiProviderConfig[]): ModelOption[] {
+  const options: ModelOption[] = [];
+  for (const p of providers) {
+    if (!p.enabled) continue;
+    for (const m of p.models) {
+      if (!m.enabled) continue;
+      options.push({
+        providerId: p.id,
+        providerName: p.name,
+        modelId: m.id,
+        model: m,
+        baseUrl: p.baseUrl,
+        apiKey: p.apiKey,
+        key: `${p.id}:${m.id}`,
+      });
+    }
+  }
+  return options;
+}
+
+function getDefaultOptionKey(providers: AiProviderConfig[]): string | null {
+  const defaultProvider = providers.filter((p) => p.enabled).find((p) => p.isDefaultProvider) ?? providers.filter((p) => p.enabled)[0];
+  if (!defaultProvider) return null;
+  const defaultModel = defaultProvider.models.filter((m) => m.enabled).find((m) => m.isDefault) ?? defaultProvider.models.filter((m) => m.enabled)[0];
+  if (!defaultModel) return null;
+  return `${defaultProvider.id}:${defaultModel.id}`;
 }
 
 function buildMessage(role: ChatMessage["role"], content: string, thinkingContent?: string): ChatMessage {
@@ -57,18 +83,22 @@ export function AiProvidersPage() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [showChatFull, setShowChatFull] = useState(true);
   const [expandedThinkingIds, setExpandedThinkingIds] = useState<Set<string>>(new Set());
+  const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
   const streamBufferRef = useRef<string>("");
   const sessionLoadSeq = useRef(0);
   const activeSessionIdRef = useRef<string | null>(null);
+  const activeSessionRef = useRef<ChatSession | null>(null);
+  const prevStreamingRef = useRef(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { provider, model } = useMemo(() => {
-    const normalized = ensureAiDefaultProvider(aiProviders);
-    const provider = getDefaultProvider(normalized);
-    const model = provider ? getDefaultModel(provider) : null;
-    return { provider, model };
-  }, [aiProviders, ensureAiDefaultProvider]);
+  const normalized = useMemo(() => ensureAiDefaultProvider(aiProviders), [aiProviders, ensureAiDefaultProvider]);
+  const modelOptions = useMemo(() => buildModelOptions(normalized), [normalized]);
+  const defaultKey = useMemo(() => getDefaultOptionKey(normalized), [normalized]);
 
-  const isConfigured = Boolean(provider && model);
+  const effectiveKey = modelOptions.find((o) => o.key === selectedModelKey) ? selectedModelKey : defaultKey;
+  const selected = modelOptions.find((o) => o.key === effectiveKey) ?? null;
+
+  const isConfigured = Boolean(selected);
 
   useEffect(() => {
     if (showChat) {
@@ -176,12 +206,12 @@ export function AiProvidersPage() {
   }, [streamRequestId, thinkingBuffer, showChat]);
 
   async function handleCreateSession() {
-    if (!provider || !model) return;
+    if (!selected) return;
     try {
       const session = await createChatSession({
         title: "新会话",
-        providerId: provider.id,
-        modelId: model.id,
+        providerId: selected.providerId,
+        modelId: selected.modelId,
       });
       setSessions((prev) => [
         {
@@ -258,13 +288,13 @@ export function AiProvidersPage() {
   }
 
   async function handleSend() {
-    if (!activeSession || !provider || !model || !input.trim() || streaming) return;
+    if (!activeSession || !selected || !input.trim() || streaming) return;
     const content = input.trim();
     const userMessage = buildMessage("user", content);
     const nextSession: ChatSession = {
       ...activeSession,
-      providerId: provider.id,
-      modelId: model.id,
+      providerId: selected.providerId,
+      modelId: selected.modelId,
       messages: [...activeSession.messages, userMessage],
     };
     setInput("");
@@ -281,11 +311,12 @@ export function AiProvidersPage() {
 
       await chatStream({
         requestId,
-        providerId: provider.id,
-        model: model.model,
-        baseUrl: provider.baseUrl,
-        apiKey: provider.apiKey,
-        thinking: model.thinking,
+        providerId: selected.providerId,
+        model: selected.model.model,
+        baseUrl: selected.baseUrl,
+        apiKey: selected.apiKey,
+        thinking: selected.model.thinking,
+        stream: selected.model.stream !== false,
         messages: saved.messages.map((m) => ({ role: m.role, content: m.content })),
       });
     } catch {
@@ -304,18 +335,35 @@ export function AiProvidersPage() {
     streamBufferRef.current = "";
   }
 
+  activeSessionRef.current = activeSession;
+
   useEffect(() => {
-    async function persistAssistant() {
-      if (!activeSession || streaming) return;
-      if (activeSession.messages.length === 0) return;
-      const saved = await saveChatSession(activeSession).catch(() => null);
-      if (saved) {
+    const wasStreaming = prevStreamingRef.current;
+    prevStreamingRef.current = streaming;
+    if (!wasStreaming || streaming) return;
+    const session = activeSessionRef.current;
+    if (!session || session.messages.length === 0) return;
+    saveChatSession(session)
+      .then((saved) => {
         setSessions((prev) => prev.map((s) => (s.id === saved.id ? { ...s, updatedAt: saved.updatedAt, messageCount: saved.messages.length } : s)));
-        setActiveSession(saved);
-      }
-    }
-    persistAssistant();
-  }, [streaming, activeSession]);
+      })
+      .catch(() => {});
+  }, [streaming]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [activeSession?.messages, thinkingBuffer]);
+
+  function handleDeleteMessage(msgId: string) {
+    if (!activeSession || streaming) return;
+    const updated: ChatSession = {
+      ...activeSession,
+      messages: activeSession.messages.filter((m) => m.id !== msgId),
+    };
+    setActiveSession(updated);
+    saveChatSession(updated).catch(() => {});
+  }
 
   const settingsRef = useRef<AiProviderSettingsHandle | null>(null);
 
@@ -373,9 +421,25 @@ export function AiProvidersPage() {
             className={`absolute ${showChatFull ? "inset-4" : "bottom-20 right-6 w-[920px] h-[620px]"} bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden transition-all duration-300 ${showChatFull ? "" : "pointer-events-auto"} flex flex-col`}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
-              <div>
-                <div className="text-sm font-semibold">验证聊天</div>
-                <div className="text-xs text-gray-500">用于快速验证供应商与模型是否可用</div>
+              <div className="flex items-center gap-3">
+                <div>
+                  <div className="text-sm font-semibold">验证聊天</div>
+                  <div className="text-xs text-gray-500">用于快速验证供应商与模型是否可用</div>
+                </div>
+                {modelOptions.length > 0 && (
+                  <select
+                    className="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white text-gray-700 max-w-[240px]"
+                    value={effectiveKey ?? ""}
+                    onChange={(e) => setSelectedModelKey(e.target.value)}
+                    disabled={streaming}
+                  >
+                    {modelOptions.map((opt) => (
+                      <option key={opt.key} value={opt.key}>
+                        {opt.providerName} / {opt.model.model}{opt.key === defaultKey ? "（默认）" : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -467,7 +531,7 @@ export function AiProvidersPage() {
                         const hasThinking = !isUser && Boolean(msg.thinkingContent);
                         const isExpanded = hasThinking && expandedThinkingIds.has(msg.id);
                         return (
-                          <div key={msg.id} className={`flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+                          <div key={msg.id} className={`group flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
                             {!isUser && (
                               <div className="w-8 h-8 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center text-xs text-gray-600">AI</div>
                             )}
@@ -496,9 +560,18 @@ export function AiProvidersPage() {
                                   )}
                                 </div>
                               )}
-                              <div className={`rounded-2xl px-4 py-3 shadow-sm ${
+                              <div className={`rounded-2xl px-4 py-3 shadow-sm relative ${
                                 isUser ? "bg-blue-500 text-white" : "bg-white border border-gray-200 text-gray-800"
                               }`}>
+                                {!streaming && (
+                                  <button
+                                    className={`absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? "text-blue-200 hover:text-white" : "text-gray-300 hover:text-red-500"}`}
+                                    onClick={() => handleDeleteMessage(msg.id)}
+                                    title="删除此消息"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                )}
                                 <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
                               </div>
                             </div>
@@ -517,6 +590,7 @@ export function AiProvidersPage() {
                           </div>
                         </div>
                       )}
+                      <div ref={messagesEndRef} />
                     </div>
 
                     <div className="border-t border-gray-200 p-4 bg-white shrink-0">
