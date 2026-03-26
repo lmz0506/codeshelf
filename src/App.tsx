@@ -117,6 +117,7 @@ async function initializeApp() {
 
 function AppContent() {
   const initialized = useAppStore((state) => state.initialized);
+  const popupAutoHideWindow = useAppStore((s) => s.popupAutoHideWindow);
 
   useEffect(() => {
     initializeApp();
@@ -143,11 +144,9 @@ function AppContent() {
     );
   }
 
-  const popupAutoHideWindow = useAppStore((s) => s.popupAutoHideWindow);
-
   return (
     <>
-      {!popupAutoHideWindow && (
+      <div style={{ display: popupAutoHideWindow ? 'none' : undefined }}>
         <MainLayout>
           {(currentPage) => {
             switch (currentPage) {
@@ -164,7 +163,7 @@ function AppContent() {
             }
           }}
         </MainLayout>
-      )}
+      </div>
       <ToastContainer />
       <UpdateNotification />
       <ShortcutQuickLookup />

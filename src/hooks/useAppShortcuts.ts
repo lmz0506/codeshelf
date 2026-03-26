@@ -150,6 +150,13 @@ async function handleGlobalAction(actionId: string) {
       if (visible && !minimized) {
         await win.hide();
       } else {
+        // 显示窗口前，清理可能残留的弹窗状态
+        const store = useAppStore.getState();
+        if (store.popupAutoHideWindow) {
+          store.setPopupAutoHideWindow(false);
+          store.setPopupCursorPosition(null);
+          await restoreWindowState();
+        }
         await win.show();
         await win.unminimize();
         await win.setFocus();
