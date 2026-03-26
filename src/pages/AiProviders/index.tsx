@@ -29,13 +29,14 @@ function getDefaultModel(provider: NonNullable<ReturnType<typeof getDefaultProvi
 }
 
 function buildMessage(role: ChatMessage["role"], content: string, thinkingContent?: string): ChatMessage {
-  return {
+  const newVar = {
     id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     role,
     content,
     createdAt: new Date().toISOString(),
     thinkingContent,
   };
+  return newVar;
 }
 
 export function AiProvidersPage() {
