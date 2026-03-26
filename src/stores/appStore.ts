@@ -130,6 +130,14 @@ interface AppState {
   showShortcutQuickLookup: boolean;
   toggleShortcutQuickLookup: () => void;
 
+  // Clipboard Quick Access (剪贴板快速访问弹窗)
+  showClipboardQuickAccess: boolean;
+  toggleClipboardQuickAccess: () => void;
+
+  // 弹窗关闭时是否自动隐藏窗口（全局快捷键从隐藏状态唤起时设为 true）
+  popupAutoHideWindow: boolean;
+  setPopupAutoHideWindow: (v: boolean) => void;
+
   // Toolbox Navigation Target (从外部快捷键导航到工具箱子工具)
   toolboxNavigateTarget: ToolType | null;
   navigateToTool: (tool: ToolType) => void;
@@ -275,7 +283,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // Categories (项目分类)
   categories: [],
-  setCategories: (categories) => set({ categories }),
+  setCategories: (categories) => {
+    set({ categories });
+    invoke("save_categories", { categories }).catch(console.error);
+  },
   addCategory: (category) => {
     const state = get();
     if (!state.categories.includes(category)) {
@@ -465,6 +476,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // Shortcut Quick Lookup (快捷键快速查找弹窗)
   showShortcutQuickLookup: false,
   toggleShortcutQuickLookup: () => set((state) => ({ showShortcutQuickLookup: !state.showShortcutQuickLookup })),
+
+  // Clipboard Quick Access (剪贴板快速访问弹窗)
+  showClipboardQuickAccess: false,
+  toggleClipboardQuickAccess: () => set((state) => ({ showClipboardQuickAccess: !state.showClipboardQuickAccess })),
+
+  // 弹窗自动隐藏窗口
+  popupAutoHideWindow: false,
+  setPopupAutoHideWindow: (v) => set({ popupAutoHideWindow: v }),
 
   // Toolbox Navigation Target
   toolboxNavigateTarget: null,

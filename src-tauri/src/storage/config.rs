@@ -132,6 +132,14 @@ impl StorageConfig {
 
     pub fn conversations_dir(&self) -> PathBuf {
         self.data_dir.join("conversations")
+      }
+  
+    pub fn clipboard_history_file(&self) -> PathBuf {
+        self.data_dir.join("clipboard_history.json")
+    }
+
+    pub fn clipboard_settings_file(&self) -> PathBuf {
+        self.data_dir.join("clipboard_settings.json")
     }
 }
 

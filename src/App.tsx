@@ -8,7 +8,7 @@ import { DashboardPage } from "@/pages/Dashboard";
 import { SettingsPage } from "@/pages/Settings";
 import { ToolboxPage } from "@/pages/Toolbox";
 import { AiProvidersPage } from "@/pages/AiProviders";
-import { ToastContainer, UpdateNotification, ShortcutQuickLookup } from "@/components/ui";
+import { ToastContainer, UpdateNotification, ShortcutQuickLookup, ClipboardQuickAccess } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import type { Project, Notification, AppShortcutBinding, AiProviderConfig } from "@/types";
@@ -173,6 +173,7 @@ function AppContent() {
       <ToastContainer />
       <UpdateNotification />
       <ShortcutQuickLookup />
+      <ClipboardQuickAccess />
     </>
   );
 }

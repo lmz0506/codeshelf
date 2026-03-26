@@ -34,6 +34,7 @@ const GROUPS: { label: string; ids: string[] }[] = [
       "tool_claude",
       "tool_netcat",
       "tool_shortcuts",
+      "tool_clipboard",
     ],
   },
   {

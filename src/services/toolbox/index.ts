@@ -526,6 +526,46 @@ export async function getCurrentPlatform(): Promise<string> {
   return invoke("get_current_platform");
 }
 
+// ============== 剪贴板历史服务 ==============
+
+import type { ClipboardEntry, ClipboardSettings } from "@/types/toolbox";
+
+export async function getClipboardHistory(): Promise<ClipboardEntry[]> {
+  return invoke("get_clipboard_history");
+}
+
+export async function addClipboardEntry(content: string): Promise<ClipboardEntry> {
+  return invoke("add_clipboard_entry", { content });
+}
+
+export async function deleteClipboardEntry(id: string): Promise<void> {
+  return invoke("delete_clipboard_entry", { id });
+}
+
+export async function togglePinClipboardEntry(id: string): Promise<ClipboardEntry> {
+  return invoke("toggle_pin_clipboard_entry", { id });
+}
+
+export async function clearClipboardHistory(): Promise<void> {
+  return invoke("clear_clipboard_history");
+}
+
+export async function getClipboardSettings(): Promise<ClipboardSettings> {
+  return invoke("get_clipboard_settings");
+}
+
+export async function saveClipboardSettings(settings: ClipboardSettings): Promise<void> {
+  return invoke("save_clipboard_settings", { settings });
+}
+
+export async function writeToClipboard(content: string): Promise<void> {
+  return invoke("write_to_clipboard", { content });
+}
+
+export async function updateClipboardNote(id: string, note: string): Promise<ClipboardEntry> {
+  return invoke("update_clipboard_note", { id, note });
+}
+
 // ============== 工具函数 ==============
 
 export function formatBytes(bytes: number): string {

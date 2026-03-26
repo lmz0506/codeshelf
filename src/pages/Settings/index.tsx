@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
-import { Minus, X, Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard } from "lucide-react";
+import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import { getVersion } from "@tauri-apps/api/app";
 import { EditorSettings } from "./EditorSettings";
 import { TerminalSettings } from "./TerminalSettings";
@@ -134,22 +134,7 @@ export function SettingsPage() {
         </div>
 
         <div className="re-actions flex items-center">
-          <div className="flex items-center ml-4 border-l border-gray-200 pl-3 gap-1 h-6">
-            <button
-              onClick={() => getCurrentWindow()?.minimize()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
-              title="最小化"
-            >
-              <Minus size={14} />
-            </button>
-            <button
-              onClick={() => getCurrentWindow()?.close()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white rounded-md transition-colors text-gray-400"
-              title="关闭"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          <MacWindowControls />
         </div>
       </header>
 

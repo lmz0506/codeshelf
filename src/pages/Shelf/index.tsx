@@ -1,15 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ProjectCard, ScanResultDialog, ProjectDetailPanel, AddProjectDialog, AddCategoryDialog, CategorySelector, LabelSelector } from "@/components/project";
 import { FloatingCategoryBall, showToast } from "@/components/ui";
-import { Minus, X, MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark, Maximize2, Minimize2 } from "lucide-react";
+import { MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import type { Project, GitRepo, GitStatus } from "@/types";
 import { getProjects, addProject, removeProject, updateProject } from "@/services/db";
 import { scanDirectory, getGitStatus } from "@/services/git";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Dropdown, FilterPopover } from "@/components/ui";
-
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { MacWindowControls } from "@/components/layout/MacWindowControls";
 
 export function ShelfPage() {
   const {
@@ -35,6 +34,8 @@ export function ShelfPage() {
   const [showFloatingBall, setShowFloatingBall] = useState(false);
   const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
   const categoryBarRef = useRef<HTMLDivElement>(null);
+  const catListRef = useRef<HTMLDivElement>(null);
+  const [catScrollState, setCatScrollState] = useState({ left: false, right: false });
   // Git 状态缓存，用于筛选功能
   const [gitStatusMap, setGitStatusMap] = useState<Record<string, GitStatus>>({});
 
@@ -49,9 +50,6 @@ export function ShelfPage() {
   const [showBatchLabelModal, setShowBatchLabelModal] = useState(false);
   const [batchLabels, setBatchLabels] = useState<string[]>([]);
   const [batchLabelMode, setBatchLabelMode] = useState<"replace" | "append">("append");
-
-  // 全屏状态
-  const [isMaximized, setIsMaximized] = useState(false);
 
   // 标签筛选状态
   const [selectedLabelFilters, setSelectedLabelFilters] = useState<string[]>([]);
@@ -73,29 +71,6 @@ export function ShelfPage() {
       setSelectedProjectId(null);
     }
   }, [selectedProjectId, projects]);
-
-  // 检查窗口最大化状态
-  useEffect(() => {
-    checkMaximized();
-    // 监听窗口 resize 事件来更新最大化状态
-    const handleResize = () => {
-      checkMaximized();
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  async function checkMaximized() {
-    const appWindow = getCurrentWindow();
-    const maximized = await appWindow.isMaximized();
-    setIsMaximized(maximized);
-  }
-
-  async function handleToggleMaximize() {
-    const appWindow = getCurrentWindow();
-    await appWindow.toggleMaximize();
-    checkMaximized();
-  }
 
   // 当启用 onlyModified 筛选时，加载所有项目的 git 状态
   useEffect(() => {
@@ -141,6 +116,36 @@ export function ShelfPage() {
   // Extract unique categories (tags) from projects and stored categories
   const categories = Array.from(new Set([...storedCategories, ...projects.flatMap(p => p.tags)]));
   const activeCat = selectedTags.length === 0 ? "全部" : selectedTags[0];
+
+  // 分类栏滚动检测
+  const updateCatScroll = useCallback(() => {
+    const el = catListRef.current;
+    if (!el) return;
+    const hasOverflow = el.scrollWidth > el.clientWidth + 1;
+    setCatScrollState({
+      left: el.scrollLeft > 2,
+      right: hasOverflow && el.scrollLeft < el.scrollWidth - el.clientWidth - 2,
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = catListRef.current;
+    if (!el) return;
+    updateCatScroll();
+    el.addEventListener("scroll", updateCatScroll, { passive: true });
+    const ro = new ResizeObserver(updateCatScroll);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", updateCatScroll);
+      ro.disconnect();
+    };
+  }, [updateCatScroll, categories.length]);
+
+  const scrollCatList = (dir: "left" | "right") => {
+    const el = catListRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === "left" ? -200 : 200, behavior: "smooth" });
+  };
 
   // 收集所有可用的标签（从 store 和项目中）
   const allLabels = Array.from(new Set([
@@ -510,47 +515,36 @@ export function ShelfPage() {
             <span>项目</span>
           </button>
 
-          {/* Integrated Window Controls */}
-          <div className="flex items-center ml-2 border-l border-gray-200 pl-3 gap-1 h-6">
-            <button
-              onClick={handleToggleMaximize}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
-              title={isMaximized ? "还原" : "最大化"}
-            >
-              {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </button>
-            <button
-              onClick={() => getCurrentWindow()?.minimize()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
-              title="最小化"
-            >
-              <Minus size={14} />
-            </button>
-            <button
-              onClick={() => getCurrentWindow()?.close()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white rounded-md transition-colors text-gray-400"
-              title="关闭"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          <MacWindowControls />
         </div>
       </header>
 
       {/* Category Bar */}
       <div ref={categoryBarRef} className="re-cat-bar">
-        <span className="text-sm text-gray-500">分类：</span>
-        <div className="re-cat-list">
-          {["全部", ...categories].map((c) => (
-            <span
-              key={c}
-              className={`re-cat ${c === activeCat ? "active" : ""}`}
-              onClick={() => setSelectedTags(c === "全部" ? [] : [c])}
-            >
-              {c}
-            </span>
-          ))}
+        <span className="text-sm text-gray-500 flex-shrink-0">分类：</span>
+        {catScrollState.left && (
+          <button className="re-cat-arrow" onClick={() => scrollCatList("left")}>
+            <ChevronLeft size={14} />
+          </button>
+        )}
+        <div className={`re-cat-scroll-wrap ${catScrollState.left ? 'fade-left' : ''} ${catScrollState.right ? 'fade-right' : ''}`}>
+          <div ref={catListRef} className="re-cat-list">
+            {["全部", ...categories].map((c) => (
+              <span
+                key={c}
+                className={`re-cat ${c === activeCat ? "active" : ""}`}
+                onClick={() => setSelectedTags(c === "全部" ? [] : [c])}
+              >
+                {c}
+              </span>
+            ))}
+          </div>
         </div>
+        {catScrollState.right && (
+          <button className="re-cat-arrow" onClick={() => scrollCatList("right")}>
+            <ChevronRight size={14} />
+          </button>
+        )}
       </div>
 
       {/* Batch Action Bar */}
