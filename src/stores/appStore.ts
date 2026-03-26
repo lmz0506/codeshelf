@@ -138,6 +138,10 @@ interface AppState {
   popupAutoHideWindow: boolean;
   setPopupAutoHideWindow: (v: boolean) => void;
 
+  // 弹窗光标位置（全局快捷键触发时记录鼠标屏幕坐标）
+  popupCursorPosition: { x: number; y: number } | null;
+  setPopupCursorPosition: (pos: { x: number; y: number } | null) => void;
+
   // Toolbox Navigation Target (从外部快捷键导航到工具箱子工具)
   toolboxNavigateTarget: ToolType | null;
   navigateToTool: (tool: ToolType) => void;
@@ -484,6 +488,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 弹窗自动隐藏窗口
   popupAutoHideWindow: false,
   setPopupAutoHideWindow: (v) => set({ popupAutoHideWindow: v }),
+
+  // 弹窗光标位置
+  popupCursorPosition: null,
+  setPopupCursorPosition: (pos) => set({ popupCursorPosition: pos }),
 
   // Toolbox Navigation Target
   toolboxNavigateTarget: null,

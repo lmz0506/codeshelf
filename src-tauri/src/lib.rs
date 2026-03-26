@@ -287,6 +287,7 @@ pub fn run() {
             system::check_node_version,
             system::get_app_paths,
             system::clear_logs,
+            system::get_cursor_position,
             // Toolbox - Scanner commands
             toolbox::scanner::scan_ports,
             toolbox::scanner::stop_scan,

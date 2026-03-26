@@ -124,6 +124,7 @@ async function initializeApp() {
 
 function AppContent() {
   const initialized = useAppStore((state) => state.initialized);
+  const popupAutoHideWindow = useAppStore((s) => s.popupAutoHideWindow);
 
   useEffect(() => {
     initializeApp();
@@ -152,24 +153,26 @@ function AppContent() {
 
   return (
     <>
-      <MainLayout>
-        {(currentPage) => {
-          switch (currentPage) {
-            case "shelf":
-              return <ShelfPage />;
-            case "dashboard":
-              return <DashboardPage />;
-            case "toolbox":
-              return <ToolboxPage />;
-            case "settings":
-              return <SettingsPage />;
-            case "aiProviders":
-              return <AiProvidersPage />;
-            default:
-              return <ShelfPage />;
-          }
-        }}
-      </MainLayout>
+      <div style={{ display: popupAutoHideWindow ? 'none' : undefined }}>
+        <MainLayout>
+          {(currentPage) => {
+            switch (currentPage) {
+              case "shelf":
+                return <ShelfPage />;
+              case "dashboard":
+                return <DashboardPage />;
+              case "toolbox":
+                return <ToolboxPage />;
+              case "settings":
+                return <SettingsPage />;
+              case "aiProviders":
+                return <AiProvidersPage />;
+              default:
+                return <ShelfPage />;
+            }
+          }}
+        </MainLayout>
+      </div>
       <ToastContainer />
       <UpdateNotification />
       <ShortcutQuickLookup />

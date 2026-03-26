@@ -150,6 +150,13 @@ async function handleGlobalAction(actionId: string) {
       if (visible && !minimized) {
         await win.hide();
       } else {
+        // 显示窗口前，清理可能残留的弹窗状态
+        const store = useAppStore.getState();
+        if (store.popupAutoHideWindow) {
+          store.setPopupAutoHideWindow(false);
+          store.setPopupCursorPosition(null);
+          await restoreWindowState();
+        }
         await win.show();
         await win.unminimize();
         await win.setFocus();
@@ -160,24 +167,137 @@ async function handleGlobalAction(actionId: string) {
     return;
   }
 
-  // 弹窗类动作：记住窗口之前是否隐藏，关闭弹窗时自动藏回去
+  // 弹窗类动作：不带主窗口，再次按下快捷键可以关闭
   if (POPUP_ACTIONS.has(actionId)) {
+    const store = useAppStore.getState();
+    const isPopupShowing =
+      (actionId === "tool_clipboard" && store.showClipboardQuickAccess) ||
+      (actionId === "tool_shortcuts" && store.showShortcutQuickLookup);
+
+    if (isPopupShowing) {
+      // 弹窗已打开 → 关闭弹窗，并在需要时自动隐藏窗口
+      executeAction(actionId);
+      store.setPopupCursorPosition(null);
+      if (store.popupAutoHideWindow) {
+        store.setPopupAutoHideWindow(false);
+        try {
+          await restoreWindowState();
+          await win.hide();
+        } catch (err) {
+          console.error("隐藏窗口失败:", err);
+        }
+      }
+      return;
+    }
+
+    // 弹窗未打开 → 打开弹窗
     try {
       const visible = await win.isVisible();
       const minimized = visible && await win.isMinimized();
       const wasHidden = !visible || minimized;
 
+      // 剪贴板弹窗：获取光标位置并定位窗口
+      if (actionId === "tool_clipboard" && wasHidden) {
+        try {
+          const pos: { x: number; y: number } = await invoke("get_cursor_position");
+          store.setPopupCursorPosition(pos);
+
+          // 保存原始窗口位置和尺寸，用于恢复
+          const origPos = await win.outerPosition();
+          const origSize = await win.outerSize();
+          _savedWindowState = {
+            x: origPos.x, y: origPos.y,
+            width: origSize.width, height: origSize.height,
+          };
+
+          // 获取缩放因子（macOS Retina 为 2）
+          const scaleFactor = await win.scaleFactor();
+          const popupWidth = Math.round(540 * scaleFactor);
+          const popupHeight = Math.round(500 * scaleFactor);
+          // 光标坐标是逻辑坐标，需要转为物理坐标
+          const cursorPhysX = Math.round(pos.x * scaleFactor);
+          const cursorPhysY = Math.round(pos.y * scaleFactor);
+
+          // 获取当前屏幕信息（Tauri 返回物理像素）
+          const monitors = await (await import("@tauri-apps/api/window")).availableMonitors();
+          const currentMonitor = monitors.find((m) => {
+            const mx = m.position.x, my = m.position.y;
+            const mw = m.size.width, mh = m.size.height;
+            return cursorPhysX >= mx && cursorPhysX < mx + mw && cursorPhysY >= my && cursorPhysY < my + mh;
+          }) || monitors[0];
+
+          let newX = Math.round(cursorPhysX - popupWidth / 2);
+          let newY = Math.round(cursorPhysY + 10 * scaleFactor); // 默认在光标下方
+
+          if (currentMonitor) {
+            const monitorBottom = currentMonitor.position.y + currentMonitor.size.height;
+            const monitorRight = currentMonitor.position.x + currentMonitor.size.width;
+            const monitorLeft = currentMonitor.position.x;
+            const monitorTop = currentMonitor.position.y;
+
+            // 如果光标在屏幕下半部分，弹窗在光标上方
+            if (cursorPhysY > monitorTop + currentMonitor.size.height / 2) {
+              newY = Math.round(cursorPhysY - popupHeight - 10 * scaleFactor);
+            }
+            // 防止溢出屏幕
+            if (newX < monitorLeft) newX = monitorLeft;
+            if (newX + popupWidth > monitorRight) newX = Math.round(monitorRight - popupWidth);
+            if (newY < monitorTop) newY = monitorTop;
+            if (newY + popupHeight > monitorBottom) newY = Math.round(monitorBottom - popupHeight);
+          }
+
+          const { PhysicalPosition, PhysicalSize } = await import("@tauri-apps/api/dpi");
+          await win.setSize(new PhysicalSize(popupWidth, popupHeight));
+          await win.setPosition(new PhysicalPosition(newX, newY));
+        } catch (err) {
+          console.error("获取光标位置失败:", err);
+          store.setPopupCursorPosition(null);
+        }
+      } else if (actionId === "tool_shortcuts" && wasHidden) {
+        // 快捷键弹窗：也需要缩小窗口到弹窗大小
+        try {
+          const origPos = await win.outerPosition();
+          const origSize = await win.outerSize();
+          _savedWindowState = {
+            x: origPos.x, y: origPos.y,
+            width: origSize.width, height: origSize.height,
+          };
+          const scaleFactor = await win.scaleFactor();
+          const popupWidth = Math.round(540 * scaleFactor);
+          const popupHeight = Math.round(500 * scaleFactor);
+
+          // 获取屏幕信息居中显示
+          const monitors = await (await import("@tauri-apps/api/window")).availableMonitors();
+          const monitor = monitors[0];
+          if (monitor) {
+            const cx = Math.round(monitor.position.x + (monitor.size.width - popupWidth) / 2);
+            const cy = Math.round(monitor.position.y + (monitor.size.height - popupHeight) * 0.3);
+            const { PhysicalPosition, PhysicalSize } = await import("@tauri-apps/api/dpi");
+            await win.setSize(new PhysicalSize(popupWidth, popupHeight));
+            await win.setPosition(new PhysicalPosition(cx, cy));
+          }
+        } catch (err) {
+          console.error("调整窗口失败:", err);
+        }
+        store.setPopupCursorPosition(null);
+      } else {
+        store.setPopupCursorPosition(null);
+      }
+
       if (wasHidden) {
-        // 窗口之前是隐藏的 → 标记关闭弹窗后自动隐藏
-        useAppStore.getState().setPopupAutoHideWindow(true);
+        store.setPopupAutoHideWindow(true);
+        // 先设置弹窗状态，让遮罩层先渲染，再显示窗口，避免闪现主界面
+        executeAction(actionId);
         await win.show();
         await win.unminimize();
         await win.setFocus();
+      } else {
+        executeAction(actionId);
       }
     } catch (err) {
       console.error("唤起窗口失败:", err);
+      executeAction(actionId);
     }
-    executeAction(actionId);
     return;
   }
 
@@ -199,6 +319,26 @@ let shortcutsReady = false;
 
 // 防止全局快捷键在窗口聚焦时 DOM keydown 与 OS 钩子双重触发
 let _lastLocalHandled = { id: "", time: 0 };
+
+// 保存窗口原始状态，用于弹窗关闭后恢复
+let _savedWindowState: { x: number; y: number; width: number; height: number } | null = null;
+
+/**
+ * 恢复窗口到弹窗打开前的位置和尺寸
+ */
+export async function restoreWindowState() {
+  if (!_savedWindowState) return;
+  try {
+    const win = getCurrentWindow();
+    const { PhysicalPosition, PhysicalSize } = await import("@tauri-apps/api/dpi");
+    await win.setSize(new PhysicalSize(_savedWindowState.width, _savedWindowState.height));
+    await win.setPosition(new PhysicalPosition(_savedWindowState.x, _savedWindowState.y));
+  } catch (err) {
+    console.error("恢复窗口状态失败:", err);
+  } finally {
+    _savedWindowState = null;
+  }
+}
 
 async function registerGlobalShortcuts(shortcuts: AppShortcutBinding[]) {
   const globalBindings = shortcuts
@@ -330,6 +470,10 @@ export function useAppShortcuts() {
 
       e.preventDefault();
       e.stopPropagation();
+      // 弹窗类操作阻止事件继续传播到弹窗组件的 keydown 监听器，避免重复 toggle
+      if (POPUP_ACTIONS.has(binding.id)) {
+        e.stopImmediatePropagation();
+      }
 
       if (binding.global) {
         // 标记为本地已处理，防止 OS 钩子事件重复触发
