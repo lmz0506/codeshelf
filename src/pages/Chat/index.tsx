@@ -42,6 +42,18 @@ function buildModelOptions(providers: AiProviderConfig[]): ModelOption[] {
       });
     }
   }
+  // Sort: default provider's default model first, then default provider's other models, then rest
+  options.sort((a, b) => {
+    const aProvider = providers.find((p) => p.id === a.providerId);
+    const bProvider = providers.find((p) => p.id === b.providerId);
+    const aIsDefaultProvider = aProvider?.isDefaultProvider ? 1 : 0;
+    const bIsDefaultProvider = bProvider?.isDefaultProvider ? 1 : 0;
+    if (aIsDefaultProvider !== bIsDefaultProvider) return bIsDefaultProvider - aIsDefaultProvider;
+    const aIsDefault = a.model.isDefault ? 1 : 0;
+    const bIsDefault = b.model.isDefault ? 1 : 0;
+    if (aIsDefault !== bIsDefault) return bIsDefault - aIsDefault;
+    return 0;
+  });
   return options;
 }
 
@@ -80,6 +92,7 @@ export function ChatPage() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
   const streamBufferRef = useRef<string>("");
+  const thinkingBufferRef = useRef<string>("");
   const activeSessionRef = useRef<ChatSession | null>(null);
   const prevStreamingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -129,9 +142,12 @@ export function ChatPage() {
   }, [activeSessionId]);
 
   useEffect(() => {
+    if (!streamRequestId) return;
     let unlisten: (() => void) | null = null;
+    let cancelled = false;
     listen<{ requestId: string; delta?: string; done: boolean; error?: string; thinkingDelta?: string }>("chat-stream", (event) => {
-      if (!streamRequestId || event.payload.requestId !== streamRequestId) return;
+      if (cancelled) return;
+      if (event.payload.requestId !== streamRequestId) return;
       if (event.payload.error) {
         showToast("error", event.payload.error);
         setStreaming(false);
@@ -140,11 +156,13 @@ export function ChatPage() {
         return;
       }
       if (event.payload.thinkingDelta) {
-        setThinkingBuffer((prev) => prev + event.payload.thinkingDelta);
+        thinkingBufferRef.current += event.payload.thinkingDelta;
+        setThinkingBuffer(thinkingBufferRef.current);
         setThinkingVisible(true);
       }
       if (event.payload.delta) {
         streamBufferRef.current += event.payload.delta;
+        const currentThinking = thinkingBufferRef.current;
         setActiveSession((prev) => {
           if (!prev) return prev;
           const updated = { ...prev };
@@ -152,9 +170,9 @@ export function ChatPage() {
           const last = messages[messages.length - 1];
           if (last?.role === "assistant") {
             last.content = streamBufferRef.current;
-            last.thinkingContent = thinkingBuffer || last.thinkingContent;
+            last.thinkingContent = currentThinking || last.thinkingContent;
           } else {
-            messages.push(buildMessage("assistant", streamBufferRef.current, thinkingBuffer));
+            messages.push(buildMessage("assistant", streamBufferRef.current, currentThinking));
           }
           updated.messages = messages;
           return updated;
@@ -166,9 +184,18 @@ export function ChatPage() {
         setThinkingVisible(false);
         streamBufferRef.current = "";
       }
-    }).then((fn) => { unlisten = fn; });
-    return () => { if (unlisten) unlisten(); };
-  }, [streamRequestId, thinkingBuffer]);
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [streamRequestId]);
 
   async function handleCreateSession() {
     if (!selected) return;
@@ -194,6 +221,7 @@ export function ChatPage() {
       setActiveSessionId(session.id);
       setInput("");
       setThinkingBuffer("");
+      thinkingBufferRef.current = "";
       setThinkingVisible(false);
     } catch {
       showToast("error", "创建会话失败");
@@ -206,6 +234,7 @@ export function ChatPage() {
     setActiveSessionId(sessionId);
     setInput("");
     setThinkingBuffer("");
+    thinkingBufferRef.current = "";
     setThinkingVisible(false);
     try {
       const session = await getChatSession(sessionId);
@@ -281,6 +310,8 @@ export function ChatPage() {
       setStreamRequestId(requestId);
       setStreaming(true);
       streamBufferRef.current = "";
+      thinkingBufferRef.current = "";
+      setThinkingBuffer("");
 
       await chatStream({
         requestId,
@@ -290,7 +321,9 @@ export function ChatPage() {
         apiKey: selected.apiKey,
         thinking: selected.model.thinking,
         stream: selected.model.stream !== false,
-        messages: saved.messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: saved.messages
+          .filter((m) => m.role !== "assistant" || m.content.trim() !== "")
+          .map((m) => ({ role: m.role, content: m.content })),
       });
     } catch {
       showToast("error", "发送失败");
@@ -305,6 +338,7 @@ export function ChatPage() {
     setStreaming(false);
     setStreamRequestId(null);
     streamBufferRef.current = "";
+    thinkingBufferRef.current = "";
   }
 
   activeSessionRef.current = activeSession;
@@ -439,21 +473,21 @@ export function ChatPage() {
                 {activeSession.messages.map((msg) => {
                   const isUser = msg.role === "user";
                   return (
-                    <div key={msg.id} className={`group flex ${isUser ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[70%] rounded-2xl px-4 py-3 shadow-sm relative ${
+                    <div key={msg.id} className={`group flex items-start gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
+                      {isUser && !streaming && (
+                        <button
+                          className="opacity-0 group-hover:opacity-100 transition-opacity mt-2 text-gray-300 hover:text-red-500"
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          title="删除此消息"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                      <div className={`max-w-[70%] rounded-2xl px-4 py-3 shadow-sm ${
                         isUser ? "bg-blue-500 text-white" : "bg-white border border-gray-200 text-gray-800"
                       }`}>
-                        <div className={`flex items-center justify-between text-[11px] mb-1 ${isUser ? "text-blue-100" : "text-gray-400"}`}>
+                        <div className={`text-[11px] mb-1 ${isUser ? "text-blue-100" : "text-gray-400"}`}>
                           <span>{isUser ? "你" : "助手"}</span>
-                          {!streaming && (
-                            <button
-                              className={`opacity-0 group-hover:opacity-100 transition-opacity ml-2 ${isUser ? "text-blue-200 hover:text-white" : "text-gray-300 hover:text-red-500"}`}
-                              onClick={() => handleDeleteMessage(msg.id)}
-                              title="删除此消息"
-                            >
-                              <X size={12} />
-                            </button>
-                          )}
                         </div>
                         {!isUser && msg.thinkingContent && (
                           <div className="mb-2 p-2 text-xs text-purple-600 bg-purple-50 rounded-lg">
@@ -463,6 +497,15 @@ export function ChatPage() {
                         )}
                         <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
                       </div>
+                      {!isUser && !streaming && (
+                        <button
+                          className="opacity-0 group-hover:opacity-100 transition-opacity mt-2 text-gray-300 hover:text-red-500"
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          title="删除此消息"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   );
                 })}

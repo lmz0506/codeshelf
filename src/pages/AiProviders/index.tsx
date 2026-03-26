@@ -43,6 +43,18 @@ function buildModelOptions(providers: AiProviderConfig[]): ModelOption[] {
       });
     }
   }
+  // Sort: default provider's default model first, then default provider's other models, then rest
+  options.sort((a, b) => {
+    const aProvider = providers.find((p) => p.id === a.providerId);
+    const bProvider = providers.find((p) => p.id === b.providerId);
+    const aIsDefaultProvider = aProvider?.isDefaultProvider ? 1 : 0;
+    const bIsDefaultProvider = bProvider?.isDefaultProvider ? 1 : 0;
+    if (aIsDefaultProvider !== bIsDefaultProvider) return bIsDefaultProvider - aIsDefaultProvider;
+    const aIsDefault = a.model.isDefault ? 1 : 0;
+    const bIsDefault = b.model.isDefault ? 1 : 0;
+    if (aIsDefault !== bIsDefault) return bIsDefault - aIsDefault;
+    return 0;
+  });
   return options;
 }
 
@@ -85,6 +97,7 @@ export function AiProvidersPage() {
   const [expandedThinkingIds, setExpandedThinkingIds] = useState<Set<string>>(new Set());
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
   const streamBufferRef = useRef<string>("");
+  const thinkingBufferRef = useRef<string>("");
   const sessionLoadSeq = useRef(0);
   const activeSessionIdRef = useRef<string | null>(null);
   const activeSessionRef = useRef<ChatSession | null>(null);
@@ -155,10 +168,12 @@ export function AiProvidersPage() {
   }, [activeSessionId, showChat]);
 
   useEffect(() => {
+    if (!showChat || !streamRequestId) return;
     let unlisten: (() => void) | null = null;
-    if (!showChat) return;
+    let cancelled = false;
     listen<{ requestId: string; delta?: string; done: boolean; error?: string; thinkingDelta?: string }>("chat-stream", (event) => {
-      if (!streamRequestId || event.payload.requestId !== streamRequestId) return;
+      if (cancelled) return;
+      if (event.payload.requestId !== streamRequestId) return;
       if (event.payload.error) {
         showToast("error", event.payload.error);
         setStreaming(false);
@@ -168,11 +183,13 @@ export function AiProvidersPage() {
         return;
       }
       if (event.payload.thinkingDelta) {
-        setThinkingBuffer((prev) => prev + event.payload.thinkingDelta);
+        thinkingBufferRef.current += event.payload.thinkingDelta;
+        setThinkingBuffer(thinkingBufferRef.current);
         setThinkingVisible(true);
       }
       if (event.payload.delta) {
         streamBufferRef.current += event.payload.delta;
+        const currentThinking = thinkingBufferRef.current;
         setActiveSession((prev) => {
           if (!prev) return prev;
           if (prev.id !== activeSessionIdRef.current) return prev;
@@ -181,9 +198,9 @@ export function AiProvidersPage() {
           const last = messages[messages.length - 1];
           if (last?.role === "assistant") {
             last.content = streamBufferRef.current;
-            last.thinkingContent = thinkingBuffer || last.thinkingContent;
+            last.thinkingContent = currentThinking || last.thinkingContent;
           } else {
-            messages.push(buildMessage("assistant", streamBufferRef.current, thinkingBuffer));
+            messages.push(buildMessage("assistant", streamBufferRef.current, currentThinking));
           }
           updated.messages = messages;
           return updated;
@@ -201,9 +218,18 @@ export function AiProvidersPage() {
           return next;
         });
       }
-    }).then((fn) => { unlisten = fn; });
-    return () => { if (unlisten) unlisten(); };
-  }, [streamRequestId, thinkingBuffer, showChat]);
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [streamRequestId, showChat]);
 
   async function handleCreateSession() {
     if (!selected) return;
@@ -229,6 +255,7 @@ export function AiProvidersPage() {
       setActiveSessionId(session.id);
       setInput("");
       setThinkingBuffer("");
+      thinkingBufferRef.current = "";
       setThinkingVisible(false);
       setExpandedThinkingIds(new Set());
     } catch {
@@ -241,6 +268,7 @@ export function AiProvidersPage() {
     setActiveSessionId(sessionId);
     setInput("");
     setThinkingBuffer("");
+    thinkingBufferRef.current = "";
     setThinkingVisible(false);
     setExpandedThinkingIds(new Set());
   }
@@ -277,6 +305,7 @@ export function AiProvidersPage() {
           setActiveSession(null);
           setInput("");
           setThinkingBuffer("");
+          thinkingBufferRef.current = "";
           setThinkingVisible(false);
           setExpandedThinkingIds(new Set());
         }
@@ -308,6 +337,8 @@ export function AiProvidersPage() {
       setStreamRequestId(requestId);
       setStreaming(true);
       streamBufferRef.current = "";
+      thinkingBufferRef.current = "";
+      setThinkingBuffer("");
 
       await chatStream({
         requestId,
@@ -317,7 +348,9 @@ export function AiProvidersPage() {
         apiKey: selected.apiKey,
         thinking: selected.model.thinking,
         stream: selected.model.stream !== false,
-        messages: saved.messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: saved.messages
+          .filter((m) => m.role !== "assistant" || m.content.trim() !== "")
+          .map((m) => ({ role: m.role, content: m.content })),
       });
     } catch {
       showToast("error", "发送失败");
@@ -333,6 +366,7 @@ export function AiProvidersPage() {
     setStreamRequestId(null);
     setThinkingVisible(false);
     streamBufferRef.current = "";
+    thinkingBufferRef.current = "";
   }
 
   activeSessionRef.current = activeSession;
@@ -531,9 +565,18 @@ export function AiProvidersPage() {
                         const hasThinking = !isUser && Boolean(msg.thinkingContent);
                         const isExpanded = hasThinking && expandedThinkingIds.has(msg.id);
                         return (
-                          <div key={msg.id} className={`group flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+                          <div key={msg.id} className={`group flex items-start gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
+                            {isUser && !streaming && (
+                              <button
+                                className="opacity-0 group-hover:opacity-100 transition-opacity mt-2 text-gray-300 hover:text-red-500"
+                                onClick={() => handleDeleteMessage(msg.id)}
+                                title="删除此消息"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                             {!isUser && (
-                              <div className="w-8 h-8 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center text-xs text-gray-600">AI</div>
+                              <div className="w-8 h-8 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center text-xs text-gray-600 shrink-0">AI</div>
                             )}
                             <div className="max-w-[70%] space-y-2">
                               {hasThinking && (
@@ -560,23 +603,23 @@ export function AiProvidersPage() {
                                   )}
                                 </div>
                               )}
-                              <div className={`rounded-2xl px-4 py-3 shadow-sm relative ${
+                              <div className={`rounded-2xl px-4 py-3 shadow-sm ${
                                 isUser ? "bg-blue-500 text-white" : "bg-white border border-gray-200 text-gray-800"
                               }`}>
-                                {!streaming && (
-                                  <button
-                                    className={`absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? "text-blue-200 hover:text-white" : "text-gray-300 hover:text-red-500"}`}
-                                    onClick={() => handleDeleteMessage(msg.id)}
-                                    title="删除此消息"
-                                  >
-                                    <X size={12} />
-                                  </button>
-                                )}
                                 <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
                               </div>
                             </div>
                             {isUser && (
-                              <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs">我</div>
+                              <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs shrink-0">我</div>
+                            )}
+                            {!isUser && !streaming && (
+                              <button
+                                className="opacity-0 group-hover:opacity-100 transition-opacity mt-2 text-gray-300 hover:text-red-500"
+                                onClick={() => handleDeleteMessage(msg.id)}
+                                title="删除此消息"
+                              >
+                                <Trash2 size={14} />
+                              </button>
                             )}
                           </div>
                         );

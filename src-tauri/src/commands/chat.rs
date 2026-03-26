@@ -276,9 +276,16 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
 
     let use_stream = request.stream.unwrap_or(true);
 
+    // Filter out empty assistant messages to avoid API 400 errors
+    let filtered_messages: Vec<&ChatStreamMessage> = request
+        .messages
+        .iter()
+        .filter(|m| m.role != "assistant" || !m.content.trim().is_empty())
+        .collect();
+
     let mut payload = serde_json::json!({
         "model": request.model,
-        "messages": request.messages,
+        "messages": filtered_messages,
         "stream": use_stream,
     });
 
