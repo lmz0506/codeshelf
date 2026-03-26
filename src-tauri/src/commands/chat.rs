@@ -294,12 +294,9 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
     if let Some(presence_penalty) = request.presence_penalty {
         payload["presence_penalty"] = serde_json::json!(presence_penalty);
     }
-    if let Some(thinking) = request.thinking {
-        payload["thinking"] = serde_json::json!(thinking);
-        payload["enable_thinking"] = serde_json::json!(thinking);
-        if thinking {
-            payload["reasoning"] = serde_json::json!({ "effort": "medium" });
-        }
+    if let Some(true) = request.thinking {
+        payload["enable_thinking"] = serde_json::json!(true);
+        payload["reasoning"] = serde_json::json!({ "effort": "medium" });
     }
 
     let body = payload;

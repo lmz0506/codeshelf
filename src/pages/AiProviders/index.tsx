@@ -329,7 +329,7 @@ export function AiProvidersPage() {
           ☰
         </span>
         <div className="flex flex-col" data-tauri-drag-region>
-          <span className="text-lg font-semibold ml-2">✨ 模型/供应商</span>
+          <span className="text-lg font-semibold ml-2">✨ AI模型</span>
           <span className="text-xs text-gray-500 ml-2">统一管理 OpenAI 兼容的 AI 厂商与模型配置</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
@@ -450,7 +450,7 @@ export function AiProvidersPage() {
                   <div className="p-6">
                     <div className="re-card p-5 space-y-3">
                       <div className="text-sm text-gray-700">尚未配置可用的 AI 供应商</div>
-                      <div className="text-xs text-gray-500">请先在“模型/供应商”页面配置并启用供应商与模型。</div>
+                      <div className="text-xs text-gray-500">请先在"AI"页面配置并启用供应商与模型。</div>
                     </div>
                   </div>
                 )}

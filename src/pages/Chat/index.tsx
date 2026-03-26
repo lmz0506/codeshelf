@@ -354,7 +354,7 @@ export function ChatPage() {
           {!isConfigured && (
             <div className="re-card p-5 space-y-3">
               <div className="text-sm text-gray-700">尚未配置可用的 AI 供应商</div>
-              <div className="text-xs text-gray-500">请先在“模型/供应商”页面配置并启用供应商与模型。</div>
+              <div className="text-xs text-gray-500">请先在"AI"页面配置并启用供应商与模型。</div>
               <button
                 className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg"
                 onClick={() => setCurrentPage("aiProviders")}
