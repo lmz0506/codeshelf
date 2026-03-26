@@ -125,6 +125,14 @@ impl StorageConfig {
     pub fn recommended_template_file(&self) -> PathBuf {
         self.data_dir.join("recommended_template.json")
     }
+
+    pub fn ai_providers_file(&self) -> PathBuf {
+        self.data_dir.join("ai_providers.json")
+    }
+
+    pub fn conversations_dir(&self) -> PathBuf {
+        self.data_dir.join("conversations")
+    }
 }
 
 /// 初始化存储配置

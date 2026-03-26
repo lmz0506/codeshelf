@@ -110,6 +110,56 @@ export interface DashboardStats {
   unmergedBranches: number;
 }
 
+export interface AiModelConfig {
+  id: string;
+  model: string;
+  enabled: boolean;
+  isDefault: boolean;
+  thinking: boolean;
+}
+
+export interface AiProviderConfig {
+  id: string;
+  name: string;
+  providerType: "preset" | "custom";
+  presetKey?: "bailian" | "deepseek" | "openai" | "ollama" | "moonshot";
+  baseUrl: string;
+  apiKey?: string;
+  enabled: boolean;
+  isDefaultProvider: boolean;
+  models: AiModelConfig[];
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  createdAt: string;
+  tokens?: number;
+  thinking?: boolean;
+  thinkingContent?: string;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  providerId: string;
+  modelId: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatMessage[];
+}
+
+export interface ChatSessionSummary {
+  id: string;
+  title: string;
+  providerId: string;
+  modelId: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
 // ============== 应用快捷键 ==============
 
 export interface AppShortcutBinding {

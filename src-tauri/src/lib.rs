@@ -2,7 +2,7 @@ mod commands;
 mod keyboard_hook;
 mod storage;
 
-use commands::{git, project, stats, system, toolbox, settings};
+use commands::{git, project, stats, system, toolbox, settings, chat};
 use tauri::{
     Emitter, Manager, RunEvent,
     tray::TrayIconBuilder,
@@ -352,6 +352,17 @@ pub fn run() {
             toolbox::shortcuts::delete_shortcut,
             toolbox::shortcuts::reset_shortcuts,
             toolbox::shortcuts::get_current_platform,
+            // Chat commands
+            chat::get_chat_history_dir,
+            chat::migrate_chat_history_dir,
+            chat::list_chat_sessions,
+            chat::get_chat_session,
+            chat::create_chat_session,
+            chat::save_chat_session,
+            chat::rename_chat_session,
+            chat::delete_chat_session,
+            chat::chat_stream,
+            chat::chat_cancel,
             // Settings commands
             settings::get_labels,
             settings::save_labels,
@@ -386,6 +397,9 @@ pub fn run() {
             settings::get_recommended_template,
             settings::save_recommended_template,
             settings::reset_recommended_template,
+            // Settings - AI Provider commands
+            settings::get_ai_providers,
+            settings::save_ai_providers,
             // Keyboard hook commands
             keyboard_hook::register_global_shortcuts,
             keyboard_hook::unregister_all_global_shortcuts,

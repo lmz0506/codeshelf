@@ -7,10 +7,11 @@ import { ShelfPage } from "@/pages/Shelf";
 import { DashboardPage } from "@/pages/Dashboard";
 import { SettingsPage } from "@/pages/Settings";
 import { ToolboxPage } from "@/pages/Toolbox";
+import { AiProvidersPage } from "@/pages/AiProviders";
 import { ToastContainer, UpdateNotification, ShortcutQuickLookup } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
-import type { Project, Notification, AppShortcutBinding } from "@/types";
+import type { Project, Notification, AppShortcutBinding, AiProviderConfig } from "@/types";
 import type { ToolType } from "@/types/toolbox";
 import type { EditorConfig, TerminalConfig, Theme } from "@/stores/appStore";
 
@@ -30,6 +31,7 @@ interface AppSettings {
   sidebar_collapsed: boolean;
   scan_depth: number;
   auto_update: boolean;
+  chat_history_dir?: string;
 }
 
 // 后端返回的 UI 状态类型
@@ -60,7 +62,7 @@ async function initializeApp() {
 
   try {
     // 并行加载所有数据
-    const [settings, labels, categories, editors, terminal, projects, uiState, notifications, appShortcuts] = await Promise.all([
+    const [settings, labels, categories, editors, terminal, projects, uiState, notifications, appShortcuts, aiProviders] = await Promise.all([
       invoke<AppSettings>("get_app_settings"),
       invoke<string[]>("get_labels"),
       invoke<string[]>("get_categories"),
@@ -70,6 +72,7 @@ async function initializeApp() {
       invoke<UiState>("get_ui_state"),
       invoke<NotificationBackend[]>("get_notifications"),
       invoke<AppShortcutBinding[]>("get_app_shortcuts"),
+      invoke<AiProviderConfig[]>("get_ai_providers"),
     ]);
 
     // 转换终端配置格式
@@ -90,6 +93,8 @@ async function initializeApp() {
       createdAt: n.created_at,
     }));
 
+    const normalizedAiProviders = useAppStore.getState().ensureAiDefaultProvider(aiProviders || []);
+
     // 直接设置状态，使用后端返回的数据（后端会处理默认值）
     storeSet({
       theme: (settings.theme || "light") as Theme,
@@ -97,6 +102,7 @@ async function initializeApp() {
       sidebarCollapsed: settings.sidebar_collapsed || false,
       scanDepth: settings.scan_depth || 3,
       autoUpdate: settings.auto_update !== false,
+      chatHistoryDir: settings.chat_history_dir,
       labels: labels || [],
       categories: categories || [],
       editors: editors || [],
@@ -105,6 +111,7 @@ async function initializeApp() {
       recentDetailProjectIds: uiState.recent_detail_project_ids || [],
       notifications: notificationsFormatted,
       appShortcuts: appShortcuts || [],
+      aiProviders: normalizedAiProviders,
       initialized: true,
     });
 
@@ -156,6 +163,8 @@ function AppContent() {
               return <ToolboxPage />;
             case "settings":
               return <SettingsPage />;
+            case "aiProviders":
+              return <AiProvidersPage />;
             default:
               return <ShelfPage />;
           }

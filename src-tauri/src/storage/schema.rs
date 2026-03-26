@@ -56,6 +56,8 @@ pub struct AppSettings {
     pub scan_depth: u32,
     #[serde(default = "default_true")]
     pub auto_update: bool,
+    #[serde(default)]
+    pub chat_history_dir: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -70,6 +72,7 @@ impl Default for AppSettings {
             sidebar_collapsed: false,
             scan_depth: 3,
             auto_update: true,
+            chat_history_dir: None,
         }
     }
 }
@@ -142,7 +145,70 @@ pub struct ConfigFileInfo {
     pub exists: bool,
 }
 
-// ============== 工具函数 ==============
+// ============== AI 供应商配置数据 ==============
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AiModelConfig {
+    pub id: String,
+    pub model: String,
+    pub enabled: bool,
+    pub is_default: bool,
+    pub thinking: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AiProviderConfig {
+    pub id: String,
+    pub name: String,
+    pub provider_type: String,
+    pub preset_key: Option<String>,
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub enabled: bool,
+    pub is_default_provider: bool,
+    pub models: Vec<AiModelConfig>,
+}
+
+// ============== 对话会话数据 ==============
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: String,
+    pub tokens: Option<u32>,
+    pub thinking: Option<bool>,
+    pub thinking_content: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSession {
+    pub id: String,
+    pub title: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub messages: Vec<ChatMessage>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSessionSummary {
+    pub id: String,
+    pub title: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub message_count: usize,
+}
+
 
 /// 获取当前 ISO 时间字符串
 pub fn current_iso_time() -> String {

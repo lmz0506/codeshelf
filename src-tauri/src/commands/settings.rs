@@ -6,6 +6,7 @@ use std::fs;
 use crate::storage::{
     get_storage_config, generate_id, current_iso_time,
     EditorConfig, TerminalConfig, AppSettings, UiState, Notification,
+    AiProviderConfig, AiModelConfig,
 };
 
 // ============== 标签管理 ==============
@@ -275,6 +276,7 @@ pub struct AppSettingsInput {
     pub sidebar_collapsed: Option<bool>,
     pub scan_depth: Option<u32>,
     pub auto_update: Option<bool>,
+    pub chat_history_dir: Option<String>,
 }
 
 #[tauri::command]
@@ -302,6 +304,7 @@ pub async fn save_app_settings(input: AppSettingsInput) -> Result<AppSettings, S
     if let Some(sidebar_collapsed) = input.sidebar_collapsed { settings.sidebar_collapsed = sidebar_collapsed; }
     if let Some(scan_depth) = input.scan_depth { settings.scan_depth = scan_depth; }
     if let Some(auto_update) = input.auto_update { settings.auto_update = auto_update; }
+    if let Some(chat_history_dir) = input.chat_history_dir { settings.chat_history_dir = Some(chat_history_dir); }
 
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -483,7 +486,167 @@ pub async fn save_app_shortcuts(shortcuts: Vec<AppShortcutBinding>) -> Result<()
     Ok(())
 }
 
-// ============== 推荐模板管理 ==============
+// ============== AI 供应商配置管理 ==============
+
+fn default_ai_providers() -> Vec<AiProviderConfig> {
+    vec![
+        AiProviderConfig {
+            id: generate_id(),
+            name: "百炼 / 通义千问".to_string(),
+            provider_type: "preset".to_string(),
+            preset_key: Some("bailian".to_string()),
+            base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),
+            api_key: None,
+            enabled: false,
+            is_default_provider: false,
+            models: vec![
+                AiModelConfig {
+                    id: generate_id(),
+                    model: "qwen-plus".to_string(),
+                    enabled: true,
+                    is_default: true,
+                    thinking: false,
+                },
+                AiModelConfig {
+                    id: generate_id(),
+                    model: "qwen-turbo".to_string(),
+                    enabled: true,
+                    is_default: false,
+                    thinking: false,
+                },
+            ],
+        },
+        AiProviderConfig {
+            id: generate_id(),
+            name: "DeepSeek".to_string(),
+            provider_type: "preset".to_string(),
+            preset_key: Some("deepseek".to_string()),
+            base_url: "https://api.deepseek.com".to_string(),
+            api_key: None,
+            enabled: false,
+            is_default_provider: false,
+            models: vec![
+                AiModelConfig {
+                    id: generate_id(),
+                    model: "deepseek-chat".to_string(),
+                    enabled: true,
+                    is_default: true,
+                    thinking: false,
+                },
+                AiModelConfig {
+                    id: generate_id(),
+                    model: "deepseek-reasoner".to_string(),
+                    enabled: true,
+                    is_default: false,
+                    thinking: true,
+                },
+            ],
+        },
+        AiProviderConfig {
+            id: generate_id(),
+            name: "OpenAI".to_string(),
+            provider_type: "preset".to_string(),
+            preset_key: Some("openai".to_string()),
+            base_url: "https://api.openai.com/v1".to_string(),
+            api_key: None,
+            enabled: false,
+            is_default_provider: false,
+            models: vec![
+                AiModelConfig {
+                    id: generate_id(),
+                    model: "gpt-4o".to_string(),
+                    enabled: true,
+                    is_default: true,
+                    thinking: false,
+                },
+                AiModelConfig {
+                    id: generate_id(),
+                    model: "gpt-4.1".to_string(),
+                    enabled: true,
+                    is_default: false,
+                    thinking: false,
+                },
+            ],
+        },
+        AiProviderConfig {
+            id: generate_id(),
+            name: "Ollama".to_string(),
+            provider_type: "preset".to_string(),
+            preset_key: Some("ollama".to_string()),
+            base_url: "http://localhost:11434/v1".to_string(),
+            api_key: None,
+            enabled: false,
+            is_default_provider: false,
+            models: vec![
+                AiModelConfig {
+                    id: generate_id(),
+                    model: "llama3.1".to_string(),
+                    enabled: true,
+                    is_default: true,
+                    thinking: false,
+                },
+            ],
+        },
+        AiProviderConfig {
+            id: generate_id(),
+            name: "Moonshot AI".to_string(),
+            provider_type: "preset".to_string(),
+            preset_key: Some("moonshot".to_string()),
+            base_url: "https://api.moonshot.cn/v1".to_string(),
+            api_key: None,
+            enabled: false,
+            is_default_provider: false,
+            models: vec![
+                AiModelConfig {
+                    id: generate_id(),
+                    model: "moonshot-v1-8k".to_string(),
+                    enabled: true,
+                    is_default: true,
+                    thinking: false,
+                },
+            ],
+        },
+    ]
+}
+
+#[tauri::command]
+pub async fn get_ai_providers() -> Result<Vec<AiProviderConfig>, String> {
+    let config = get_storage_config()?;
+    let path = config.ai_providers_file();
+
+    if !path.exists() {
+        return Ok(default_ai_providers());
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("读取 AI 供应商配置失败: {}", e))?;
+
+    if content.trim().is_empty() {
+        return Ok(default_ai_providers());
+    }
+
+    let providers: Vec<AiProviderConfig> = serde_json::from_str(&content).unwrap_or_default();
+    if providers.is_empty() {
+        return Ok(default_ai_providers());
+    }
+
+    Ok(providers)
+}
+
+#[tauri::command]
+pub async fn save_ai_providers(providers: Vec<AiProviderConfig>) -> Result<Vec<AiProviderConfig>, String> {
+    let config = get_storage_config()?;
+    config.ensure_dirs()?;
+
+    let content = serde_json::to_string_pretty(&providers)
+        .map_err(|e| format!("序列化 AI 供应商配置失败: {}", e))?;
+
+    fs::write(config.ai_providers_file(), content)
+        .map_err(|e| format!("保存 AI 供应商配置失败: {}", e))?;
+
+    Ok(providers)
+}
+
 
 #[tauri::command]
 pub async fn get_recommended_template() -> Result<Option<String>, String> {

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { Project, ViewMode, Notification, AppShortcutBinding } from "@/types";
+import type { Project, ViewMode, Notification, AppShortcutBinding, AiProviderConfig } from "@/types";
 import type { ToolType } from "@/types/toolbox";
 import { markProjectDirty as markDirty } from "@/services/stats";
 import { setProjectEditor as setProjectEditorApi, setProjectClaudeEnv as setProjectClaudeEnvApi } from "@/services/db";
@@ -29,7 +29,7 @@ export interface TerminalConfig {
   };
 }
 
-export type PageType = "shelf" | "dashboard" | "settings" | "toolbox";
+export type PageType = "shelf" | "dashboard" | "settings" | "toolbox" | "aiProviders";
 
 interface AppState {
   // Initialization
@@ -78,6 +78,8 @@ interface AppState {
   // Settings
   scanDepth: number;
   setScanDepth: (depth: number) => void;
+  chatHistoryDir?: string;
+  setChatHistoryDir: (dir?: string) => void;
 
   // Categories (项目分类)
   categories: string[];
@@ -118,6 +120,12 @@ interface AppState {
   autoUpdate: boolean;
   setAutoUpdate: (autoUpdate: boolean) => void;
 
+  // AI Providers (AI 供应商)
+  aiProviders: AiProviderConfig[];
+  setAiProviders: (providers: AiProviderConfig[]) => void;
+  saveAiProviders: (providers: AiProviderConfig[]) => Promise<void>;
+  ensureAiDefaultProvider: (providers: AiProviderConfig[]) => AiProviderConfig[];
+
   // Shortcut Quick Lookup (快捷键快速查找弹窗)
   showShortcutQuickLookup: boolean;
   toggleShortcutQuickLookup: () => void;
@@ -144,6 +152,7 @@ const saveAppSettings = debounce(async (settings: {
   sidebar_collapsed?: boolean;
   scan_depth?: number;
   auto_update?: boolean;
+  chat_history_dir?: string;
 }) => {
   try {
     await invoke("save_app_settings", { input: settings });
@@ -257,6 +266,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setScanDepth: (scanDepth) => {
     set({ scanDepth });
     saveAppSettings({ scan_depth: scanDepth });
+  },
+  chatHistoryDir: undefined,
+  setChatHistoryDir: (chatHistoryDir) => {
+    set({ chatHistoryDir });
+    saveAppSettings({ chat_history_dir: chatHistoryDir });
   },
 
   // Categories (项目分类)
@@ -410,6 +424,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     invoke("clear_notifications").catch(console.error);
   },
 
+  // App Shortcuts (应用快捷键)
+  appShortcuts: [],
+  setAppShortcuts: (appShortcuts) => set({ appShortcuts }),
+
   // Auto Update (自动更新)
   autoUpdate: true,
   setAutoUpdate: (autoUpdate) => {
@@ -417,9 +435,32 @@ export const useAppStore = create<AppState>()((set, get) => ({
     saveAppSettings({ auto_update: autoUpdate });
   },
 
-  // App Shortcuts (应用快捷键)
-  appShortcuts: [],
-  setAppShortcuts: (appShortcuts) => set({ appShortcuts }),
+  // AI Providers (AI 供应商)
+  aiProviders: [],
+  setAiProviders: (aiProviders) => set({ aiProviders }),
+  ensureAiDefaultProvider: (providers) => {
+    const hasDefault = providers.some((p) => p.isDefaultProvider && p.enabled);
+    if (hasDefault || providers.length === 0) {
+      return providers;
+    }
+    const firstEnabled = providers.find((p) => p.enabled);
+    if (!firstEnabled) {
+      return providers;
+    }
+    return providers.map((p) => ({
+      ...p,
+      isDefaultProvider: p.id === firstEnabled.id,
+    }));
+  },
+  saveAiProviders: async (providers) => {
+    const normalized = get().ensureAiDefaultProvider(providers);
+    set({ aiProviders: normalized });
+    try {
+      await invoke("save_ai_providers", { providers: normalized });
+    } catch (err) {
+      console.error("保存 AI 供应商配置失败:", err);
+    }
+  },
 
   // Shortcut Quick Lookup (快捷键快速查找弹窗)
   showShortcutQuickLookup: false,

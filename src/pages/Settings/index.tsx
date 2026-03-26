@@ -29,6 +29,11 @@ export function SettingsPage() {
     return editors[0].name;
   };
 
+  // 获取主题显示名称
+  const getThemeName = (t: Theme) => {
+    return t === "light" ? "浅色模式" : "深色模式";
+  };
+
   // 获取终端类型显示名称
   const getTerminalTypeName = (type: TerminalConfig["type"]) => {
     const names: Record<string, string> = {
@@ -40,11 +45,6 @@ export function SettingsPage() {
       custom: "自定义终端",
     };
     return names[type] || type;
-  };
-
-  // 获取主题显示名称
-  const getThemeName = (t: Theme) => {
-    return t === "light" ? "浅色模式" : "深色模式";
   };
 
   const settingsCards = [
