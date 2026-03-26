@@ -754,3 +754,55 @@ pub async fn clear_logs(app_handle: tauri::AppHandle) -> Result<String, String> 
 
     Ok(format!("已清除 {} 个日志文件，释放 {}", deleted_count, size_str))
 }
+
+#[derive(serde::Serialize)]
+pub struct CursorPosition {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// 获取鼠标光标的屏幕坐标（同步命令，在主线程执行）
+#[tauri::command]
+pub fn get_cursor_position() -> Result<CursorPosition, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSEvent;
+        use objc2_foundation::MainThreadMarker;
+
+        let _mtm = MainThreadMarker::new()
+            .ok_or_else(|| "必须在主线程调用".to_string())?;
+        let point = NSEvent::mouseLocation();
+        // macOS 坐标系：原点在左下角，需要转换为左上角
+        let screen_height = {
+            use objc2_app_kit::NSScreen;
+            NSScreen::mainScreen(_mtm)
+                .map(|s| s.frame().size.height)
+                .unwrap_or(900.0)
+        };
+        Ok(CursorPosition {
+            x: point.x,
+            y: screen_height - point.y,
+        })
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        use windows::Win32::Foundation::POINT;
+
+        let mut point = POINT { x: 0, y: 0 };
+        unsafe {
+            GetCursorPos(&mut point)
+                .map_err(|e| format!("GetCursorPos failed: {}", e))?;
+        }
+        Ok(CursorPosition {
+            x: point.x as f64,
+            y: point.y as f64,
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Err("Linux 暂不支持获取光标位置".to_string())
+    }
+}

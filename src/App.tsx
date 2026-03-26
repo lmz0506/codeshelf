@@ -143,24 +143,28 @@ function AppContent() {
     );
   }
 
+  const popupAutoHideWindow = useAppStore((s) => s.popupAutoHideWindow);
+
   return (
     <>
-      <MainLayout>
-        {(currentPage) => {
-          switch (currentPage) {
-            case "shelf":
-              return <ShelfPage />;
-            case "dashboard":
-              return <DashboardPage />;
-            case "toolbox":
-              return <ToolboxPage />;
-            case "settings":
-              return <SettingsPage />;
-            default:
-              return <ShelfPage />;
-          }
-        }}
-      </MainLayout>
+      {!popupAutoHideWindow && (
+        <MainLayout>
+          {(currentPage) => {
+            switch (currentPage) {
+              case "shelf":
+                return <ShelfPage />;
+              case "dashboard":
+                return <DashboardPage />;
+              case "toolbox":
+                return <ToolboxPage />;
+              case "settings":
+                return <SettingsPage />;
+              default:
+                return <ShelfPage />;
+            }
+          }}
+        </MainLayout>
+      )}
       <ToastContainer />
       <UpdateNotification />
       <ShortcutQuickLookup />
