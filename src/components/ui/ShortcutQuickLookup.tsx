@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Search, Keyboard, ExternalLink } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/stores/appStore";
-import { eventToKeys } from "@/hooks/useAppShortcuts";
 import { getShortcuts, getCurrentPlatform } from "@/services/toolbox";
 import type { ShortcutEntry } from "@/types/toolbox";
 
@@ -41,6 +41,16 @@ export function ShortcutQuickLookup() {
   const toggle = useAppStore((s) => s.toggleShortcutQuickLookup);
   const navigateToTool = useAppStore((s) => s.navigateToTool);
 
+  // 关闭弹窗：如果是全局快捷键从隐藏状态唤起的，自动藏回窗口
+  const closePopup = useCallback(() => {
+    toggle();
+    const { popupAutoHideWindow, setPopupAutoHideWindow } = useAppStore.getState();
+    if (popupAutoHideWindow) {
+      setPopupAutoHideWindow(false);
+      getCurrentWindow().hide().catch(console.error);
+    }
+  }, [toggle]);
+
   const [shortcuts, setShortcuts] = useState<ShortcutEntry[]>([]);
   const [search, setSearch] = useState("");
   const [platform, setPlatform] = useState<string>("windows");
@@ -73,26 +83,13 @@ export function ShortcutQuickLookup() {
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopImmediatePropagation();
-        toggle();
+        closePopup();
         return;
-      }
-      // 再次按下 tool_shortcuts 快捷键时关闭
-      const pressed = eventToKeys(e);
-      if (pressed) {
-        const { appShortcuts } = useAppStore.getState();
-        const binding = appShortcuts.find(
-          (s) => s.id === "tool_shortcuts" && s.enabled
-        );
-        if (binding && pressed === binding.keys) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          toggle();
-        }
       }
     }
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [show, toggle]);
+  }, [show, closePopup]);
 
   // 过滤
   const filtered = useMemo(() => {
@@ -130,6 +127,8 @@ export function ShortcutQuickLookup() {
   if (!show) return null;
 
   function goToFullPage() {
+    // 跳转完整页面时清除自动隐藏标记（用户需要看到主界面）
+    useAppStore.getState().setPopupAutoHideWindow(false);
     toggle();
     navigateToTool("shortcuts");
   }
@@ -138,7 +137,7 @@ export function ShortcutQuickLookup() {
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] bg-black/40"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) toggle();
+        if (e.target === e.currentTarget) closePopup();
       }}
     >
       <div

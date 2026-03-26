@@ -5,14 +5,13 @@ import {
   Download,
   Server,
   Terminal,
-  Minus,
-  X,
   ChevronLeft,
   Radio,
   Keyboard,
+  ClipboardList,
 } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/stores/appStore";
+import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import type { ToolType } from "@/types/toolbox";
 
 // 子页面组件
@@ -22,6 +21,7 @@ import { SystemMonitor } from "./SystemMonitor";
 import { ClaudeCodeManager } from "./ClaudeCodeManager";
 import NetcatTool from "./NetcatTool";
 import { ShortcutsMemo } from "./ShortcutsMemo";
+import { ClipboardManager } from "./ClipboardManager";
 
 const tools = [
   {
@@ -67,6 +67,13 @@ const tools = [
     icon: Keyboard,
     color: "bg-amber-500",
   },
+  {
+    id: "clipboard" as ToolType,
+    name: "剪贴板历史",
+    description: "自动记录复制内容，支持搜索、置顶、持久化存储，快捷键快速呼出",
+    icon: ClipboardList,
+    color: "bg-teal-500",
+  },
 ];
 
 export function ToolboxPage() {
@@ -104,6 +111,8 @@ export function ToolboxPage() {
         return <NetcatToolPanel onBack={() => setActiveTool(null)} />;
       case "shortcuts":
         return <ShortcutsMemo onBack={() => setActiveTool(null)} />;
+      case "clipboard":
+        return <ClipboardManager onBack={() => setActiveTool(null)} />;
       default:
         return null;
     }
@@ -149,22 +158,7 @@ export function ToolboxPage() {
 
         {/* 窗口控制 */}
         <div className="re-actions flex items-center gap-2">
-          <div className="flex items-center ml-2 border-l border-gray-200 dark:border-gray-700 pl-3 gap-1 h-6">
-            <button
-              onClick={() => getCurrentWindow()?.minimize()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              title="最小化"
-            >
-              <Minus size={14} />
-            </button>
-            <button
-              onClick={() => getCurrentWindow()?.close()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white rounded-md transition-colors text-gray-400"
-              title="关闭"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          <MacWindowControls />
         </div>
       </header>
 
@@ -268,22 +262,7 @@ export function ToolPanelHeader({
         {actions}
 
         {/* 窗口控制 */}
-        <div className="flex items-center ml-2 border-l border-gray-200 dark:border-gray-700 pl-3 gap-1 h-6">
-          <button
-            onClick={() => getCurrentWindow()?.minimize()}
-            className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-            title="最小化"
-          >
-            <Minus size={14} />
-          </button>
-          <button
-            onClick={() => getCurrentWindow()?.close()}
-            className="w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white rounded-md transition-colors text-gray-400"
-            title="关闭"
-          >
-            <X size={14} />
-          </button>
-        </div>
+        <MacWindowControls />
       </div>
     </header>
   );

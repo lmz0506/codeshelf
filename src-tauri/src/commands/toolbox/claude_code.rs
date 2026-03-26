@@ -325,20 +325,38 @@ async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, 
         config_files: vec![],
     };
 
-    // 检查文件是否存在（使用 Windows API 直接检查 UNC 路径）
+    // 检查文件是否存在
+    // 优先使用 Windows API 直接检查 UNC 路径，如果失败则通过 wsl 命令检查
     let unc_file_path = PathBuf::from(unc_path);
     println!("[DEBUG] Checking UNC path exists: {:?}", unc_file_path);
 
-    if !unc_file_path.exists() {
-        return Err(format!("WSL 中路径不存在: {}", unc_path));
+    let file_exists = if unc_file_path.exists() {
+        true
+    } else {
+        // UNC 路径不可达（某些 Windows 版本/WSL 配置下 \\wsl.localhost 不可用）
+        // 通过 wsl 命令在 Linux 端验证文件是否存在
+        println!("[DEBUG] UNC path not accessible, falling back to wsl test -f");
+        if let Ok(output) = new_command("wsl")
+            .args(["-d", distro, "--", "test", "-f", &linux_path])
+            .output()
+        {
+            output.status.success()
+        } else {
+            false
+        }
+    };
+
+    if !file_exists {
+        return Err(format!("WSL 中路径不存在: {} (Linux 路径: {})", unc_path, linux_path));
     }
 
     info.installed = true;
 
-    // 获取版本（仍然需要用 wsl 命令执行）
+    // 获取版本（通过 login shell 确保 nvm 等环境已加载）
     for arg in &["-version", "--version", "-v"] {
+        let cmd_str = format!("{} {}", linux_path, arg);
         if let Ok(output) = new_command("wsl")
-            .args(["-d", distro, "--", &linux_path, arg])
+            .args(["-d", distro, "--", "bash", "-lc", &cmd_str])
             .output()
         {
             let stdout = clean_wsl_output(&output.stdout);
@@ -361,7 +379,7 @@ async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, 
 
     // 获取配置目录 - 转换为 UNC 格式
     if let Ok(output) = new_command("wsl")
-        .args(["-d", distro, "--", "bash", "-c", "echo $HOME/.claude"])
+        .args(["-d", distro, "--", "bash", "-lc", "echo $HOME/.claude"])
         .output()
     {
         if output.status.success() {
@@ -665,25 +683,48 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
         config_files: vec![],
     };
 
-    // 检查 claude 命令
+    // 检查 claude 命令（使用 login shell 确保 nvm/fnm 等环境已加载）
     if let Ok(output) = new_command("wsl")
-        .args(["-d", distro, "--", "which", "claude"])
+        .args(["-d", distro, "--", "bash", "-lc", "which claude"])
         .output()
     {
         if output.status.success() {
-            let path = clean_wsl_output(&output.stdout);
-            if !path.is_empty() {
+            let linux_path = clean_wsl_output(&output.stdout);
+            if !linux_path.is_empty() {
                 info.installed = true;
-                info.path = Some(path);
+                // 转换为 UNC 路径存储，便于 Windows 端统一处理
+                let unc_path = format!("\\\\wsl.localhost\\{}{}", distro, linux_path.replace('/', "\\"));
+                info.path = Some(unc_path);
             }
         }
     }
 
-    // 获取版本 - 尝试多种方式
+    // 如果非 login shell 的 which 找不到，尝试常见安装路径
+    if !info.installed {
+        let common_paths = [
+            "/usr/local/bin/claude",
+            "/usr/bin/claude",
+        ];
+        for test_path in &common_paths {
+            if let Ok(output) = new_command("wsl")
+                .args(["-d", distro, "--", "test", "-f", test_path])
+                .output()
+            {
+                if output.status.success() {
+                    info.installed = true;
+                    let unc_path = format!("\\\\wsl.localhost\\{}{}", distro, test_path.replace('/', "\\"));
+                    info.path = Some(unc_path);
+                    break;
+                }
+            }
+        }
+    }
+
+    // 获取版本 - 尝试多种方式（使用 login shell 确保 PATH 正确）
     if info.installed {
-        // 首先尝试 claude -version (单横杠)
+        // 首先尝试 claude -version (单横杠，通过 login shell)
         if let Ok(output) = new_command("wsl")
-            .args(["-d", distro, "--", "claude", "-version"])
+            .args(["-d", distro, "--", "bash", "-lc", "claude -version"])
             .output()
         {
             if output.status.success() {
@@ -704,7 +745,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
         // 尝试 --version (双横杠)
         if info.version.is_none() {
             if let Ok(output) = new_command("wsl")
-                .args(["-d", distro, "--", "claude", "--version"])
+                .args(["-d", distro, "--", "bash", "-lc", "claude --version"])
                 .output()
             {
                 if output.status.success() {
@@ -719,7 +760,7 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
         // 最后尝试 npm list
         if info.version.is_none() {
             if let Ok(output) = new_command("wsl")
-                .args(["-d", distro, "--", "npm", "list", "-g", "@anthropic-ai/claude-code", "--depth=0"])
+                .args(["-d", distro, "--", "bash", "-lc", "npm list -g @anthropic-ai/claude-code --depth=0"])
                 .output()
             {
                 let stdout = clean_wsl_output(&output.stdout);
@@ -895,14 +936,54 @@ fn is_wsl_unc_path(path: &str) -> bool {
     lower.starts_with("\\\\wsl.localhost\\") || lower.starts_with("\\\\wsl$\\")
 }
 
+/// 将 WSL UNC 路径解析为 (distro, linux_path)
+/// 例如: \\wsl.localhost\Ubuntu\home\user\.claude -> ("Ubuntu", "/home/user/.claude")
+#[allow(dead_code)]
+fn parse_wsl_unc_to_linux(unc_path: &str) -> Option<(String, String)> {
+    let lower = unc_path.to_lowercase();
+    let prefix_len = if lower.starts_with("\\\\wsl.localhost\\") {
+        "\\\\wsl.localhost\\".len()
+    } else if lower.starts_with("\\\\wsl$\\") {
+        "\\\\wsl$\\".len()
+    } else {
+        return None;
+    };
+
+    let rest = &unc_path[prefix_len..];
+    let parts: Vec<&str> = rest.splitn(2, '\\').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let distro = parts[0].to_string();
+    let linux_path = format!("/{}", parts[1].replace('\\', "/"));
+    Some((distro, linux_path))
+}
+
 /// 读取配置文件内容
 #[tauri::command]
 #[allow(unused_variables)]
 pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: String) -> Result<String, String> {
-    // 如果是 UNC 路径，直接用 Windows API 读取
+    // 如果是 UNC 路径，优先用 Windows API 读取，失败则通过 wsl 命令
     if is_wsl_unc_path(&path) {
-        return std::fs::read_to_string(&path)
-            .map_err(|e| format!("读取配置文件失败: {}", e));
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            return Ok(content);
+        }
+        // UNC 不可达，尝试通过 wsl 命令读取
+        #[cfg(target_os = "windows")]
+        {
+            if let Some((distro, linux_path)) = parse_wsl_unc_to_linux(&path) {
+                let output = new_command("wsl")
+                    .args(["-d", &distro, "--", "cat", &linux_path])
+                    .output()
+                    .map_err(|e| format!("执行 wsl 命令失败: {}", e))?;
+                if output.status.success() {
+                    return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+                }
+                return Err(format!("读取文件失败: {}", String::from_utf8_lossy(&output.stderr)));
+            }
+        }
+        return Err(format!("读取配置文件失败: UNC 路径不可达: {}", path));
     }
 
     match env_type {
@@ -935,14 +1016,50 @@ pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: 
 #[tauri::command]
 #[allow(unused_variables)]
 pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path: String, content: String) -> Result<(), String> {
-    // 如果是 UNC 路径，直接用 Windows API 写入
+    // 如果是 UNC 路径，优先用 Windows API 写入，失败则通过 wsl 命令
     if is_wsl_unc_path(&path) {
-        if let Some(parent) = std::path::Path::new(&path).parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("创建目录失败: {}", e))?;
+        // 先尝试 UNC 直接写入
+        let unc_ok = (|| -> Result<(), String> {
+            if let Some(parent) = std::path::Path::new(&path).parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("创建目录失败: {}", e))?;
+            }
+            std::fs::write(&path, &content)
+                .map_err(|e| format!("写入配置文件失败: {}", e))
+        })();
+        if unc_ok.is_ok() {
+            return Ok(());
         }
-        return std::fs::write(&path, content)
-            .map_err(|e| format!("写入配置文件失败: {}", e));
+        // UNC 不可达，尝试通过 wsl 命令写入
+        #[cfg(target_os = "windows")]
+        {
+            if let Some((distro, linux_path)) = parse_wsl_unc_to_linux(&path) {
+                // 确保目录存在
+                if let Some(parent) = linux_path.rfind('/') {
+                    let parent_dir = &linux_path[..parent];
+                    let _ = new_command("wsl")
+                        .args(["-d", &distro, "--", "mkdir", "-p", parent_dir])
+                        .output();
+                }
+                let output = new_command("wsl")
+                    .args(["-d", &distro, "--", "bash", "-c", &format!("cat > '{}'", linux_path)])
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+                    .and_then(|mut child| {
+                        use std::io::Write;
+                        if let Some(mut stdin) = child.stdin.take() {
+                            stdin.write_all(content.as_bytes())?;
+                        }
+                        child.wait_with_output()
+                    })
+                    .map_err(|e| format!("执行 wsl 命令失败: {}", e))?;
+                if output.status.success() {
+                    return Ok(());
+                }
+                return Err(format!("写入文件失败: {}", String::from_utf8_lossy(&output.stderr)));
+            }
+        }
+        return Err(format!("写入配置文件失败: UNC 路径不可达: {}", path));
     }
 
     match env_type {

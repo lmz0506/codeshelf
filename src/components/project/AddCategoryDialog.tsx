@@ -1,18 +1,17 @@
 import { useState, useRef } from "react";
 import { useAppStore } from "@/stores/appStore";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown } from "lucide-react";
 
 interface AddCategoryDialogProps {
   onClose: () => void;
 }
 
 export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
-  const { categories, addCategory, removeCategory } = useAppStore();
+  const { categories, addCategory, removeCategory, setCategories } = useAppStore();
   const [newCategory, setNewCategory] = useState("");
   const [error, setError] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [deletingCategory, setDeletingCategory] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -59,10 +58,9 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
   function saveEdit(index: number) {
     const newName = editValue.trim();
     if (newName && newName !== categories[index]) {
-      // Remove old and add new (simple approach)
-      const oldName = categories[index];
-      removeCategory(oldName);
-      addCategory(newName);
+      const updated = [...categories];
+      updated[index] = newName;
+      setCategories(updated);
     }
     setEditingIndex(null);
     setEditValue("");
@@ -81,6 +79,40 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
 
   function cancelDelete() {
     setDeletingCategory(null);
+  }
+
+  // 移到第一个
+  function moveToFirst(index: number) {
+    if (index <= 0) return;
+    const updated = [...categories];
+    const [item] = updated.splice(index, 1);
+    updated.unshift(item);
+    setCategories(updated);
+  }
+
+  // 上移分类
+  function moveUp(index: number) {
+    if (index <= 0) return;
+    const updated = [...categories];
+    [updated[index - 1], updated[index]] = [updated[index], updated[index - 1]];
+    setCategories(updated);
+  }
+
+  // 下移分类
+  function moveDown(index: number) {
+    if (index >= categories.length - 1) return;
+    const updated = [...categories];
+    [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
+    setCategories(updated);
+  }
+
+  // 移到最后一个
+  function moveToLast(index: number) {
+    if (index >= categories.length - 1) return;
+    const updated = [...categories];
+    const [item] = updated.splice(index, 1);
+    updated.push(item);
+    setCategories(updated);
   }
 
   return (
@@ -153,14 +185,28 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
                   return (
                     <div
                       key={category}
-                      draggable
-                      onDragStart={() => setDraggedIndex(index)}
-                      onDragEnd={() => setDraggedIndex(null)}
-                      className={`category-item group bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between hover:border-blue-300 cursor-move transition-all ${
-                        draggedIndex === index ? "opacity-50 bg-slate-100" : ""
-                      }`}
+                      className="category-item group bg-white border rounded-xl p-3 flex items-center justify-between hover:border-blue-300 border-slate-200"
                     >
                       <div className="flex items-center gap-3">
+                        {/* 上下移动按钮 */}
+                        <div className="flex flex-col gap-0.5 flex-shrink-0">
+                          <button
+                            onClick={() => moveUp(index)}
+                            disabled={index === 0}
+                            className="p-0.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                            title="上移"
+                          >
+                            <ChevronUp size={14} />
+                          </button>
+                          <button
+                            onClick={() => moveDown(index)}
+                            disabled={index === categories.length - 1}
+                            className="p-0.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                            title="下移"
+                          >
+                            <ChevronDown size={14} />
+                          </button>
+                        </div>
                         <div className={`w-8 h-8 ${color.bg} ${color.text} rounded-lg flex items-center justify-center`}>
                           <i className="fa-solid fa-folder text-sm"></i>
                         </div>
@@ -181,6 +227,23 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => moveToFirst(index)}
+                          disabled={index === 0}
+                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          title="移到最前"
+                        >
+                          <ChevronsUp size={15} />
+                        </button>
+                        <button
+                          onClick={() => moveToLast(index)}
+                          disabled={index === categories.length - 1}
+                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          title="移到最后"
+                        >
+                          <ChevronsDown size={15} />
+                        </button>
+                        <div className="w-px h-4 bg-slate-200"></div>
                         <button
                           onClick={() => startEdit(index)}
                           className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -226,7 +289,6 @@ export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
           transition: all 0.2s ease;
         }
         .category-item:hover {
-          transform: translateY(-1px);
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
         }
         .category-input:focus {

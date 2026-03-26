@@ -26,6 +26,7 @@ export const DEFAULT_APP_SHORTCUTS: AppShortcutBinding[] = [
   { id: "tool_claude", label: "Claude Code", description: "快速打开 Claude Code 配置管理", keys: "ctrl+shift+4", defaultKeys: "ctrl+shift+4", enabled: true, global: false },
   { id: "tool_netcat", label: "Netcat", description: "快速打开 Netcat 协议测试", keys: "ctrl+shift+5", defaultKeys: "ctrl+shift+5", enabled: true, global: false },
   { id: "tool_shortcuts", label: "快捷键备忘", description: "快速打开快捷键备忘录", keys: "ctrl+shift+6", defaultKeys: "ctrl+shift+6", enabled: true, global: false },
+  { id: "tool_clipboard", label: "剪贴板历史", description: "打开剪贴板快速访问", keys: "ctrl+shift+v", defaultKeys: "ctrl+shift+v", enabled: true, global: true },
   // 其他
   { id: "toggle_sidebar", label: "切换侧边栏", description: "展开/收起侧边栏", keys: "ctrl+b", defaultKeys: "ctrl+b", enabled: true, global: false },
 ];
@@ -108,6 +109,7 @@ const TOOL_MAP: Record<string, ToolType> = {
   tool_claude: "claude",
   tool_netcat: "netcat",
   tool_shortcuts: "shortcuts",
+  tool_clipboard: "clipboard",
 };
 
 function executeAction(actionId: string) {
@@ -116,6 +118,9 @@ function executeAction(actionId: string) {
   if (actionId === "tool_shortcuts") {
     // 快捷键备忘：弹出快速查找弹窗
     store.toggleShortcutQuickLookup();
+  } else if (actionId === "tool_clipboard") {
+    // 剪贴板历史：弹出快速访问弹窗
+    store.toggleClipboardQuickAccess();
   } else if (actionId.startsWith("nav_")) {
     const page = actionId.replace("nav_", "") as "shelf" | "dashboard" | "toolbox" | "settings";
     store.setCurrentPage(page);
@@ -125,6 +130,11 @@ function executeAction(actionId: string) {
     store.setSidebarCollapsed(!store.sidebarCollapsed);
   }
 }
+
+/**
+ * 弹窗类快捷键 — 只打开/收起弹窗，不暴露主界面
+ */
+const POPUP_ACTIONS = new Set(["tool_shortcuts", "tool_clipboard"]);
 
 /**
  * 全局快捷键触发：先唤起窗口，再执行动作
@@ -146,6 +156,50 @@ async function handleGlobalAction(actionId: string) {
       }
     } catch (err) {
       console.error("切换窗口失败:", err);
+    }
+    return;
+  }
+
+  // 弹窗类动作：不带主窗口，再次按下快捷键可以关闭
+  if (POPUP_ACTIONS.has(actionId)) {
+    const store = useAppStore.getState();
+    const isPopupShowing =
+      (actionId === "tool_clipboard" && store.showClipboardQuickAccess) ||
+      (actionId === "tool_shortcuts" && store.showShortcutQuickLookup);
+
+    if (isPopupShowing) {
+      // 弹窗已打开 → 关闭弹窗，并在需要时自动隐藏窗口
+      executeAction(actionId);
+      if (store.popupAutoHideWindow) {
+        store.setPopupAutoHideWindow(false);
+        try {
+          await win.hide();
+        } catch (err) {
+          console.error("隐藏窗口失败:", err);
+        }
+      }
+      return;
+    }
+
+    // 弹窗未打开 → 打开弹窗
+    try {
+      const visible = await win.isVisible();
+      const minimized = visible && await win.isMinimized();
+      const wasHidden = !visible || minimized;
+
+      if (wasHidden) {
+        store.setPopupAutoHideWindow(true);
+        // 先设置弹窗状态，让遮罩层先渲染，再显示窗口，避免闪现主界面
+        executeAction(actionId);
+        await win.show();
+        await win.unminimize();
+        await win.setFocus();
+      } else {
+        executeAction(actionId);
+      }
+    } catch (err) {
+      console.error("唤起窗口失败:", err);
+      executeAction(actionId);
     }
     return;
   }
@@ -200,7 +254,20 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
   const { appShortcuts, setAppShortcuts } = useAppStore.getState();
 
   if (appShortcuts.length === 0) {
-    // 首次使用
+    // store 为空，先尝试从后端加载已保存的数据
+    try {
+      const saved: AppShortcutBinding[] = await invoke("get_app_shortcuts");
+      if (saved && saved.length > 0) {
+        setAppShortcuts(saved);
+        shortcutsReady = true;
+        // 继续往下检查是否需要补齐新条目
+        return ensureAppShortcutsPatched(saved, setAppShortcuts);
+      }
+    } catch {
+      // 读取失败，使用默认值
+    }
+
+    // 后端也没有数据，首次使用，写入默认值
     const defaults = DEFAULT_APP_SHORTCUTS;
     try {
       await invoke("save_app_shortcuts", { shortcuts: defaults });
@@ -212,6 +279,13 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
     return defaults;
   }
 
+  return ensureAppShortcutsPatched(appShortcuts, setAppShortcuts);
+}
+
+async function ensureAppShortcutsPatched(
+  appShortcuts: AppShortcutBinding[],
+  setAppShortcuts: (s: AppShortcutBinding[]) => void
+): Promise<AppShortcutBinding[]> {
   // 检查是否有新增的默认条目（版本升级时）
   const existingIds = new Set(appShortcuts.map((s) => s.id));
   const newEntries = DEFAULT_APP_SHORTCUTS.filter((d) => !existingIds.has(d.id));
@@ -279,6 +353,10 @@ export function useAppShortcuts() {
 
       e.preventDefault();
       e.stopPropagation();
+      // 弹窗类操作阻止事件继续传播到弹窗组件的 keydown 监听器，避免重复 toggle
+      if (POPUP_ACTIONS.has(binding.id)) {
+        e.stopImmediatePropagation();
+      }
 
       if (binding.global) {
         // 标记为本地已处理，防止 OS 钩子事件重复触发
