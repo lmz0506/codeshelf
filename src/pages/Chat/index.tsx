@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Plus, Pencil, Trash2, Send, Square, MessageSquare, X } from "lucide-react";
+import { Plus, Pencil, Trash2, Send, Square, MessageSquare } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
+import { MacWindowControls } from "@/components/layout/MacWindowControls";
+import { MarkdownRenderer } from "@/components/project/MarkdownRenderer";
 import {
   chatCancel,
   chatStream,
@@ -76,7 +78,7 @@ function buildMessage(role: ChatMessage["role"], content: string, thinkingConten
 }
 
 export function ChatPage() {
-  const { aiProviders, setCurrentPage, ensureAiDefaultProvider } = useAppStore();
+  const { aiProviders, setCurrentPage, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
@@ -374,8 +376,15 @@ export function ChatPage() {
   return (
     <div className="flex flex-col min-h-full">
       <header className="re-header sticky top-0 z-20" data-tauri-drag-region>
+        <span
+          className="toggle"
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        >
+          ☰
+        </span>
+
         <div className="flex-1 flex items-center gap-3" data-tauri-drag-region>
-          <span className="text-lg font-semibold ml-2">对话</span>
+          <span className="text-lg font-semibold ml-2">💬 对话</span>
           {modelOptions.length > 0 && (
             <select
               className="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white text-gray-700 max-w-[240px]"
@@ -390,6 +399,10 @@ export function ChatPage() {
               ))}
             </select>
           )}
+        </div>
+
+        <div className="re-actions flex items-center">
+          <MacWindowControls />
         </div>
       </header>
 
@@ -495,7 +508,11 @@ export function ChatPage() {
                             <div className="whitespace-pre-wrap">{msg.thinkingContent}</div>
                           </div>
                         )}
-                        <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                        {isUser ? (
+                          <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                        ) : (
+                          <div className="text-sm leading-relaxed"><MarkdownRenderer content={msg.content} /></div>
+                        )}
                       </div>
                       {!isUser && !streaming && (
                         <button

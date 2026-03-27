@@ -4,6 +4,8 @@ import { MessageSquare, X, Plus, Pencil, Trash2, Send, Square } from "lucide-rea
 import { AiProviderSettings, type AiProviderSettingsHandle } from "@/pages/Settings/AiProviderSettings";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
+import { MacWindowControls } from "@/components/layout/MacWindowControls";
+import { MarkdownRenderer } from "@/components/project/MarkdownRenderer";
 import {
   chatCancel,
   chatStream,
@@ -446,6 +448,7 @@ export function AiProvidersPage() {
           >
             新增供应商
           </button>
+          <MacWindowControls />
         </div>
       </header>
 
@@ -625,7 +628,11 @@ export function AiProvidersPage() {
                               <div className={`rounded-2xl px-4 py-3 shadow-sm ${
                                 isUser ? "bg-blue-500 text-white" : "bg-white border border-gray-200 text-gray-800"
                               }`}>
-                                <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                                {isUser ? (
+                                  <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                                ) : (
+                                  <div className="text-sm leading-relaxed"><MarkdownRenderer content={msg.content} /></div>
+                                )}
                               </div>
                             </div>
                             {isUser && (

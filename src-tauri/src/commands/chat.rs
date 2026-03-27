@@ -320,7 +320,7 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
             .send()
             .await;
 
-        let mut send_error = |err: String| async {
+        let send_error = |err: String| async {
             let _ = app_handle.emit(
                 "chat-stream",
                 ChatStreamEvent {
