@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, forwardRef, useImperativeHandle } from "react";
-import { Plus, X, Pencil, FolderOpen } from "lucide-react";
+import { Plus, X, Pencil, FolderOpen, ChevronDown } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
@@ -35,10 +35,16 @@ const PRESET_BASE_URL: Record<NonNullable<AiProviderConfig["presetKey"]>, string
   moonshot: "https://api.moonshot.cn/v1",
 };
 
-const PRESET_MODELS: Record<NonNullable<AiProviderConfig["presetKey"]>, Array<Pick<AiModelConfig, "model" | "thinking">>> = {
+// 内置模型列表，用于添加模型时的快速选择
+const ALL_PRESET_MODELS: Record<NonNullable<AiProviderConfig["presetKey"]>, Array<Pick<AiModelConfig, "model" | "thinking">>> = {
   bailian: [
     { model: "qwen-plus", thinking: false },
     { model: "qwen-turbo", thinking: false },
+    { model: "qwen-max", thinking: false },
+    { model: "qwen-long", thinking: false },
+    { model: "qwen3-235b-a22b", thinking: true },
+    { model: "qwen3-32b", thinking: true },
+    { model: "qwq-plus", thinking: true },
   ],
   deepseek: [
     { model: "deepseek-chat", thinking: false },
@@ -46,13 +52,24 @@ const PRESET_MODELS: Record<NonNullable<AiProviderConfig["presetKey"]>, Array<Pi
   ],
   openai: [
     { model: "gpt-4o", thinking: false },
+    { model: "gpt-4o-mini", thinking: false },
     { model: "gpt-4.1", thinking: false },
+    { model: "gpt-4.1-mini", thinking: false },
+    { model: "gpt-4.1-nano", thinking: false },
+    { model: "o3", thinking: true },
+    { model: "o3-mini", thinking: true },
+    { model: "o4-mini", thinking: true },
   ],
   ollama: [
     { model: "llama3.1", thinking: false },
+    { model: "qwen2.5", thinking: false },
+    { model: "deepseek-r1", thinking: true },
+    { model: "mistral", thinking: false },
   ],
   moonshot: [
     { model: "moonshot-v1-8k", thinking: false },
+    { model: "moonshot-v1-32k", thinking: false },
+    { model: "moonshot-v1-128k", thinking: false },
   ],
 };
 
@@ -98,10 +115,7 @@ const initialForm = (): ProviderForm => ({
   apiKey: "",
   enabled: false,
   isDefaultProvider: false,
-  models: PRESET_MODELS.openai.map((m, index) => ({
-    ...createModelTemplate(m.model, m.thinking),
-    isDefault: index === 0,
-  })),
+  models: [],
 });
 
 function getHistoryState(dir?: string): HistoryState {
@@ -137,10 +151,19 @@ function ProviderFormDrawer({
   onPresetChange: (key: NonNullable<AiProviderConfig["presetKey"]>) => void;
   onFormChange: (updates: Partial<ProviderForm>) => void;
   onModelChange: (id: string, updates: Partial<AiModelConfig>) => void;
-  onAddModel: () => void;
+  onAddModel: (template?: { model: string; thinking: boolean }) => void;
   onRemoveModel: (id: string) => void;
   onSetDefaultModel: (id: string) => void;
 }) {
+  const [showModelPicker, setShowModelPicker] = useState(false);
+
+  // 获取当前供应商可用的内置模型（排除已添加的）
+  const availablePresets = form.providerType === "preset" && form.presetKey
+    ? (ALL_PRESET_MODELS[form.presetKey] ?? []).filter(
+        (p) => !form.models.some((m) => m.model === p.model)
+      )
+    : [];
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50">
@@ -230,16 +253,59 @@ function ProviderFormDrawer({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h5 className="text-sm font-semibold">模型列表</h5>
-              <button
-                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                onClick={onAddModel}
-              >
-                <Plus size={14} />
-                添加模型
-              </button>
+              <div className="relative">
+                <button
+                  className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                  onClick={() => {
+                    if (availablePresets.length > 0) {
+                      setShowModelPicker(!showModelPicker);
+                    } else {
+                      onAddModel();
+                      setShowModelPicker(false);
+                    }
+                  }}
+                >
+                  <Plus size={14} />
+                  添加模型
+                  {availablePresets.length > 0 && <ChevronDown size={12} />}
+                </button>
+                {showModelPicker && availablePresets.length > 0 && (
+                  <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1 max-h-64 overflow-auto">
+                    {availablePresets.map((preset) => (
+                      <button
+                        key={preset.model}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 flex items-center justify-between"
+                        onClick={() => {
+                          onAddModel(preset);
+                          setShowModelPicker(false);
+                        }}
+                      >
+                        <span>{preset.model}</span>
+                        {preset.thinking && <span className="text-purple-500 text-[10px]">thinking</span>}
+                      </button>
+                    ))}
+                    <div className="border-t border-gray-100 mt-1 pt-1">
+                      <button
+                        className="w-full text-left px-3 py-2 text-xs text-gray-500 hover:bg-gray-50"
+                        onClick={() => {
+                          onAddModel();
+                          setShowModelPicker(false);
+                        }}
+                      >
+                        自定义模型...
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2">
+              {form.models.length === 0 && (
+                <div className="p-4 bg-gray-50 rounded-lg text-xs text-gray-400 text-center">
+                  暂无模型，请点击上方「添加模型」按钮
+                </div>
+              )}
               {form.models.map((model) => (
                 <div key={model.id} className="flex flex-col gap-3 p-3 border border-gray-200 rounded-lg">
                   <input
@@ -463,10 +529,6 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
         presetKey,
         name: PRESET_LABELS[presetKey],
         baseUrl: PRESET_BASE_URL[presetKey],
-        models: PRESET_MODELS[presetKey].map((m, index) => ({
-          ...createModelTemplate(m.model, m.thinking),
-          isDefault: index === 0,
-        })),
       }));
     }
   }
@@ -477,10 +539,6 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
       presetKey,
       name: PRESET_LABELS[presetKey],
       baseUrl: PRESET_BASE_URL[presetKey],
-      models: PRESET_MODELS[presetKey].map((m, index) => ({
-        ...createModelTemplate(m.model, m.thinking),
-        isDefault: index === 0,
-      })),
     }));
   }
 
@@ -575,10 +633,16 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
     }));
   }
 
-  function addModel() {
+  function addModel(template?: { model: string; thinking: boolean }) {
     setForm((prev) => ({
       ...prev,
-      models: [...prev.models, createModelTemplate("", false)],
+      models: [
+        ...prev.models,
+        {
+          ...createModelTemplate(template?.model ?? "", template?.thinking ?? false),
+          isDefault: prev.models.length === 0, // 第一个模型自动设为默认
+        },
+      ],
     }));
   }
 

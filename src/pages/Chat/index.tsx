@@ -93,10 +93,12 @@ export function ChatPage() {
   const [thinkingVisible, setThinkingVisible] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
+  const streamRequestIdRef = useRef<string | null>(null);
   const streamBufferRef = useRef<string>("");
   const thinkingBufferRef = useRef<string>("");
   const activeSessionRef = useRef<ChatSession | null>(null);
   const prevStreamingRef = useRef(false);
+  const streamingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const normalized = useMemo(() => ensureAiDefaultProvider(aiProviders), [aiProviders, ensureAiDefaultProvider]);
@@ -136,6 +138,10 @@ export function ChatPage() {
       try {
         const session = await getChatSession(activeSessionId);
         setActiveSession(session);
+        // 加载完成后滚动到底部
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+        }, 50);
       } catch {
         setActiveSession(null);
       }
@@ -153,7 +159,9 @@ export function ChatPage() {
       if (event.payload.error) {
         showToast("error", event.payload.error);
         setStreaming(false);
+        streamingRef.current = false;
         setStreamRequestId(null);
+        streamRequestIdRef.current = null;
         setThinkingVisible(false);
         return;
       }
@@ -182,7 +190,9 @@ export function ChatPage() {
       }
       if (event.payload.done) {
         setStreaming(false);
+        streamingRef.current = false;
         setStreamRequestId(null);
+        streamRequestIdRef.current = null;
         setThinkingVisible(false);
         streamBufferRef.current = "";
       }
@@ -310,7 +320,9 @@ export function ChatPage() {
       setActiveSession(saved);
       const requestId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       setStreamRequestId(requestId);
+      streamRequestIdRef.current = requestId;
       setStreaming(true);
+      streamingRef.current = true;
       streamBufferRef.current = "";
       thinkingBufferRef.current = "";
       setThinkingBuffer("");
@@ -338,7 +350,9 @@ export function ChatPage() {
     if (!streamRequestId) return;
     await chatCancel(streamRequestId);
     setStreaming(false);
+    streamingRef.current = false;
     setStreamRequestId(null);
+    streamRequestIdRef.current = null;
     streamBufferRef.current = "";
     thinkingBufferRef.current = "";
   }
@@ -362,6 +376,19 @@ export function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeSession?.messages, thinkingBuffer]);
+
+  // 组件卸载时取消流式传输并保存当前会话
+  useEffect(() => {
+    return () => {
+      if (streamingRef.current && streamRequestIdRef.current) {
+        chatCancel(streamRequestIdRef.current).catch(() => {});
+      }
+      const session = activeSessionRef.current;
+      if (session && session.messages.length > 0) {
+        saveChatSession(session).catch(() => {});
+      }
+    };
+  }, []);
 
   function handleDeleteMessage(msgId: string) {
     if (!activeSession || streaming) return;

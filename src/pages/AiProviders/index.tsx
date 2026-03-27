@@ -119,6 +119,12 @@ export function AiProvidersPage() {
   useEffect(() => {
     if (showChat) {
       setShowChatFull(true);
+      // 重新打开时，重新加载当前会话数据
+      if (activeSessionId && !streamingRef.current) {
+        getChatSession(activeSessionId).then((session) => {
+          setActiveSession(session);
+        }).catch(() => {});
+      }
     }
   }, [showChat]);
   useEffect(() => {
@@ -405,10 +411,38 @@ export function AiProvidersPage() {
       .catch(() => {});
   }, [streaming]);
 
+  function handleCloseChat() {
+    // 关闭时取消流式传输并保存当前会话
+    if (streaming && streamRequestId) {
+      chatCancel(streamRequestId).catch(() => {});
+      setStreaming(false);
+      streamingRef.current = false;
+      setStreamRequestId(null);
+      setThinkingVisible(false);
+      streamBufferRef.current = "";
+      thinkingBufferRef.current = "";
+    }
+    const session = activeSessionRef.current;
+    if (session && session.messages.length > 0) {
+      saveChatSession(session).catch(() => {});
+    }
+    setShowChat(false);
+    setShowChatFull(false);
+  }
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeSession?.messages, thinkingBuffer]);
+
+  // 重新打开聊天时滚动到底部
+  useEffect(() => {
+    if (showChat && showChatFull) {
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+      }, 100);
+    }
+  }, [showChat, showChatFull]);
 
   function handleDeleteMessage(msgId: string) {
     if (!activeSession || streaming) return;
@@ -471,7 +505,7 @@ export function AiProvidersPage() {
         <div className={`fixed inset-0 z-50 ${showChatFull ? "" : "pointer-events-none"}`}>
           <div
             className={`absolute inset-0 bg-black/30 transition-opacity ${showChatFull ? "opacity-100" : "opacity-0"}`}
-            onClick={() => setShowChatFull(false)}
+            onClick={handleCloseChat}
           />
           <div
             className={`absolute ${showChatFull ? "inset-4" : "bottom-20 right-6 w-[920px] h-[620px]"} bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden transition-all duration-300 ${showChatFull ? "" : "pointer-events-auto"} flex flex-col`}
@@ -504,7 +538,7 @@ export function AiProvidersPage() {
                 >
                   {showChatFull ? "缩小" : "全屏"}
                 </button>
-                <button onClick={() => { setShowChat(false); setShowChatFull(false); }}>
+                <button onClick={handleCloseChat}>
                   <X size={16} />
                 </button>
               </div>
