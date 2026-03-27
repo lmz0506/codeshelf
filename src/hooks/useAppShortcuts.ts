@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -375,10 +375,9 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
     try {
       const saved: AppShortcutBinding[] = await invoke("get_app_shortcuts");
       if (saved && saved.length > 0) {
-        setAppShortcuts(saved);
         shortcutsReady = true;
-        // 继续往下检查是否需要补齐新条目
-        return ensureAppShortcutsPatched(saved, setAppShortcuts);
+        // 不在这里 setAppShortcuts，统一由 ensureAppShortcutsPatched 设置一次
+        return ensureAppShortcutsPatched(saved, setAppShortcuts, true);
       }
     } catch {
       // 读取失败，使用默认值
@@ -396,12 +395,13 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
     return defaults;
   }
 
-  return ensureAppShortcutsPatched(appShortcuts, setAppShortcuts);
+  return ensureAppShortcutsPatched(appShortcuts, setAppShortcuts, false);
 }
 
 async function ensureAppShortcutsPatched(
   appShortcuts: AppShortcutBinding[],
-  setAppShortcuts: (s: AppShortcutBinding[]) => void
+  setAppShortcuts: (s: AppShortcutBinding[]) => void,
+  forceSet: boolean = false
 ): Promise<AppShortcutBinding[]> {
   // 检查是否有新增的默认条目（版本升级时）
   const existingIds = new Set(appShortcuts.map((s) => s.id));
@@ -434,6 +434,10 @@ async function ensureAppShortcutsPatched(
     return patched;
   }
 
+  // 从后端加载时需要设置 store（此时 store 为空）
+  if (forceSet) {
+    setAppShortcuts(appShortcuts);
+  }
   shortcutsReady = true;
   return appShortcuts;
 }
@@ -448,6 +452,18 @@ async function ensureAppShortcutsPatched(
  */
 export function useAppShortcuts() {
   const appShortcuts = useAppStore((state) => state.appShortcuts);
+
+  // 基于全局快捷键内容派生稳定 key，只有实际快捷键变化时才重新注册
+  const globalShortcutsKey = useMemo(() => {
+    return appShortcuts
+      .filter((s) => s.global && s.enabled)
+      .map((s) => `${s.id}:${s.keys}`)
+      .sort()
+      .join("|");
+  }, [appShortcuts]);
+
+  const appShortcutsRef = useRef(appShortcuts);
+  appShortcutsRef.current = appShortcuts;
 
   // 应用内快捷键（DOM keydown）
   useEffect(() => {
@@ -489,8 +505,10 @@ export function useAppShortcuts() {
   }, []);
 
   // 系统级全局快捷键（Windows 键盘钩子事件监听）
+  // 依赖 globalShortcutsKey（基于内容的稳定 key），而非 appShortcuts 引用
+  // 这样 initializeApp/ensureAppShortcuts 多次 setAppShortcuts 不会重复注册
   useEffect(() => {
-    registerGlobalShortcuts(appShortcuts);
+    registerGlobalShortcuts(appShortcutsRef.current);
 
     const unlistenPromise = listen<string>("global-shortcut-event", (event) => {
       // 跳过已由 DOM keydown 处理的事件（窗口聚焦时防止重复触发）
@@ -505,5 +523,5 @@ export function useAppShortcuts() {
       unregisterGlobalShortcuts();
       unlistenPromise.then((fn) => fn());
     };
-  }, [appShortcuts]);
+  }, [globalShortcutsKey]);
 }

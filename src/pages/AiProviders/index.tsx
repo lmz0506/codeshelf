@@ -102,6 +102,7 @@ export function AiProvidersPage() {
   const activeSessionIdRef = useRef<string | null>(null);
   const activeSessionRef = useRef<ChatSession | null>(null);
   const prevStreamingRef = useRef(false);
+  const streamingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const normalized = useMemo(() => ensureAiDefaultProvider(aiProviders), [aiProviders, ensureAiDefaultProvider]);
@@ -139,6 +140,8 @@ export function AiProvidersPage() {
 
   useEffect(() => {
     if (!showChat) return;
+    // 流式传输期间不重新加载 session，避免清空正在接收的内容
+    if (streamingRef.current) return;
     async function loadSession() {
       if (!activeSessionId) {
         setActiveSession(null);
@@ -149,11 +152,17 @@ export function AiProvidersPage() {
       const targetId = activeSessionId;
       activeSessionIdRef.current = targetId;
       setSessionLoading(true);
-      setActiveSession(null);
+      // 只在切换到不同 session 时才清空，同一 session 保留现有数据（避免流式结束后闪烁）
+      setActiveSession((prev) => {
+        if (prev && prev.id !== targetId) return null;
+        return prev;
+      });
       try {
         const session = await getChatSession(targetId);
         if (sessionLoadSeq.current !== seq) return;
         if (activeSessionIdRef.current !== targetId) return;
+        // 流式传输期间不覆盖内存中的实时数据
+        if (streamingRef.current) return;
         setActiveSession(session);
       } catch {
         if (sessionLoadSeq.current !== seq) return;
@@ -189,6 +198,7 @@ export function AiProvidersPage() {
       }
       if (event.payload.delta) {
         streamBufferRef.current += event.payload.delta;
+        const currentContent = streamBufferRef.current;
         const currentThinking = thinkingBufferRef.current;
         setActiveSession((prev) => {
           if (!prev) return prev;
@@ -197,10 +207,10 @@ export function AiProvidersPage() {
           const messages = [...updated.messages];
           const last = messages[messages.length - 1];
           if (last?.role === "assistant") {
-            last.content = streamBufferRef.current;
+            last.content = currentContent;
             last.thinkingContent = currentThinking || last.thinkingContent;
           } else {
-            messages.push(buildMessage("assistant", streamBufferRef.current, currentThinking));
+            messages.push(buildMessage("assistant", currentContent, currentThinking));
           }
           updated.messages = messages;
           return updated;
