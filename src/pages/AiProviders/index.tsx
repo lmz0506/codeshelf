@@ -186,6 +186,7 @@ export function AiProvidersPage() {
       if (event.payload.error) {
         showToast("error", event.payload.error);
         setStreaming(false);
+        streamingRef.current = false;
         setStreamRequestId(null);
         setThinkingVisible(false);
         streamBufferRef.current = "";
@@ -218,6 +219,7 @@ export function AiProvidersPage() {
       }
       if (event.payload.done) {
         setStreaming(false);
+        streamingRef.current = false;
         setStreamRequestId(null);
         setThinkingVisible(false);
         streamBufferRef.current = "";
@@ -346,6 +348,7 @@ export function AiProvidersPage() {
       const requestId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       setStreamRequestId(requestId);
       setStreaming(true);
+      streamingRef.current = true;
       streamBufferRef.current = "";
       thinkingBufferRef.current = "";
       setThinkingBuffer("");
@@ -373,6 +376,7 @@ export function AiProvidersPage() {
     if (!streamRequestId) return;
     await chatCancel(streamRequestId);
     setStreaming(false);
+    streamingRef.current = false;
     setStreamRequestId(null);
     setThinkingVisible(false);
     streamBufferRef.current = "";
@@ -389,6 +393,11 @@ export function AiProvidersPage() {
     if (!session || session.messages.length === 0) return;
     saveChatSession(session)
       .then((saved) => {
+        // 保存后恢复 activeSession，防止意外丢失
+        setActiveSession((prev) => {
+          if (!prev || prev.id !== saved.id) return prev;
+          return saved;
+        });
         setSessions((prev) => prev.map((s) => (s.id === saved.id ? { ...s, updatedAt: saved.updatedAt, messageCount: saved.messages.length } : s)));
       })
       .catch(() => {});
