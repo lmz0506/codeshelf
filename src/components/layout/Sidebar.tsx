@@ -160,8 +160,8 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
       <nav className="re-menu">
         {navItems.map((item) => {
           const isActive = currentPage === item.id;
-          const label = item.id === "shelf" ? "📖 书架" : item.id === "dashboard" ? "📊 统计" : item.id === "aiProviders" ? "✨ AI" : item.id === "toolbox" ? "🧰 工具" : "⚙️ 设置";
-
+          // navItems
+          const label = item.id === "shelf" ? "📖 书架" : item.id === "dashboard" ? "📊 统计" : item.id === "aiProviders" ? "✨ 模型" : item.id === "toolbox" ? "🧰 工具" : "⚙️ 设置";
           return (
             <button
               key={item.id}
