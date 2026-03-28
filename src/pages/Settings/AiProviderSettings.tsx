@@ -661,91 +661,95 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
   }
 
   return (
-    <div className="space-y-6">
-      <div className="re-shelf">
-        {providers.length === 0 && (
-          <div className="p-4 bg-gray-50 rounded-lg text-sm text-gray-500">
-            暂无供应商配置，请新增一个供应商。
-          </div>
-        )}
-
-        {providers.map((provider) => (
-          <div key={provider.id} className="re-card cursor-default">
-            <div className="re-card-header">
-              <h4>{provider.name}</h4>
-              <div className="flex items-center gap-2">
-                {provider.isDefaultProvider && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-blue-400 bg-blue-50 text-blue-700">默认</span>
-                )}
-                {provider.enabled && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-400 bg-emerald-50 text-emerald-700">已启用</span>
-                )}
-                {!provider.enabled && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-gray-300 bg-gray-50 text-gray-500">未启用</span>
-                )}
-                <button
-                  className="text-xs text-gray-500 hover:text-blue-600"
-                  onClick={() => openEdit(provider)}
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  className="text-xs text-gray-500 hover:text-red-500"
-                  onClick={() => handleRemoveProvider(provider.id)}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-
-            <div className="re-card-meta">{provider.baseUrl}</div>
-
-            <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-2">
-              <span>模型数：{provider.models.length}</span>
-              <span>API Key：{provider.apiKey ? "已配置" : "未配置"}</span>
-            </div>
-
-            <div className="space-y-1 mb-3">
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span>默认模型：</span>
-                <span>{provider.models.find((m) => m.isDefault)?.model || "未设置"}</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {provider.models.map((model) => (
-                  <span
-                    key={model.id}
-                    className={"px-2 py-0.5 rounded-full text-[10px] " + (model.enabled ? "bg-gray-100 text-gray-700" : "bg-gray-50 text-gray-400")}
-                  >
-                    {model.model}{model.isDefault ? "（默认）" : ""}{model.thinking ? " / thinking" : ""}{model.stream === false ? " / 非流式" : ""}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="re-card-footer">
-              <span className={"re-status " + (provider.enabled ? "" : "bg-gray-100 text-gray-500 border border-gray-200")}
-              >
-                {provider.enabled ? "已启用" : "未启用"}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  className={"px-2 py-1 rounded border text-xs " + (provider.enabled ? "border-green-300 text-green-600" : "border-gray-200")}
-                  onClick={() => handleToggleProvider(provider.id)}
-                >
-                  {provider.enabled ? "停用" : "启用"}
-                </button>
-                <button
-                  className={"px-2 py-1 rounded border text-xs " + (provider.isDefaultProvider ? "border-blue-400 text-blue-600" : "border-gray-200")}
-                  onClick={() => handleSetDefaultProvider(provider.id)}
-                  disabled={!provider.enabled}
-                >
-                  设为默认
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className="space-y-4">
+      {providers.length === 0 ? (
+        <div className="p-8 bg-gray-50 rounded-lg text-center space-y-2">
+          <div className="text-sm text-gray-500">暂无供应商配置</div>
+          <div className="text-xs text-gray-400">点击右上角「新增供应商」按钮添加你的第一个 AI 供应商</div>
+        </div>
+      ) : (
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-xs text-gray-500">
+                <th className="text-left px-4 py-2.5 font-medium">供应商</th>
+                <th className="text-left px-4 py-2.5 font-medium">模型</th>
+                <th className="text-left px-4 py-2.5 font-medium">API Key</th>
+                <th className="text-left px-4 py-2.5 font-medium">状态</th>
+                <th className="text-right px-4 py-2.5 font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {providers.map((provider, idx) => (
+                <tr key={provider.id} className={"border-t border-gray-100" + (idx % 2 === 1 ? " bg-gray-50/50" : "")}>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-800">{provider.name}</span>
+                      {provider.isDefaultProvider && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-blue-400 bg-blue-50 text-blue-700">默认</span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-gray-400 mt-0.5 truncate max-w-[220px]" title={provider.baseUrl}>{provider.baseUrl}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {provider.models.map((model) => (
+                        <span
+                          key={model.id}
+                          className={"px-1.5 py-0.5 rounded text-[10px] " + (model.enabled ? "bg-gray-100 text-gray-700" : "bg-gray-50 text-gray-400")}
+                        >
+                          {model.model}{model.isDefault ? " *" : ""}{model.thinking ? " 🧠" : ""}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={"text-xs " + (provider.apiKey ? "text-emerald-600" : "text-gray-400")}>
+                      {provider.apiKey ? "已配置" : "未配置"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={"inline-block text-[10px] px-2 py-0.5 rounded-full border " + (provider.enabled ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-gray-300 bg-gray-50 text-gray-500")}>
+                      {provider.enabled ? "已启用" : "未启用"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        className={"px-2 py-1 rounded border text-xs " + (provider.enabled ? "border-green-300 text-green-600" : "border-gray-200 text-gray-500")}
+                        onClick={() => handleToggleProvider(provider.id)}
+                      >
+                        {provider.enabled ? "停用" : "启用"}
+                      </button>
+                      <button
+                        className={"px-2 py-1 rounded border text-xs " + (provider.isDefaultProvider ? "border-blue-400 text-blue-600" : "border-gray-200 text-gray-500")}
+                        onClick={() => handleSetDefaultProvider(provider.id)}
+                        disabled={!provider.enabled}
+                      >
+                        默认
+                      </button>
+                      <button
+                        className="text-gray-400 hover:text-blue-600"
+                        onClick={() => openEdit(provider)}
+                        title="编辑"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        className="text-gray-400 hover:text-red-500"
+                        onClick={() => handleRemoveProvider(provider.id)}
+                        title="删除"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {defaultProviderId === null && providers.length > 0 && (
         <div className="p-3 bg-amber-50 text-xs text-amber-700 rounded-lg">

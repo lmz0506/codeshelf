@@ -489,132 +489,7 @@ pub async fn save_app_shortcuts(shortcuts: Vec<AppShortcutBinding>) -> Result<()
 // ============== AI 供应商配置管理 ==============
 
 fn default_ai_providers() -> Vec<AiProviderConfig> {
-    vec![
-        AiProviderConfig {
-            id: generate_id(),
-            name: "百炼 / 通义千问".to_string(),
-            provider_type: "preset".to_string(),
-            preset_key: Some("bailian".to_string()),
-            base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),
-            api_key: None,
-            enabled: false,
-            is_default_provider: false,
-            models: vec![
-                AiModelConfig {
-                    id: generate_id(),
-                    model: "qwen-plus".to_string(),
-                    enabled: true,
-                    is_default: true,
-                    thinking: false,
-                    stream: true,
-                },
-                AiModelConfig {
-                    id: generate_id(),
-                    model: "qwen-turbo".to_string(),
-                    enabled: true,
-                    is_default: false,
-                    thinking: false,
-                    stream: true,
-                },
-            ],
-        },
-        AiProviderConfig {
-            id: generate_id(),
-            name: "DeepSeek".to_string(),
-            provider_type: "preset".to_string(),
-            preset_key: Some("deepseek".to_string()),
-            base_url: "https://api.deepseek.com".to_string(),
-            api_key: None,
-            enabled: false,
-            is_default_provider: false,
-            models: vec![
-                AiModelConfig {
-                    id: generate_id(),
-                    model: "deepseek-chat".to_string(),
-                    enabled: true,
-                    is_default: true,
-                    thinking: false,
-                    stream: true,
-                },
-                AiModelConfig {
-                    id: generate_id(),
-                    model: "deepseek-reasoner".to_string(),
-                    enabled: true,
-                    is_default: false,
-                    thinking: true,
-                    stream: true,
-                },
-            ],
-        },
-        AiProviderConfig {
-            id: generate_id(),
-            name: "OpenAI".to_string(),
-            provider_type: "preset".to_string(),
-            preset_key: Some("openai".to_string()),
-            base_url: "https://api.openai.com/v1".to_string(),
-            api_key: None,
-            enabled: false,
-            is_default_provider: false,
-            models: vec![
-                AiModelConfig {
-                    id: generate_id(),
-                    model: "gpt-4o".to_string(),
-                    enabled: true,
-                    is_default: true,
-                    thinking: false,
-                    stream: true,
-                },
-                AiModelConfig {
-                    id: generate_id(),
-                    model: "gpt-4.1".to_string(),
-                    enabled: true,
-                    is_default: false,
-                    thinking: false,
-                    stream: true,
-                },
-            ],
-        },
-        AiProviderConfig {
-            id: generate_id(),
-            name: "Ollama".to_string(),
-            provider_type: "preset".to_string(),
-            preset_key: Some("ollama".to_string()),
-            base_url: "http://localhost:11434/v1".to_string(),
-            api_key: None,
-            enabled: false,
-            is_default_provider: false,
-            models: vec![
-                AiModelConfig {
-                    id: generate_id(),
-                    model: "llama3.1".to_string(),
-                    enabled: true,
-                    is_default: true,
-                    thinking: false,
-                    stream: true,
-                },
-            ],
-        },
-        AiProviderConfig {
-            id: generate_id(),
-            name: "Moonshot AI".to_string(),
-            provider_type: "preset".to_string(),
-            preset_key: Some("moonshot".to_string()),
-            base_url: "https://api.moonshot.cn/v1".to_string(),
-            api_key: None,
-            enabled: false,
-            is_default_provider: false,
-            models: vec![
-                AiModelConfig {
-                    id: generate_id(),
-                    model: "moonshot-v1-8k".to_string(),
-                    enabled: true,
-                    is_default: true,
-                    thinking: false,
-                    stream: true,
-                },
-            ],
-        },
-    ]
+    vec![]
 }
 
 #[tauri::command]
@@ -634,10 +509,6 @@ pub async fn get_ai_providers() -> Result<Vec<AiProviderConfig>, String> {
     }
 
     let providers: Vec<AiProviderConfig> = serde_json::from_str(&content).unwrap_or_default();
-    if providers.is_empty() {
-        return Ok(default_ai_providers());
-    }
-
     Ok(providers)
 }
 
