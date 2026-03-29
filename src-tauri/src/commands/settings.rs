@@ -6,7 +6,7 @@ use std::fs;
 use crate::storage::{
     get_storage_config, generate_id, current_iso_time,
     EditorConfig, TerminalConfig, AppSettings, UiState, Notification,
-    AiProviderConfig, AiModelConfig,
+    AiProviderConfig,
 };
 
 // ============== 标签管理 ==============
