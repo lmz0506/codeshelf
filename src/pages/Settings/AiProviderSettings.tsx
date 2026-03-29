@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, forwardRef, useImperativeHandle } from "react";
+import { useMemo, useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { Plus, X, Pencil, FolderOpen, ChevronDown } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "@/stores/appStore";
@@ -453,6 +453,8 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
   const [historyState, setHistoryState] = useState<HistoryState>(getHistoryState(chatHistoryDir));
   const [form, setForm] = useState<ProviderForm>(initialForm());
 
+  const submittingRef = useRef(false);
+
   const providers = aiProviders;
 
   const defaultProviderId = useMemo(
@@ -560,56 +562,65 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
 
   // 保存供应商配置（新增或编辑）
   function handleSaveProvider() {
-    if (!form.name.trim()) {
-      showToast("warning", "请输入供应商名称");
-      return;
-    }
-    if (!form.baseUrl.trim()) {
-      showToast("warning", "请输入 Base URL");
-      return;
-    }
-    if (form.models.length === 0) {
-      showToast("warning", "请至少添加一个模型");
-      return;
-    }
-    if (!form.models.some((m) => m.model.trim())) {
-      showToast("warning", "模型名称不能为空");
-      return;
-    }
+    if (submittingRef.current) return;
+    submittingRef.current = true;
 
-    let apiKey = form.apiKey;
-    if (editingId && (apiKey === "" || apiKey === undefined)) {
-      apiKey = providers.find((p) => p.id === editingId)?.apiKey ?? "";
-    } else if (apiKey === undefined) {
-      // 编辑时未修改 API Key，保持原值；新增时未填写 API Key，设为空字符串
-      apiKey = "";
-    } else {
-      // apiKey 保证为字符串；使用 ?? "" 来满足 TypeScript 类型缩小的要求
-      apiKey = (apiKey ?? "").trim();
+    try {
+      if (!form.name.trim()) {
+        showToast("warning", "请输入供应商名称");
+        return;
+      }
+      if (!form.baseUrl.trim()) {
+        showToast("warning", "请输入 Base URL");
+        return;
+      }
+      if (form.models.length === 0) {
+        showToast("warning", "请至少添加一个模型");
+        return;
+      }
+      if (!form.models.some((m) => m.model.trim())) {
+        showToast("warning", "模型名称不能为空");
+        return;
+      }
+
+      let apiKey = form.apiKey;
+      if (editingId && (apiKey === "" || apiKey === undefined)) {
+        apiKey = providers.find((p) => p.id === editingId)?.apiKey ?? "";
+      } else if (apiKey === undefined) {
+        // 编辑时未修改 API Key，保持原值；新增时未填写 API Key，设为空字符串
+        apiKey = "";
+      } else {
+        // apiKey 保证为字符串；使用 ?? "" 来满足 TypeScript 类型缩小的要求
+        apiKey = (apiKey ?? "").trim();
+      }
+
+      const normalizedModels = normalizeDefaultModel(
+          form.models.map((m) => ({ ...m, model: m.model.trim() }))
+      );
+      const provider = createProviderTemplate({ ...form, apiKey, models: normalizedModels });
+
+      let nextProviders: AiProviderConfig[];
+      if (editingId) {
+        nextProviders = providers.map((p) => (p.id === editingId ? provider : p));
+      } else {
+        const withoutDupe = providers.filter((p) => p.id !== provider.id);
+        nextProviders = [...withoutDupe, provider];
+      }
+
+      if (provider.isDefaultProvider) {
+        nextProviders = nextProviders.map((p) => ({
+          ...p,
+          isDefaultProvider: p.id === provider.id,
+        }));
+      }
+
+      saveAiProviders(nextProviders);
+      showToast("success", "保存成功");
+      resetForm();
+    } catch (e) {
+      submittingRef.current = false;
+      throw e;
     }
-
-    const normalizedModels = normalizeDefaultModel(
-      form.models.map((m) => ({ ...m, model: m.model.trim() }))
-    );
-    const provider = createProviderTemplate({ ...form, apiKey, models: normalizedModels });
-
-    let nextProviders: AiProviderConfig[];
-    if (editingId) {
-      nextProviders = providers.map((p) => (p.id === editingId ? provider : p));
-    } else {
-      nextProviders = [...providers, provider];
-    }
-
-    if (provider.isDefaultProvider) {
-      nextProviders = nextProviders.map((p) => ({
-        ...p,
-        isDefaultProvider: p.id === provider.id,
-      }));
-    }
-
-    saveAiProviders(nextProviders);
-    showToast("success", "保存成功");
-    resetForm();
   }
 
   function handleRemoveProvider(id: string) {
