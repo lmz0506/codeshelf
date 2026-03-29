@@ -248,6 +248,9 @@ function ProviderFormDrawer({
                 onChange={(e) => onFormChange({ isDefaultProvider: e.target.checked })}
               />
             </div>
+            <div className="text-[11px] text-gray-400 -mt-2">
+              设为默认后，所有AI功能（对话、简历/Dockerfile生成等）将使用该供应商
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -744,6 +747,7 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
                         className={"px-2 py-1 rounded border text-xs " + (provider.isDefaultProvider ? "border-blue-400 text-blue-600" : "border-gray-200 text-gray-500")}
                         onClick={() => handleSetDefaultProvider(provider.id)}
                         disabled={!provider.enabled}
+                        title="设为默认供应商，所有AI功能将使用该配置"
                       >
                         默认
                       </button>
