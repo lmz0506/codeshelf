@@ -155,12 +155,14 @@ interface AppState {
     selectedDirection: JobDirection;
     selectedProjects: string[];
     isOpen: boolean;
+    isAnalyzing: boolean; // 是否正在分析中（用于菜单切换时保持）
   };
   setResumeGeneratorData: (data: ResumeDataSource | null) => void;
   setGeneratedResume: (resume: GeneratedResume | null) => void;
   setResumeGeneratorDirection: (direction: JobDirection) => void;
   setResumeGeneratorSelectedProjects: (projects: string[]) => void;
   setResumeGeneratorOpen: (isOpen: boolean) => void;
+  setResumeGeneratorAnalyzing: (isAnalyzing: boolean) => void;
   clearResumeGeneratorState: () => void;
 }
 
@@ -521,6 +523,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     selectedDirection: "backend",
     selectedProjects: [],
     isOpen: false,
+    isAnalyzing: false,
   },
   setResumeGeneratorData: (data) => set((state) => ({
     resumeGeneratorState: { ...state.resumeGeneratorState, data },
@@ -537,6 +540,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setResumeGeneratorOpen: (isOpen) => set((state) => ({
     resumeGeneratorState: { ...state.resumeGeneratorState, isOpen },
   })),
+  setResumeGeneratorAnalyzing: (isAnalyzing) => set((state) => ({
+    resumeGeneratorState: { ...state.resumeGeneratorState, isAnalyzing },
+  })),
   clearResumeGeneratorState: () => set({
     resumeGeneratorState: {
       data: null,
@@ -544,6 +550,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       selectedDirection: "backend",
       selectedProjects: [],
       isOpen: false,
+      isAnalyzing: false,
     },
   }),
 }));

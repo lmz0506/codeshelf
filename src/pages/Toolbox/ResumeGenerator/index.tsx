@@ -18,7 +18,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useResumeData, getTopTechStack, formatTimeRange } from "./useResumeData";
 import { ResumeEditor } from "./ResumeEditor";
 import { ResumePreview } from "./ResumePreview";
-import { AIConversationViewer } from "./AIConversationViewer";
+import { ProjectAnalyzer } from "./ProjectAnalyzer";
 import { JOB_DIRECTIONS, type JobDirection, type ProjectExperience, type GeneratedResume } from "@/types/resume";
 import { exportResumeToMarkdown, exportResumeToFileWithDialog } from "@/services/resume/export";
 import { showToast } from "@/components/ui";
@@ -38,6 +38,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     setResumeGeneratorDirection,
     setResumeGeneratorSelectedProjects,
     setResumeGeneratorOpen,
+    setResumeGeneratorAnalyzing,
     clearResumeGeneratorState,
   } = useAppStore();
 
@@ -52,8 +53,8 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     resumeGeneratorState.data ? "preview" : "select"
   );
   const [showPreview, setShowPreview] = useState(false);
-  const [showConversationViewer, setShowConversationViewer] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [showProjectAnalyzer, setShowProjectAnalyzer] = useState(false);
+  const [isUserClosing, setIsUserClosing] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const { isLoading: isCollecting, progress, data, error, collectData, reset } = useResumeData({
@@ -67,6 +68,11 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     // 如果 store 中有数据，恢复它
     if (resumeGeneratorState.data && !data) {
       setResumeGeneratorData(resumeGeneratorState.data);
+    }
+
+    // 如果之前正在分析中，恢复分析界面
+    if (resumeGeneratorState.isAnalyzing) {
+      setShowProjectAnalyzer(true);
     }
 
     return () => {
@@ -119,7 +125,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     setResumeGeneratorSelectedProjects(Array.from(next));
   };
 
-  // 开始数据收集
+  // 开始 AI 分析（从项目选择界面）
   const handleStartCollection = async () => {
     if (selectedProjects.size === 0) {
       showToast("warning", "请至少选择一个项目");
@@ -129,8 +135,10 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       showToast("warning", "请先配置默认 AI 供应商");
       return;
     }
-    await collectData(Array.from(selectedProjects));
-    setActiveTab("preview");
+    // 直接启动项目分析器
+    setIsUserClosing(false);
+    setShowProjectAnalyzer(true);
+    setResumeGeneratorAnalyzing(true);
   };
 
   // 重新分析
@@ -152,29 +160,37 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       return;
     }
 
-    setIsGenerating(true);
-    setShowConversationViewer(true);
+    setIsUserClosing(false);
+    setShowProjectAnalyzer(true);
+    setResumeGeneratorAnalyzing(true);
   };
 
   // 处理生成完成
   const handleGenerationComplete = (resume: GeneratedResume) => {
     setGeneratedResume(resume);
-    setIsGenerating(false);
-    setShowConversationViewer(false);
+    setShowProjectAnalyzer(false);
+    setResumeGeneratorAnalyzing(false);
     showToast("success", "简历生成完成");
   };
 
   // 处理生成错误
   const handleGenerationError = (error: string) => {
-    setIsGenerating(false);
-    setShowConversationViewer(false);
+    setShowProjectAnalyzer(false);
+    setResumeGeneratorAnalyzing(false);
     showToast("error", error);
   };
 
-  // 取消生成
-  const handleCancelGenerate = () => {
-    setIsGenerating(false);
-    setShowConversationViewer(false);
+  // 用户主动取消生成
+  const handleUserCancel = () => {
+    setIsUserClosing(true);
+    setShowProjectAnalyzer(false);
+    setResumeGeneratorAnalyzing(false);
+  };
+
+  // 关闭分析器（菜单切换时调用）
+  const handleCloseAnalyzer = () => {
+    // 菜单切换时不停止分析，只是隐藏界面
+    setShowProjectAnalyzer(false);
   };
 
   // 更新项目经历
@@ -437,13 +453,13 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
         <div className="text-xs text-gray-500" />
         <button
           onClick={handleStartCollection}
-          disabled={selectedProjects.size === 0 || isCollecting || !defaultProvider}
+          disabled={selectedProjects.size === 0 || resumeGeneratorState.isAnalyzing || !defaultProvider}
           className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
-          {isCollecting ? (
+          {resumeGeneratorState.isAnalyzing ? (
             <>
               <Loader2 size={16} className="animate-spin" />
-              分析中... {progress?.current}/{progress?.total}
+              分析中...
             </>
           ) : (
             <>
@@ -454,22 +470,21 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
         </button>
       </div>
 
-      {isCollecting && progress && (
+      {resumeGeneratorState.isAnalyzing && (
         <div className="space-y-2">
           <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-500 transition-all duration-300"
-              style={{ width: `${(progress.current / progress.total) * 100}%` }}
-            />
+            <div className="h-full bg-blue-500 animate-pulse" style={{ width: "60%" }} />
           </div>
           <div className="text-xs text-gray-500 text-center">
-            正在分析: {progress.projectName}
+            AI 正在分析项目文件...
+            <button
+              onClick={() => setShowProjectAnalyzer(true)}
+              className="ml-2 text-blue-500 hover:text-blue-700"
+            >
+              查看详情
+            </button>
           </div>
         </div>
-      )}
-
-      {error && (
-        <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg">{error}</div>
       )}
     </div>
   );
@@ -540,13 +555,13 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
             <div className="flex items-center justify-center gap-3">
               <button
                 onClick={handleGenerate}
-                disabled={isGenerating || !defaultProvider}
+                disabled={resumeGeneratorState.isAnalyzing || !defaultProvider}
                 className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
               >
-                {isGenerating ? (
+                {resumeGeneratorState.isAnalyzing ? (
                   <>
                     <Loader2 size={16} className="animate-spin" />
-                    生成中...
+                    分析中...
                   </>
                 ) : (
                   <>
@@ -556,12 +571,12 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
                 )}
               </button>
             </div>
-            {isGenerating && (
+            {resumeGeneratorState.isAnalyzing && (
               <button
-                onClick={handleCancelGenerate}
-                className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+                onClick={() => setShowProjectAnalyzer(true)}
+                className="mt-2 text-xs text-blue-500 hover:text-blue-700"
               >
-                取消生成
+                查看分析进度
               </button>
             )}
           </div>
@@ -584,11 +599,11 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
                 </button>
                 <button
                   onClick={handleGenerate}
-                  disabled={isGenerating}
+                  disabled={resumeGeneratorState.isAnalyzing}
                   className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1"
                 >
                   <RefreshCw size={14} />
-                  重新生成
+                  {resumeGeneratorState.isAnalyzing ? "生成中..." : "重新生成"}
                 </button>
                 <button
                   onClick={handleExportMarkdown}
@@ -631,6 +646,15 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
         <div className="flex-1" data-tauri-drag-region />
 
         <div className="re-actions flex items-center gap-2">
+          {resumeGeneratorState.isAnalyzing && (
+            <button
+              onClick={() => setShowProjectAnalyzer(true)}
+              className="px-3 py-1.5 text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center gap-1"
+            >
+              <Loader2 size={14} className="animate-spin" />
+              分析中...
+            </button>
+          )}
           {(resumeGeneratorState.data || resumeGeneratorState.generatedResume) && (
             <button
               onClick={handleReanalyze}
@@ -690,16 +714,18 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
         />
       )}
 
-      {/* AI 对话查看器 */}
-      {showConversationViewer && (data || resumeGeneratorState.data) && defaultProvider && (
-        <AIConversationViewer
-          isOpen={showConversationViewer}
-          onClose={handleCancelGenerate}
-          dataSource={data || resumeGeneratorState.data!}
+      {/* 项目分析器 - AI 对话和文件分析 */}
+      {showProjectAnalyzer && defaultProvider && (
+        <ProjectAnalyzer
+          isOpen={showProjectAnalyzer}
+          onClose={handleCloseAnalyzer}
+          projects={projects.filter((p) => selectedProjects.has(p.id))}
           jobDirection={selectedDirection}
           provider={defaultProvider}
           onComplete={handleGenerationComplete}
           onError={handleGenerationError}
+          onUserCancel={handleUserCancel}
+          isUserClosing={isUserClosing}
         />
       )}
     </div>
