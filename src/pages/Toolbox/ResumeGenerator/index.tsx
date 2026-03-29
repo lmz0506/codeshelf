@@ -170,6 +170,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     setGeneratedResume(resume);
     setShowProjectAnalyzer(false);
     setResumeGeneratorAnalyzing(false);
+    setActiveTab("preview"); // 自动切换到预览标签
     showToast("success", "简历生成完成");
   };
 
@@ -494,8 +495,114 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     const resumeData = data || resumeGeneratorState.data;
     const currentResume = resumeGeneratorState.generatedResume;
 
-    if (!resumeData) return null;
+    // 如果有生成的简历，直接显示
+    if (currentResume) {
+      return renderResumePreview(currentResume, resumeData);
+    }
 
+    // 如果有数据但没有生成简历，显示准备就绪界面
+    if (resumeData) {
+      return renderDataReadyPreview(resumeData);
+    }
+
+    return null;
+  };
+
+  // 渲染已生成的简历预览
+  const renderResumePreview = (currentResume: GeneratedResume, resumeData: typeof data) => {
+    // 从生成的简历中提取统计信息
+    const totalProjects = currentResume.experiences.length;
+    const totalCommits = currentResume.experiences.reduce((sum, exp) => sum + (exp.commitStats?.totalCommits || 0), 0);
+    const allTechStack = currentResume.skills || [];
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-4 gap-4">
+          <div className="p-4 bg-blue-50 rounded-lg">
+            <div className="text-2xl font-semibold text-blue-600">{totalProjects}</div>
+            <div className="text-xs text-gray-600">分析项目</div>
+          </div>
+          <div className="p-4 bg-green-50 rounded-lg">
+            <div className="text-2xl font-semibold text-green-600">{totalCommits}</div>
+            <div className="text-xs text-gray-600">总提交数</div>
+          </div>
+          <div className="p-4 bg-purple-50 rounded-lg">
+            <div className="text-2xl font-semibold text-purple-600">
+              {resumeData ? formatTimeRange(
+                resumeData.overallStats.activeTimeRange.start,
+                resumeData.overallStats.activeTimeRange.end
+              ) : "-"}
+            </div>
+            <div className="text-xs text-gray-600">活跃周期</div>
+          </div>
+          <div className="p-4 bg-amber-50 rounded-lg">
+            <div className="text-2xl font-semibold text-amber-600">{allTechStack.length}</div>
+            <div className="text-xs text-gray-600">技术栈</div>
+          </div>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-medium text-gray-900 mb-2">主要技术栈</h4>
+          <div className="flex flex-wrap gap-2">
+            {allTechStack.slice(0, 15).map((tech) => (
+              <span key={tech} className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
+                {tech}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="font-medium text-gray-900">
+              项目经历
+              <span className="text-xs font-normal text-gray-500 ml-2">
+                {JOB_DIRECTIONS.find((d) => d.id === currentResume.jobDirection)?.name}
+              </span>
+            </h4>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowPreview(true)}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1"
+              >
+                <Eye size={14} />
+                预览
+              </button>
+              <button
+                onClick={handleGenerate}
+                disabled={resumeGeneratorState.isAnalyzing}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1"
+              >
+                <RefreshCw size={14} />
+                {resumeGeneratorState.isAnalyzing ? "生成中..." : "重新生成"}
+              </button>
+              <button
+                onClick={handleExportMarkdown}
+                className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-1"
+              >
+                <FileDown size={14} />
+                导出
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {currentResume.experiences.map((exp) => (
+              <ResumeEditor
+                key={exp.projectId}
+                experience={exp}
+                onSave={handleUpdateExperience}
+                onRegenerate={() => handleRegenerateProject(exp.projectId)}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 渲染数据准备就绪的预览（尚未生成简历）
+  const renderDataReadyPreview = (resumeData: NonNullable<typeof data>) => {
     const topTechStack = getTopTechStack(resumeData.overallStats.techStackFrequency, 10);
 
     return (
@@ -545,88 +652,40 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
           </div>
         </div>
 
-        {!currentResume ? (
-          <div className="p-6 bg-gray-50 rounded-lg text-center">
-            <Wand2 size={48} className="mx-auto mb-3 text-gray-400" />
-            <h4 className="font-medium text-gray-900 mb-1">数据已准备好</h4>
-            <p className="text-sm text-gray-500 mb-4">
-              已分析 {resumeData.projects.length} 个项目，现在可以使用 AI 生成项目经历
-            </p>
-            <div className="flex items-center justify-center gap-3">
-              <button
-                onClick={handleGenerate}
-                disabled={resumeGeneratorState.isAnalyzing || !defaultProvider}
-                className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
-              >
-                {resumeGeneratorState.isAnalyzing ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    分析中...
-                  </>
-                ) : (
-                  <>
-                    <MessageSquare size={16} />
-                    开始生成（显示对话）
-                  </>
-                )}
-              </button>
-            </div>
-            {resumeGeneratorState.isAnalyzing && (
-              <button
-                onClick={() => setShowProjectAnalyzer(true)}
-                className="mt-2 text-xs text-blue-500 hover:text-blue-700"
-              >
-                查看分析进度
-              </button>
-            )}
+        <div className="p-6 bg-gray-50 rounded-lg text-center">
+          <Wand2 size={48} className="mx-auto mb-3 text-gray-400" />
+          <h4 className="font-medium text-gray-900 mb-1">数据已准备好</h4>
+          <p className="text-sm text-gray-500 mb-4">
+            已分析 {resumeData.projects.length} 个项目，现在可以使用 AI 生成项目经历
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={handleGenerate}
+              disabled={resumeGeneratorState.isAnalyzing || !defaultProvider}
+              className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+            >
+              {resumeGeneratorState.isAnalyzing ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  分析中...
+                </>
+              ) : (
+                <>
+                  <MessageSquare size={16} />
+                  开始生成（显示对话）
+                </>
+              )}
+            </button>
           </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="font-medium text-gray-900">
-                项目经历
-                <span className="text-xs font-normal text-gray-500 ml-2">
-                  {JOB_DIRECTIONS.find((d) => d.id === currentResume.jobDirection)?.name}
-                </span>
-              </h4>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowPreview(true)}
-                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1"
-                >
-                  <Eye size={14} />
-                  预览
-                </button>
-                <button
-                  onClick={handleGenerate}
-                  disabled={resumeGeneratorState.isAnalyzing}
-                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1"
-                >
-                  <RefreshCw size={14} />
-                  {resumeGeneratorState.isAnalyzing ? "生成中..." : "重新生成"}
-                </button>
-                <button
-                  onClick={handleExportMarkdown}
-                  className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-1"
-                >
-                  <FileDown size={14} />
-                  导出
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {currentResume.experiences.map((exp) => (
-                <ResumeEditor
-                  key={exp.projectId}
-                  experience={exp}
-                  onSave={handleUpdateExperience}
-                  onRegenerate={() => handleRegenerateProject(exp.projectId)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+          {resumeGeneratorState.isAnalyzing && (
+            <button
+              onClick={() => setShowProjectAnalyzer(true)}
+              className="mt-2 text-xs text-blue-500 hover:text-blue-700"
+            >
+              查看分析进度
+            </button>
+          )}
+        </div>
       </div>
     );
   };
@@ -674,7 +733,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       </header>
 
       <div className="flex-1 overflow-auto p-6">
-        {(resumeGeneratorState.data || data) && (
+        {(resumeGeneratorState.data || data || resumeGeneratorState.generatedResume) && (
           <div className="flex items-center gap-4 mb-6 border-b border-gray-200">
             <button
               onClick={() => setActiveTab("select")}
