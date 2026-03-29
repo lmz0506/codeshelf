@@ -618,8 +618,9 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
       showToast("success", "保存成功");
       resetForm();
     } catch (e) {
-      submittingRef.current = false;
       throw e;
+    } finally {
+      submittingRef.current = false;
     }
   }
 
