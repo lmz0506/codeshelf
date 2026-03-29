@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ProjectCard, ScanResultDialog, ProjectDetailPanel, AddProjectDialog, AddCategoryDialog, CategorySelector, LabelSelector } from "@/components/project";
+import { ResumeGenerator } from "../Toolbox/ResumeGenerator";
 import { FloatingCategoryBall, showToast } from "@/components/ui";
-import { MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark, ChevronLeft, ChevronRight } from "lucide-react";
+import { MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark, ChevronLeft, ChevronRight, FileText, Wand2 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import type { Project, GitRepo, GitStatus } from "@/types";
 import { getProjects, addProject, removeProject, updateProject } from "@/services/db";
@@ -53,6 +54,9 @@ export function ShelfPage() {
 
   // 标签筛选状态
   const [selectedLabelFilters, setSelectedLabelFilters] = useState<string[]>([]);
+
+  // 简历生成器状态
+  const [showResumeGenerator, setShowResumeGenerator] = useState(false);
 
   useEffect(() => {
     loadProjects();
@@ -506,6 +510,11 @@ export function ShelfPage() {
                 label: "添加分类",
                 onClick: () => setShowAddCategoryDialog(true),
               },
+              {
+                icon: "📄",
+                label: "简历生成",
+                onClick: () => setShowResumeGenerator(true),
+              },
             ]}
           />
 
@@ -841,6 +850,14 @@ export function ShelfPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Resume Generator */}
+      {showResumeGenerator && (
+        <div className="fixed inset-0 z-50"
+          style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+          <ResumeGenerator onBack={() => setShowResumeGenerator(false)} />
         </div>
       )}
     </div>

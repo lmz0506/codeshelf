@@ -211,7 +211,7 @@ export interface ConfigProfile {
 
 // ============== 工具箱页面状态 ==============
 
-export type ToolType = "monitor" | "downloader" | "server" | "claude" | "netcat" | "shortcuts" | "clipboard";
+export type ToolType = "monitor" | "downloader" | "server" | "claude" | "netcat" | "shortcuts" | "clipboard" | "resume";
 
 export interface ToolInfo {
   id: ToolType;

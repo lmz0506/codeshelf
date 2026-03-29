@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { Project, ViewMode, Notification, AppShortcutBinding, AiProviderConfig } from "@/types";
 import type { ToolType } from "@/types/toolbox";
+import type { ResumeDataSource, GeneratedResume, JobDirection } from "@/types/resume";
 import { markProjectDirty as markDirty } from "@/services/stats";
 import { setProjectEditor as setProjectEditorApi, setProjectClaudeEnv as setProjectClaudeEnvApi } from "@/services/db";
 
@@ -146,6 +147,21 @@ interface AppState {
   toolboxNavigateTarget: ToolType | null;
   navigateToTool: (tool: ToolType) => void;
   clearToolboxNavigateTarget: () => void;
+
+  // Resume Generator State (简历生成器状态 - 持久化)
+  resumeGeneratorState: {
+    data: ResumeDataSource | null;
+    generatedResume: GeneratedResume | null;
+    selectedDirection: JobDirection;
+    selectedProjects: string[];
+    isOpen: boolean;
+  };
+  setResumeGeneratorData: (data: ResumeDataSource | null) => void;
+  setGeneratedResume: (resume: GeneratedResume | null) => void;
+  setResumeGeneratorDirection: (direction: JobDirection) => void;
+  setResumeGeneratorSelectedProjects: (projects: string[]) => void;
+  setResumeGeneratorOpen: (isOpen: boolean) => void;
+  clearResumeGeneratorState: () => void;
 }
 
 // 防抖保存辅助函数
@@ -497,4 +513,37 @@ export const useAppStore = create<AppState>()((set, get) => ({
   toolboxNavigateTarget: null,
   navigateToTool: (tool) => set({ currentPage: "toolbox", toolboxNavigateTarget: tool }),
   clearToolboxNavigateTarget: () => set({ toolboxNavigateTarget: null }),
+
+  // Resume Generator State
+  resumeGeneratorState: {
+    data: null,
+    generatedResume: null,
+    selectedDirection: "backend",
+    selectedProjects: [],
+    isOpen: false,
+  },
+  setResumeGeneratorData: (data) => set((state) => ({
+    resumeGeneratorState: { ...state.resumeGeneratorState, data },
+  })),
+  setGeneratedResume: (generatedResume) => set((state) => ({
+    resumeGeneratorState: { ...state.resumeGeneratorState, generatedResume },
+  })),
+  setResumeGeneratorDirection: (selectedDirection) => set((state) => ({
+    resumeGeneratorState: { ...state.resumeGeneratorState, selectedDirection },
+  })),
+  setResumeGeneratorSelectedProjects: (selectedProjects) => set((state) => ({
+    resumeGeneratorState: { ...state.resumeGeneratorState, selectedProjects },
+  })),
+  setResumeGeneratorOpen: (isOpen) => set((state) => ({
+    resumeGeneratorState: { ...state.resumeGeneratorState, isOpen },
+  })),
+  clearResumeGeneratorState: () => set({
+    resumeGeneratorState: {
+      data: null,
+      generatedResume: null,
+      selectedDirection: "backend",
+      selectedProjects: [],
+      isOpen: false,
+    },
+  }),
 }));
