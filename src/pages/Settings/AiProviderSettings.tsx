@@ -445,7 +445,7 @@ export type AiProviderSettingsHandle = {
   openHistoryModal: () => void;
 };
 
-export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProviderSettingsProps>(({ onClose }, ref) => {
+export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProviderSettingsProps>((_props, ref) => {
   const { aiProviders, saveAiProviders, chatHistoryDir, setChatHistoryDir } = useAppStore();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -558,6 +558,7 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
     });
   }
 
+  // 保存供应商配置（新增或编辑）
   function handleSaveProvider() {
     if (!form.name.trim()) {
       showToast("warning", "请输入供应商名称");
@@ -576,9 +577,15 @@ export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProvide
       return;
     }
 
-    let apiKey = form.apiKey.trim();
-    if (editingId && apiKey === "") {
+    let apiKey = form.apiKey;
+    if (editingId && (apiKey === "" || apiKey === undefined)) {
       apiKey = providers.find((p) => p.id === editingId)?.apiKey ?? "";
+    } else if (apiKey === undefined) {
+      // 编辑时未修改 API Key，保持原值；新增时未填写 API Key，设为空字符串
+      apiKey = "";
+    } else {
+      // apiKey 保证为字符串；使用 ?? "" 来满足 TypeScript 类型缩小的要求
+      apiKey = (apiKey ?? "").trim();
     }
 
     const normalizedModels = normalizeDefaultModel(
