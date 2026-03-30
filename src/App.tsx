@@ -62,7 +62,7 @@ async function initializeApp() {
 
   try {
     // 并行加载所有数据
-    const [settings, labels, categories, editors, terminal, projects, uiState, notifications, appShortcuts, aiProviders] = await Promise.all([
+    const [settings, labels, categories, editors, terminal, projects, uiState, notifications, appShortcuts, aiProviders, sensitiveFilePatterns] = await Promise.all([
       invoke<AppSettings>("get_app_settings"),
       invoke<string[]>("get_labels"),
       invoke<string[]>("get_categories"),
@@ -73,6 +73,7 @@ async function initializeApp() {
       invoke<NotificationBackend[]>("get_notifications"),
       invoke<AppShortcutBinding[]>("get_app_shortcuts"),
       invoke<AiProviderConfig[]>("get_ai_providers"),
+      invoke<string[]>("get_sensitive_file_patterns"),
     ]);
 
     // 转换终端配置格式
@@ -112,6 +113,7 @@ async function initializeApp() {
       notifications: notificationsFormatted,
       appShortcuts: appShortcuts || [],
       aiProviders: normalizedAiProviders,
+      sensitiveFilePatterns: sensitiveFilePatterns || [],
       initialized: true,
     });
 

@@ -552,6 +552,45 @@ pub async fn save_recommended_template(content: String) -> Result<(), String> {
     Ok(())
 }
 
+// ============== 敏感文件规则管理 ==============
+
+#[tauri::command]
+pub async fn get_sensitive_file_patterns() -> Result<Vec<String>, String> {
+    let config = get_storage_config()?;
+    let path = config.sensitive_file_patterns_file();
+
+    if !path.exists() {
+        return Ok(vec![
+            ".env".to_string(), ".env.*".to_string(),
+            "*.key".to_string(), "*.pem".to_string(), "*.p12".to_string(), "*.pfx".to_string(),
+            "credentials*.json".to_string(), "secrets*.json".to_string(),
+            "*.keystore".to_string(), "*.jks".to_string(),
+            ".npmrc".to_string(), ".pypirc".to_string(),
+            "id_rsa".to_string(), "id_ed25519".to_string(),
+            "config.local.json".to_string(),
+        ]);
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("读取敏感文件规则失败: {}", e))?;
+
+    let patterns: Vec<String> = serde_json::from_str(&content).unwrap_or_default();
+    Ok(patterns)
+}
+
+#[tauri::command]
+pub async fn save_sensitive_file_patterns(patterns: Vec<String>) -> Result<(), String> {
+    let config = get_storage_config()?;
+    config.ensure_dirs()?;
+
+    let content = serde_json::to_string(&patterns)
+        .map_err(|e| format!("序列化敏感文件规则失败: {}", e))?;
+
+    fs::write(config.sensitive_file_patterns_file(), content)
+        .map_err(|e| format!("保存敏感文件规则失败: {}", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn reset_recommended_template() -> Result<(), String> {
     let config = get_storage_config()?;

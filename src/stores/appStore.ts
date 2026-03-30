@@ -135,6 +135,10 @@ interface AppState {
   showClipboardQuickAccess: boolean;
   toggleClipboardQuickAccess: () => void;
 
+  // Sensitive File Patterns (敏感文件过滤规则)
+  sensitiveFilePatterns: string[];
+  setSensitiveFilePatterns: (patterns: string[]) => void;
+
   // 弹窗关闭时是否自动隐藏窗口（全局快捷键从隐藏状态唤起时设为 true）
   popupAutoHideWindow: boolean;
   setPopupAutoHideWindow: (v: boolean) => void;
@@ -502,6 +506,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // Clipboard Quick Access (剪贴板快速访问弹窗)
   showClipboardQuickAccess: false,
   toggleClipboardQuickAccess: () => set((state) => ({ showClipboardQuickAccess: !state.showClipboardQuickAccess })),
+
+  // Sensitive File Patterns (敏感文件过滤规则)
+  sensitiveFilePatterns: [],
+  setSensitiveFilePatterns: (sensitiveFilePatterns) => {
+    set({ sensitiveFilePatterns });
+    invoke("save_sensitive_file_patterns", { patterns: sensitiveFilePatterns }).catch(console.error);
+  },
 
   // 弹窗自动隐藏窗口
   popupAutoHideWindow: false,

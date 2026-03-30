@@ -1,10 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   FileText,
   Loader2,
   RefreshCw,
   CheckCircle,
-  Download,
   Wand2,
   ChevronLeft,
   AlertCircle,
@@ -12,15 +11,15 @@ import {
   Settings,
   Eye,
   FileDown,
-  MessageSquare,
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
-import { useResumeData, getTopTechStack, formatTimeRange } from "./useResumeData";
+import { formatTimeRange } from "./useResumeData";
 import { ResumeEditor } from "./ResumeEditor";
 import { ResumePreview } from "./ResumePreview";
 import { ProjectAnalyzer } from "./ProjectAnalyzer";
 import { JOB_DIRECTIONS, type JobDirection, type ProjectExperience, type GeneratedResume } from "@/types/resume";
 import { exportResumeToMarkdown, exportResumeToFileWithDialog } from "@/services/resume/export";
+import { generateSingleExperience } from "@/services/resume/aiGenerator";
 import { showToast } from "@/components/ui";
 
 interface ResumeGeneratorProps {
@@ -50,25 +49,15 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     new Set(resumeGeneratorState.selectedProjects || [])
   );
   const [activeTab, setActiveTab] = useState<"select" | "preview" | "view">(
-    resumeGeneratorState.data ? "preview" : "select"
+    resumeGeneratorState.generatedResume ? "preview" : "select"
   );
   const [showPreview, setShowPreview] = useState(false);
   const [showProjectAnalyzer, setShowProjectAnalyzer] = useState(false);
   const [isUserClosing, setIsUserClosing] = useState(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const { isLoading: isCollecting, progress, data, error, collectData, reset } = useResumeData({
-    maxCommitsPerProject: 50,
-  });
-
-  // 组件挂载时标记为打开，恢复 store 中的数据
+  // 组件挂载时标记为打开
   useEffect(() => {
     setResumeGeneratorOpen(true);
-
-    // 如果 store 中有数据，恢复它
-    if (resumeGeneratorState.data && !data) {
-      setResumeGeneratorData(resumeGeneratorState.data);
-    }
 
     // 如果之前正在分析中，恢复分析界面
     if (resumeGeneratorState.isAnalyzing) {
@@ -79,13 +68,6 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       setResumeGeneratorOpen(false);
     };
   }, []);
-
-  // 当本地 data 变化时，同步到 store
-  useEffect(() => {
-    if (data) {
-      setResumeGeneratorData(data);
-    }
-  }, [data]);
 
   // 检查 AI 供应商状态
   const defaultProvider = aiProviders.find((p) => p.isDefaultProvider && p.enabled);
@@ -143,7 +125,6 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
 
   // 重新分析
   const handleReanalyze = () => {
-    reset();
     setResumeGeneratorData(null);
     setGeneratedResume(null);
     clearResumeGeneratorState();
@@ -154,8 +135,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
 
   // AI 生成项目经历 - 显示对话过程
   const handleGenerate = () => {
-    const resumeData = data || resumeGeneratorState.data;
-    if (!resumeData || !defaultProvider) {
+    if (!defaultProvider) {
       showToast("error", "没有可用的 AI 供应商");
       return;
     }
@@ -231,16 +211,15 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
 
   // 重新生成单个项目
   const handleRegenerateProject = async (projectId: string) => {
-    const resumeData = data || resumeGeneratorState.data;
     const currentResume = resumeGeneratorState.generatedResume;
-    if (!resumeData || !defaultProvider || !currentResume) return;
+    if (!defaultProvider || !currentResume) return;
 
-    const experience = resumeData.projects.find((p) => p.projectId === projectId);
+    const experience = currentResume.experiences.find((p) => p.projectId === projectId);
     if (!experience) return;
 
     try {
       const direction = JOB_DIRECTIONS.find((d) => d.id === selectedDirection)!;
-      const starExperience = await generateResumeWithAI.generateSingleExperience(
+      const starExperience = await generateSingleExperience(
         experience,
         direction,
         defaultProvider
@@ -492,24 +471,18 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
 
   // 渲染预览界面
   const renderPreview = () => {
-    const resumeData = data || resumeGeneratorState.data;
     const currentResume = resumeGeneratorState.generatedResume;
 
     // 如果有生成的简历，直接显示
     if (currentResume) {
-      return renderResumePreview(currentResume, resumeData);
-    }
-
-    // 如果有数据但没有生成简历，显示准备就绪界面
-    if (resumeData) {
-      return renderDataReadyPreview(resumeData);
+      return renderResumePreview(currentResume);
     }
 
     return null;
   };
 
   // 渲染已生成的简历预览
-  const renderResumePreview = (currentResume: GeneratedResume, resumeData: typeof data) => {
+  const renderResumePreview = (currentResume: GeneratedResume) => {
     // 从生成的简历中提取统计信息
     const totalProjects = currentResume.experiences.length;
     const totalCommits = currentResume.experiences.reduce((sum, exp) => sum + (exp.commitStats?.totalCommits || 0), 0);
@@ -528,10 +501,18 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
           </div>
           <div className="p-4 bg-purple-50 rounded-lg">
             <div className="text-2xl font-semibold text-purple-600">
-              {resumeData ? formatTimeRange(
-                resumeData.overallStats.activeTimeRange.start,
-                resumeData.overallStats.activeTimeRange.end
-              ) : "-"}
+              {(() => {
+                const timeRanges = currentResume.experiences
+                  .map((e) => e.timeRange)
+                  .filter((t) => t.start && t.end);
+                if (timeRanges.length === 0) return "-";
+                const starts = timeRanges.map((t) => new Date(t.start).getTime());
+                const ends = timeRanges.map((t) => new Date(t.end).getTime());
+                return formatTimeRange(
+                  new Date(Math.min(...starts)).toISOString(),
+                  new Date(Math.max(...ends)).toISOString()
+                );
+              })()}
             </div>
             <div className="text-xs text-gray-600">活跃周期</div>
           </div>
@@ -601,95 +582,6 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     );
   };
 
-  // 渲染数据准备就绪的预览（尚未生成简历）
-  const renderDataReadyPreview = (resumeData: NonNullable<typeof data>) => {
-    const topTechStack = getTopTechStack(resumeData.overallStats.techStackFrequency, 10);
-
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-4 gap-4">
-          <div className="p-4 bg-blue-50 rounded-lg">
-            <div className="text-2xl font-semibold text-blue-600">
-              {resumeData.overallStats.totalProjects}
-            </div>
-            <div className="text-xs text-gray-600">分析项目</div>
-          </div>
-          <div className="p-4 bg-green-50 rounded-lg">
-            <div className="text-2xl font-semibold text-green-600">
-              {resumeData.overallStats.totalCommits}
-            </div>
-            <div className="text-xs text-gray-600">总提交数</div>
-          </div>
-          <div className="p-4 bg-purple-50 rounded-lg">
-            <div className="text-2xl font-semibold text-purple-600">
-              {formatTimeRange(
-                resumeData.overallStats.activeTimeRange.start,
-                resumeData.overallStats.activeTimeRange.end
-              )}
-            </div>
-            <div className="text-xs text-gray-600">活跃周期</div>
-          </div>
-          <div className="p-4 bg-amber-50 rounded-lg">
-            <div className="text-2xl font-semibold text-amber-600">
-              {topTechStack.length}
-            </div>
-            <div className="text-xs text-gray-600">技术栈</div>
-          </div>
-        </div>
-
-        <div>
-          <h4 className="text-sm font-medium text-gray-900 mb-2">主要技术栈</h4>
-          <div className="flex flex-wrap gap-2">
-            {topTechStack.map(({ name, count }) => (
-              <span
-                key={name}
-                className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700"
-              >
-                {name}
-                <span className="text-gray-400 ml-1">({count})</span>
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div className="p-6 bg-gray-50 rounded-lg text-center">
-          <Wand2 size={48} className="mx-auto mb-3 text-gray-400" />
-          <h4 className="font-medium text-gray-900 mb-1">数据已准备好</h4>
-          <p className="text-sm text-gray-500 mb-4">
-            已分析 {resumeData.projects.length} 个项目，现在可以使用 AI 生成项目经历
-          </p>
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={handleGenerate}
-              disabled={resumeGeneratorState.isAnalyzing || !defaultProvider}
-              className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
-            >
-              {resumeGeneratorState.isAnalyzing ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  分析中...
-                </>
-              ) : (
-                <>
-                  <MessageSquare size={16} />
-                  开始生成（显示对话）
-                </>
-              )}
-            </button>
-          </div>
-          {resumeGeneratorState.isAnalyzing && (
-            <button
-              onClick={() => setShowProjectAnalyzer(true)}
-              className="mt-2 text-xs text-blue-500 hover:text-blue-700"
-            >
-              查看分析进度
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="flex flex-col h-full bg-white">
       <header className="re-header sticky top-0 z-20" data-tauri-drag-region>
@@ -714,7 +606,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
               分析中...
             </button>
           )}
-          {(resumeGeneratorState.data || resumeGeneratorState.generatedResume) && (
+          {resumeGeneratorState.generatedResume && (
             <button
               onClick={handleReanalyze}
               className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1"
@@ -733,7 +625,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       </header>
 
       <div className="flex-1 overflow-auto p-6">
-        {(resumeGeneratorState.data || data || resumeGeneratorState.generatedResume) && (
+        {resumeGeneratorState.generatedResume && (
           <div className="flex items-center gap-4 mb-6 border-b border-gray-200">
             <button
               onClick={() => setActiveTab("select")}

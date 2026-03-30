@@ -138,10 +138,12 @@ export function ChatPage() {
       try {
         const session = await getChatSession(activeSessionId);
         setActiveSession(session);
-        // 加载完成后滚动到底部
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
-        }, 50);
+        // 加载完成后滚动到底部，等待 DOM 渲染完成
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+          });
+        });
       } catch {
         setActiveSession(null);
       }

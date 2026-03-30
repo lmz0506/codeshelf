@@ -1,61 +1,7 @@
 import { readTextFile, exists } from "@tauri-apps/plugin-fs";
 import { join } from "@tauri-apps/api/path";
 import type { Project } from "@/types";
-
-// 要读取的关键文件列表（按优先级排序）
-const KEY_FILES = [
-  // 项目描述文件
-  "README.md",
-  "readme.md",
-  "README",
-  "readme",
-  "README.zh.md",
-  "README_CN.md",
-  // 依赖文件
-  "package.json",
-  "pom.xml",
-  "build.gradle",
-  "build.gradle.kts",
-  "Cargo.toml",
-  "go.mod",
-  "requirements.txt",
-  "pyproject.toml",
-  "composer.json",
-  "Gemfile",
-  // 配置文件
-  "tsconfig.json",
-  "vite.config.ts",
-  "vite.config.js",
-  "webpack.config.js",
-  "docker-compose.yml",
-  "Dockerfile",
-  ".github/workflows/*.yml",
-];
-
-// 敏感文件模式
-const SENSITIVE_PATTERNS = [
-  /^\.env/,
-  /^\.env\./,
-  /^config\.json$/i,
-  /^config\.local\.json$/i,
-  /^secrets?\.json$/i,
-  /^credentials?\.json$/i,
-  /^\.aws$/i,
-  /^\.ssh$/i,
-  /^id_rsa$/i,
-  /^id_dsa$/i,
-  /^id_ecdsa$/i,
-  /^id_ed25519$/i,
-  /^.*\.key$/i,
-  /^.*\.pem$/i,
-  /^.*\.p12$/i,
-  /^.*\.pfx$/i,
-  /^npmrc$/i,
-  /^\.npmrc$/i,
-  /^\.pypirc$/i,
-  /^.*\.keystore$/i,
-  /^.*\.jks$/i,
-];
+import type { KeyCommit, DependencyAnalysis } from "@/types/resume";
 
 /**
  * 项目文件内容
@@ -72,17 +18,10 @@ export interface ProjectFileContent {
 export interface ProjectFileAnalysis {
   project: Project;
   files: ProjectFileContent[];
+  filteredFiles: { filename: string; reason: string }[];
   readme?: string;
   dependencies?: string;
   techStack: string[];
-}
-
-/**
- * 检查文件是否敏感
- */
-function isSensitiveFile(filename: string): boolean {
-  const lower = filename.toLowerCase();
-  return SENSITIVE_PATTERNS.some((p) => p.test(lower));
 }
 
 /**
@@ -101,88 +40,131 @@ async function readFile(projectPath: string, filename: string): Promise<string |
 }
 
 /**
+ * 简单 glob 匹配（支持 * 和 .）
+ */
+function matchGlob(filename: string, pattern: string): boolean {
+  // 将 glob pattern 转为正则
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&") // 转义特殊字符（除了 *）
+    .replace(/\\\./g, "\\.") // 还原对 . 的转义
+    .replace(/\*/g, ".*"); // * -> .*
+  const regex = new RegExp(`^${escaped}$`, "i");
+  return regex.test(filename);
+}
+
+/**
  * 读取项目的所有关键文件
  */
-export async function readProjectFiles(project: Project): Promise<ProjectFileAnalysis> {
+export async function readProjectFiles(project: Project, sensitivePatterns?: string[]): Promise<ProjectFileAnalysis> {
   const files: ProjectFileContent[] = [];
+  const filteredFiles: { filename: string; reason: string }[] = [];
   let readme: string | undefined;
   let dependencies: string | undefined;
 
-  // 读取 README
-  for (const readmeName of ["README.md", "readme.md", "README", "readme", "README.zh.md", "README_CN.md"]) {
-    const content = await readFile(project.path, readmeName);
-    if (content) {
-      readme = sanitizeContent(content);
-      files.push({
-        filename: readmeName,
-        content: readme,
-        type: "readme",
-      });
+  // 检查文件名是否匹配敏感规则
+  const isSensitive = (filename: string): string | null => {
+    if (!sensitivePatterns || sensitivePatterns.length === 0) return null;
+    for (const pattern of sensitivePatterns) {
+      if (matchGlob(filename, pattern)) {
+        return pattern;
+      }
+    }
+    return null;
+  };
+
+  // 主动扫描常见敏感文件
+  if (sensitivePatterns && sensitivePatterns.length > 0) {
+    const commonSensitiveFiles = [
+      ".env", ".env.local", ".env.production", ".env.development",
+      ".env.staging", ".env.test",
+      "id_rsa", "id_ed25519",
+      ".npmrc", ".pypirc",
+    ];
+    const scanResults = await Promise.all(
+      commonSensitiveFiles.map(async (name) => {
+        try {
+          const filePath = await join(project.path, name);
+          if (await exists(filePath)) {
+            return name;
+          }
+        } catch { /* ignore */ }
+        return null;
+      })
+    );
+    for (const name of scanResults) {
+      if (name) {
+        const matchedPattern = isSensitive(name);
+        if (matchedPattern) {
+          filteredFiles.push({ filename: name, reason: matchedPattern });
+        }
+      }
+    }
+  }
+
+  // 并行读取所有 README 变体
+  const readmeNames = ["README.md", "readme.md", "README", "readme", "README.zh.md", "README_CN.md"];
+  const readmeResults = await Promise.all(readmeNames.map((name) => readFile(project.path, name)));
+  for (let i = 0; i < readmeNames.length; i++) {
+    if (readmeResults[i]) {
+      const matched = isSensitive(readmeNames[i]);
+      if (matched) {
+        filteredFiles.push({ filename: readmeNames[i], reason: matched });
+        continue;
+      }
+      readme = sanitizeContent(readmeResults[i]!);
+      files.push({ filename: readmeNames[i], content: readme, type: "readme" });
       break;
     }
   }
 
-  // 读取依赖文件
+  // 并行读取所有依赖文件
   const depFiles = [
-    "package.json",
-    "pom.xml",
-    "build.gradle",
-    "build.gradle.kts",
-    "Cargo.toml",
-    "go.mod",
-    "requirements.txt",
-    "pyproject.toml",
-    "composer.json",
-    "Gemfile",
+    "package.json", "pom.xml", "build.gradle", "build.gradle.kts",
+    "Cargo.toml", "go.mod", "requirements.txt", "pyproject.toml",
+    "composer.json", "Gemfile",
   ];
-
-  for (const depFile of depFiles) {
-    const content = await readFile(project.path, depFile);
-    if (content) {
-      dependencies = sanitizeContent(content);
-      files.push({
-        filename: depFile,
-        content: dependencies,
-        type: "dependency",
-      });
-      break; // 只读取第一个找到的依赖文件
+  const depResults = await Promise.all(depFiles.map((name) => readFile(project.path, name)));
+  for (let i = 0; i < depFiles.length; i++) {
+    if (depResults[i]) {
+      const matched = isSensitive(depFiles[i]);
+      if (matched) {
+        filteredFiles.push({ filename: depFiles[i], reason: matched });
+        continue;
+      }
+      dependencies = sanitizeContent(depResults[i]!);
+      files.push({ filename: depFiles[i], content: dependencies, type: "dependency" });
+      break;
     }
   }
 
-  // 读取其他配置文件（最多3个）
+  // 并行读取配置文件（最多取2个）
   const configFiles = [
-    "tsconfig.json",
-    "vite.config.ts",
-    "vite.config.js",
-    "webpack.config.js",
-    "docker-compose.yml",
-    "Dockerfile",
+    "tsconfig.json", "vite.config.ts", "vite.config.js",
+    "webpack.config.js", "docker-compose.yml", "Dockerfile",
   ];
-
+  const configResults = await Promise.all(configFiles.map((name) => readFile(project.path, name)));
   let configCount = 0;
-  for (const configFile of configFiles) {
+  for (let i = 0; i < configFiles.length; i++) {
     if (configCount >= 2) break;
-    const content = await readFile(project.path, configFile);
-    if (content) {
-      files.push({
-        filename: configFile,
-        content: sanitizeContent(content),
-        type: "config",
-      });
+    if (configResults[i]) {
+      const matched = isSensitive(configFiles[i]);
+      if (matched) {
+        filteredFiles.push({ filename: configFiles[i], reason: matched });
+        continue;
+      }
+      files.push({ filename: configFiles[i], content: sanitizeContent(configResults[i]!), type: "config" });
       configCount++;
     }
   }
 
-  // 合并技术栈
   const techStack = [...project.labels];
 
-  return {
-    project,
-    files,
-    readme,
-    dependencies,
-    techStack,
-  };
+  // 去重 filteredFiles（同一文件可能被主动扫描和正常读取都匹配到）
+  const uniqueFiltered = filteredFiles.filter((f, idx) =>
+    filteredFiles.findIndex((ff) => ff.filename === f.filename) === idx
+  );
+
+  return { project, files, filteredFiles: uniqueFiltered, readme, dependencies, techStack };
 }
 
 /**
@@ -219,13 +201,26 @@ function sanitizeContent(content: string): string {
 }
 
 /**
+ * Commit 统计数据（用于增强 AI prompt）
+ */
+export interface CommitAnalysisData {
+  totalCommits: number;
+  totalInsertions: number;
+  totalDeletions: number;
+  keyCommits: KeyCommit[];
+  timeRange: { start: string; end: string };
+  dependencyAnalysis?: DependencyAnalysis | null;
+}
+
+/**
  * 构建项目分析的 Prompt
  */
 export function buildProjectAnalysisPrompt(
   fileAnalysis: ProjectFileAnalysis,
-  jobDirection: "backend" | "frontend" | "fullstack"
+  jobDirection: "backend" | "frontend" | "fullstack",
+  commitData?: CommitAnalysisData
 ): string {
-  const { project, files, readme, dependencies, techStack } = fileAnalysis;
+  const { project, files } = fileAnalysis;
 
   // 文件内容摘要
   const fileContents = files
@@ -243,6 +238,37 @@ export function buildProjectAnalysisPrompt(
     fullstack: "全栈开发",
   }[jobDirection];
 
+  // 构建 commit 数据部分
+  let commitSection = "";
+  if (commitData) {
+    const keyCommitsDesc = commitData.keyCommits
+      .slice(0, 8)
+      .map((c) => `- [${c.type}] ${c.message} (+${c.insertions}/-${c.deletions})`)
+      .join("\n");
+
+    commitSection = `
+## Git 提交统计
+- 提交次数：${commitData.totalCommits}
+- 代码新增：${commitData.totalInsertions} 行
+- 代码删除：${commitData.totalDeletions} 行
+- 活跃时间：${formatDate(commitData.timeRange.start)} - ${formatDate(commitData.timeRange.end)}
+
+## 关键提交记录
+${keyCommitsDesc || "无关键提交"}
+`;
+
+    if (commitData.dependencyAnalysis) {
+      const dep = commitData.dependencyAnalysis;
+      commitSection += `
+## 依赖分析
+- 语言：${dep.language}
+${dep.framework ? `- 框架：${dep.framework}` : ""}
+- 关键库：${dep.keyLibraries.join(", ") || "无"}
+- 架构特征：${dep.architectureHints.join(", ") || "未检测"}
+`;
+    }
+  }
+
   return `请根据以下项目信息，为${directionDesc}岗位生成一份专业的项目经历描述。
 
 ## 项目基本信息
@@ -252,7 +278,7 @@ export function buildProjectAnalysisPrompt(
 
 ## 项目文件内容
 ${fileContents}
-
+${commitSection}
 ## 要求
 1. 根据以上文件内容，分析项目的真实技术栈和架构特点
 2. 生成符合 STAR 结构的项目经历：
@@ -264,6 +290,7 @@ ${fileContents}
 3. 技术栈必须基于文件内容分析得出，不能编造
 4. 如果 README 中有项目描述，请充分利用
 5. 如果依赖文件中有框架信息，请明确指出使用了什么框架
+${commitData ? "6. 结合 Git 提交统计和关键提交记录，让描述更加真实可信\n7. 时间跨度和代码量数据可以用来佐证项目规模" : ""}
 6. 每个字段控制在 100-200 字之间
 
 ## 输出格式
@@ -277,66 +304,7 @@ ${fileContents}
 }`;
 }
 
-/**
- * 综合分析所有项目生成完整简历的 Prompt
- */
-export function buildResumeSummaryPrompt(
-  projectAnalyses: Array<{
-    projectName: string;
-    techStack: string[];
-    experience: {
-      situation: string;
-      task: string;
-      action: string;
-      result: string;
-    };
-  }>,
-  jobDirection: "backend" | "frontend" | "fullstack"
-): string {
-  const directionDesc = {
-    backend: "后端开发工程师",
-    frontend: "前端开发工程师",
-    fullstack: "全栈开发工程师",
-  }[jobDirection];
-
-  const projectsSummary = projectAnalyses
-    .map(
-      (p, i) => `
-项目 ${i + 1}：${p.projectName}
-技术栈：${p.techStack.join(", ")}
-背景：${p.experience.situation}
-任务：${p.experience.task}
-行动：${p.experience.action}
-成果：${p.experience.result}
-`
-    )
-    .join("\n---\n");
-
-  return `你是一位资深的 ${directionDesc}，请根据以下项目经历，生成一份完整的简历。
-
-## 各项目经历
-${projectsSummary}
-
-## 要求
-1. 生成一份综合技术栈列表（去重，按重要性排序）
-2. 为每个项目优化描述，使其更加专业
-3. 确保所有技术术语准确无误
-4. 突出项目之间的技术关联和个人成长
-
-## 输出格式
-请严格按照以下 JSON 格式输出：
-{
-  "summary": "个人技术简介（50字左右）",
-  "skills": ["技术1", "技术2", "技术3"],
-  "projects": [
-    {
-      "projectName": "项目名称",
-      "techStack": ["技术1", "技术2"],
-      "situation": "...",
-      "task": "...",
-      "action": "...",
-      "result": "..."
-    }
-  ]
-}`;
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
 }

@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Bot, User, Loader2, XCircle, CheckCircle, FileText, Folder } from "lucide-react";
+import { Bot, Loader2, XCircle, CheckCircle, FileText } from "lucide-react";
 import { chatCancel, chatStream } from "@/services/chat";
-import { readProjectFiles, buildProjectAnalysisPrompt, buildResumeSummaryPrompt } from "@/services/resume/projectFileAnalyzer";
+import { readProjectFiles, buildProjectAnalysisPrompt } from "@/services/resume/projectFileAnalyzer";
+import type { CommitAnalysisData } from "@/services/resume/projectFileAnalyzer";
+import { getCommitHistory } from "@/services/git";
+import { parseProjectDependencies } from "@/services/resume/dependencyParser";
+import { analyzeCommits } from "./useResumeData";
 import type { AiProviderConfig, Project } from "@/types";
 import type { JobDirection, GeneratedResume, ProjectExperience } from "@/types/resume";
 
@@ -49,13 +53,13 @@ export function ProjectAnalyzer({
 }: ProjectAnalyzerProps) {
   const [steps, setSteps] = useState<AnalysisStep[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [phase, setPhase] = useState<"files" | "projects" | "summary">("files");
   const [streamRequestId, setStreamRequestId] = useState<string | null>(null);
   const [isComplete, setIsComplete] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamBufferRef = useRef<string>("");
   const thinkingBufferRef = useRef<string>("");
   const resultsRef = useRef<Map<string, AnalysisStep["result"]>>(new Map());
+  const commitDataRef = useRef<Map<string, CommitAnalysisData>>(new Map());
 
   // 初始化步骤
   useEffect(() => {
@@ -132,8 +136,8 @@ export function ProjectAnalyzer({
   // 分析单个项目
   const analyzeProject = async (index: number) => {
     if (index >= projects.length) {
-      // 所有项目分析完成，进行总结
-      generateSummary();
+      // 所有项目分析完成，直接完成生成
+      completeGeneration();
       return;
     }
 
@@ -144,23 +148,60 @@ export function ProjectAnalyzer({
     updateStep(index, { status: "reading_files" });
 
     try {
-      // 1. 读取项目文件
-      const fileAnalysis = await readProjectFiles(project);
+      // 1. 并行读取项目文件、获取提交历史和解析依赖
+      const [fileAnalysis, commits, dependencyAnalysis] = await Promise.all([
+        readProjectFiles(project),
+        getCommitHistory(project.path, 50).catch(() => []),
+        parseProjectDependencies(project.path).catch(() => null),
+      ]);
 
-      // 2. 更新状态为分析中
+      // 2. 分析提交数据
+      let commitData: CommitAnalysisData | undefined;
+      if (commits.length > 0) {
+        const commitStats = analyzeCommits(commits);
+        const dates = commits.map((c) => new Date(c.date));
+        const earliestDate = new Date(Math.min(...dates.map((d) => d.getTime())));
+        const latestDate = new Date(Math.max(...dates.map((d) => d.getTime())));
+
+        commitData = {
+          ...commitStats,
+          timeRange: {
+            start: earliestDate.toISOString(),
+            end: latestDate.toISOString(),
+          },
+          dependencyAnalysis,
+        };
+        commitDataRef.current.set(project.id, commitData);
+      }
+
+      // 3. 合并依赖分析到技术栈
+      if (dependencyAnalysis) {
+        if (dependencyAnalysis.framework && !fileAnalysis.techStack.includes(dependencyAnalysis.framework)) {
+          fileAnalysis.techStack.push(dependencyAnalysis.framework);
+        }
+        if (dependencyAnalysis.language) {
+          dependencyAnalysis.language.split(" / ").forEach((lang) => {
+            if (!fileAnalysis.techStack.includes(lang)) {
+              fileAnalysis.techStack.push(lang);
+            }
+          });
+        }
+      }
+
+      // 4. 更新状态为分析中
       updateStep(index, {
         status: "analyzing",
-        message: `已读取 ${fileAnalysis.files.length} 个文件`,
+        message: `已读取 ${fileAnalysis.files.length} 个文件${commits.length > 0 ? `，${commits.length} 条提交` : ""}`,
       });
 
-      // 3. 构建 Prompt
-      const prompt = buildProjectAnalysisPrompt(fileAnalysis, jobDirection);
+      // 5. 构建 Prompt（包含 commit 数据）
+      const prompt = buildProjectAnalysisPrompt(fileAnalysis, jobDirection, commitData);
 
-      // 4. 清空缓冲区
+      // 6. 清空缓冲区
       streamBufferRef.current = "";
       thinkingBufferRef.current = "";
 
-      // 5. 获取默认模型
+      // 7. 获取默认模型
       const defaultModel = provider.models.find((m) => m.isDefault && m.enabled) ??
                           provider.models.find((m) => m.enabled);
 
@@ -169,7 +210,7 @@ export function ProjectAnalyzer({
         return;
       }
 
-      // 6. 发送流式请求
+      // 8. 发送流式请求
       const requestId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       setStreamRequestId(requestId);
 
@@ -190,60 +231,6 @@ export function ProjectAnalyzer({
     }
   };
 
-  // 生成简历总结
-  const generateSummary = async () => {
-    setPhase("summary");
-
-    const projectResults = Array.from(resultsRef.current.entries()).map(([projectId, result]) => {
-      const project = projects.find((p) => p.id === projectId)!;
-      return {
-        projectName: project.name,
-        techStack: result?.techStack || [],
-        experience: {
-          situation: result?.situation || "",
-          task: result?.task || "",
-          action: result?.action || "",
-          result: result?.result || "",
-        },
-      };
-    });
-
-    const prompt = buildResumeSummaryPrompt(projectResults, jobDirection);
-
-    streamBufferRef.current = "";
-    thinkingBufferRef.current = "";
-
-    const defaultModel = provider.models.find((m) => m.isDefault && m.enabled) ??
-                        provider.models.find((m) => m.enabled);
-
-    if (!defaultModel) {
-      // 没有总结也直接完成
-      completeGeneration();
-      return;
-    }
-
-    const requestId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setStreamRequestId(requestId);
-
-    try {
-      await chatStream({
-        requestId,
-        providerId: provider.id,
-        model: defaultModel.model,
-        baseUrl: provider.baseUrl,
-        apiKey: provider.apiKey,
-        thinking: defaultModel.thinking,
-        stream: true,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7,
-        maxTokens: 3000,
-      });
-    } catch (err) {
-      // 总结失败也没关系，直接用项目结果
-      completeGeneration();
-    }
-  };
-
   const updateStep = (index: number, updates: Partial<AnalysisStep>) => {
     setSteps((prev) => {
       const updated = [...prev];
@@ -259,58 +246,44 @@ export function ProjectAnalyzer({
   const handleStreamComplete = () => {
     const content = streamBufferRef.current;
 
-    if (phase === "summary") {
-      // 解析总结结果
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          // 可以在这里使用总结结果
-        }
-      } catch {
-        // 解析失败也没关系
+    // 解析项目分析结果
+    let result: AnalysisStep["result"] = {
+      techStack: [],
+      situation: "",
+      task: "",
+      action: "",
+      result: "",
+    };
+
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        result = {
+          techStack: parsed.techStack || [],
+          situation: parsed.situation || "",
+          task: parsed.task || "",
+          action: parsed.action || "",
+          result: parsed.result || "",
+        };
       }
-      completeGeneration();
-    } else {
-      // 解析项目分析结果
-      let result: AnalysisStep["result"] = {
-        techStack: [],
-        situation: "",
-        task: "",
-        action: "",
-        result: "",
-      };
-
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          result = {
-            techStack: parsed.techStack || [],
-            situation: parsed.situation || "",
-            task: parsed.task || "",
-            action: parsed.action || "",
-            result: parsed.result || "",
-          };
-        }
-      } catch (err) {
-        console.error("解析项目结果失败:", err);
-      }
-
-      resultsRef.current.set(projects[currentIndex].id, result);
-
-      updateCurrentStep({
-        status: "completed",
-        result,
-      });
-
-      setStreamRequestId(null);
-
-      // 分析下一个项目
-      setTimeout(() => {
-        analyzeProject(currentIndex + 1);
-      }, 300);
+    } catch (err) {
+      console.error("解析项目结果失败:", err);
     }
+
+    resultsRef.current.set(projects[currentIndex].id, result);
+
+    updateCurrentStep({
+      status: "completed",
+      result,
+    });
+
+    setStreamRequestId(null);
+
+    // 分析下一个项目
+    setTimeout(() => {
+      analyzeProject(currentIndex + 1);
+    }, 300);
   };
 
   const handleStreamError = (error: string) => {
@@ -329,6 +302,7 @@ export function ProjectAnalyzer({
     // 构建最终的简历数据
     const experiences: ProjectExperience[] = projects.map((project) => {
       const result = resultsRef.current.get(project.id);
+      const commitData = commitDataRef.current.get(project.id);
       return {
         projectId: project.id,
         projectName: project.name,
@@ -336,16 +310,24 @@ export function ProjectAnalyzer({
         category: project.tags,
         labels: project.labels,
         techStack: result?.techStack || project.labels,
-        timeRange: {
+        dependencyAnalysis: commitData?.dependencyAnalysis ?? undefined,
+        timeRange: commitData?.timeRange ?? {
           start: new Date().toISOString(),
           end: new Date().toISOString(),
         },
-        commitStats: {
-          totalCommits: 0,
-          totalInsertions: 0,
-          totalDeletions: 0,
-          keyCommits: [],
-        },
+        commitStats: commitData
+          ? {
+              totalCommits: commitData.totalCommits,
+              totalInsertions: commitData.totalInsertions,
+              totalDeletions: commitData.totalDeletions,
+              keyCommits: commitData.keyCommits,
+            }
+          : {
+              totalCommits: 0,
+              totalInsertions: 0,
+              totalDeletions: 0,
+              keyCommits: [],
+            },
         starExperience: result
           ? {
               situation: result.situation,
@@ -412,17 +394,11 @@ export function ProjectAnalyzer({
           <div>
             <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
               <Bot size={20} className="text-blue-600" />
-              {phase === "summary" ? "综合分析中" : "项目分析中"}
+              项目分析中
             </h3>
             <p className="text-sm text-gray-500 mt-1">
-              {phase === "summary" ? (
-                "正在整合所有项目经历..."
-              ) : (
-                <>
-                  正在分析项目 {currentIndex + 1} / {projects.length}
-                  <span className="ml-2">{completedCount >= projects.length ? "✓" : "🔄"}</span>
-                </>
-              )}
+              正在分析项目 {currentIndex + 1} / {projects.length}
+              <span className="ml-2">{completedCount >= projects.length ? "✓" : "🔄"}</span>
             </p>
           </div>
           <button
@@ -458,17 +434,6 @@ export function ProjectAnalyzer({
               isPending={index > currentIndex}
             />
           ))}
-
-          {phase === "summary" && (
-            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="flex items-center gap-3">
-                <Bot size={20} className="text-blue-600" />
-                <div>
-                  <div className="font-medium text-blue-900">正在生成完整简历...</div>
-                  <div className="text-sm text-blue-600">整合所有项目经历，生成最终简历</div>
-                </div>
-              </div>            </div>
-          )}
 
           {isComplete && (
             <div className="p-4 bg-green-50 rounded-lg border border-green-200">

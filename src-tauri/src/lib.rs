@@ -433,6 +433,9 @@ pub fn run() {
             // Settings - AI Provider commands
             settings::get_ai_providers,
             settings::save_ai_providers,
+            // Settings - Sensitive File Patterns commands
+            settings::get_sensitive_file_patterns,
+            settings::save_sensitive_file_patterns,
             // Keyboard hook commands
             keyboard_hook::register_global_shortcuts,
             keyboard_hook::unregister_all_global_shortcuts,

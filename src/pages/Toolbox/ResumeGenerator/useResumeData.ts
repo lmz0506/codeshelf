@@ -7,7 +7,6 @@ import type {
   ResumeDataSource,
   ProjectExperience,
   KeyCommit,
-  DependencyAnalysis,
 } from "@/types/resume";
 import { analyzeCommitType, extractIssueRefs } from "@/types/resume";
 
@@ -261,7 +260,7 @@ async function analyzeProject(
       category: project.tags,
       labels: project.labels,
       techStack: [...new Set(techStack)],
-      dependencyAnalysis,
+      dependencyAnalysis: dependencyAnalysis ?? undefined,
       timeRange: {
         start: earliestDate.toISOString(),
         end: latestDate.toISOString(),
@@ -278,7 +277,7 @@ async function analyzeProject(
 /**
  * 分析提交记录
  */
-function analyzeCommits(commits: import("@/types").CommitInfo[]): {
+export function analyzeCommits(commits: import("@/types").CommitInfo[]): {
   totalCommits: number;
   totalInsertions: number;
   totalDeletions: number;
