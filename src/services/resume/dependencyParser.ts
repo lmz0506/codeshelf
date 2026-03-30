@@ -54,8 +54,8 @@ const SENSITIVE_CONTENT_KEYWORDS = [
  */
 function isSensitiveFile(filename: string): boolean {
   const lowerFilename = filename.toLowerCase();
-  return SENSITIVE_FILE_PATTERNS.some((pattern) =
-    pattern.test(lowerFilename)
+  return SENSITIVE_FILE_PATTERNS.some((p) =>
+    p.test(lowerFilename)
   );
 }
 
@@ -141,7 +141,6 @@ async function readDependencyFile(projectPath: string, filename: string): Promis
 async function parsePackageJson(content: string): Promise<DependencyAnalysis> {
   const json = JSON.parse(content);
   const deps = { ...json.dependencies, ...json.devDependencies };
-  const allDeps = Object.keys(deps);
 
   // 检测框架
   let framework: string | undefined;

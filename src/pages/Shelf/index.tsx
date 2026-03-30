@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { ProjectCard, ScanResultDialog, ProjectDetailPanel, AddProjectDialog, AddCategoryDialog, CategorySelector, LabelSelector } from "@/components/project";
 import { ResumeGenerator } from "../Toolbox/ResumeGenerator";
 import { FloatingCategoryBall, showToast } from "@/components/ui";
-import { MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark, ChevronLeft, ChevronRight, FileText, Wand2 } from "lucide-react";
+import { MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import type { Project, GitRepo, GitStatus } from "@/types";
 import { getProjects, addProject, removeProject, updateProject } from "@/services/db";
