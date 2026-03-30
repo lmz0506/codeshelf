@@ -11,6 +11,10 @@ import {
   Settings,
   Eye,
   FileDown,
+  ShieldAlert,
+  ChevronDown,
+  X,
+  Plus,
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { formatTimeRange } from "./useResumeData";
@@ -39,6 +43,8 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     setResumeGeneratorOpen,
     setResumeGeneratorAnalyzing,
     clearResumeGeneratorState,
+    sensitiveFilePatterns,
+    setSensitiveFilePatterns,
   } = useAppStore();
 
   // 从 store 恢复状态
@@ -53,7 +59,8 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   );
   const [showPreview, setShowPreview] = useState(false);
   const [showProjectAnalyzer, setShowProjectAnalyzer] = useState(false);
-  const [isUserClosing, setIsUserClosing] = useState(false);
+  const [showSensitiveConfig, setShowSensitiveConfig] = useState(false);
+  const [newPatternInput, setNewPatternInput] = useState("");
 
   // 组件挂载时标记为打开
   useEffect(() => {
@@ -118,7 +125,6 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       return;
     }
     // 直接启动项目分析器
-    setIsUserClosing(false);
     setShowProjectAnalyzer(true);
     setResumeGeneratorAnalyzing(true);
   };
@@ -140,7 +146,6 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       return;
     }
 
-    setIsUserClosing(false);
     setShowProjectAnalyzer(true);
     setResumeGeneratorAnalyzing(true);
   };
@@ -163,7 +168,6 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
 
   // 用户主动取消生成
   const handleUserCancel = () => {
-    setIsUserClosing(true);
     setShowProjectAnalyzer(false);
     setResumeGeneratorAnalyzing(false);
   };
@@ -429,6 +433,76 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
         )}
       </div>
 
+      {/* 敏感文件过滤规则 */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button
+          onClick={() => setShowSensitiveConfig(!showSensitiveConfig)}
+          className="w-full flex items-center justify-between p-3 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          <div className="flex items-center gap-2">
+            <ShieldAlert size={16} className="text-amber-500" />
+            <span>敏感文件过滤规则</span>
+            <span className="text-xs text-gray-400">({sensitiveFilePatterns.length} 条)</span>
+          </div>
+          <ChevronDown size={16} className={`text-gray-400 transition-transform ${showSensitiveConfig ? "rotate-180" : ""}`} />
+        </button>
+        {showSensitiveConfig && (
+          <div className="px-3 pb-3 space-y-2 border-t border-gray-100">
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {sensitiveFilePatterns.map((pattern) => (
+                <span
+                  key={pattern}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200"
+                >
+                  <span className="font-mono">{pattern}</span>
+                  <button
+                    onClick={() => setSensitiveFilePatterns(sensitiveFilePatterns.filter((p) => p !== pattern))}
+                    className="text-amber-400 hover:text-amber-600"
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+              {sensitiveFilePatterns.length === 0 && (
+                <span className="text-xs text-gray-400">无过滤规则</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newPatternInput}
+                onChange={(e) => setNewPatternInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newPatternInput.trim()) {
+                    const p = newPatternInput.trim();
+                    if (!sensitiveFilePatterns.includes(p)) {
+                      setSensitiveFilePatterns([...sensitiveFilePatterns, p]);
+                    }
+                    setNewPatternInput("");
+                  }
+                }}
+                placeholder="输入 glob 模式，如 *.key"
+                className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-300"
+              />
+              <button
+                onClick={() => {
+                  const p = newPatternInput.trim();
+                  if (p && !sensitiveFilePatterns.includes(p)) {
+                    setSensitiveFilePatterns([...sensitiveFilePatterns, p]);
+                  }
+                  setNewPatternInput("");
+                }}
+                disabled={!newPatternInput.trim()}
+                className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                <Plus size={12} />
+                添加
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between pt-4 border-t border-gray-200">
         <div className="text-xs text-gray-500" />
         <button
@@ -666,7 +740,8 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       )}
 
       {/* 项目分析器 - AI 对话和文件分析 */}
-      {showProjectAnalyzer && defaultProvider && (
+      {/* 分析期间保持组件挂载，避免关闭弹窗后重新打开丢失状态 */}
+      {(showProjectAnalyzer || resumeGeneratorState.isAnalyzing) && defaultProvider && (
         <ProjectAnalyzer
           isOpen={showProjectAnalyzer}
           onClose={handleCloseAnalyzer}
@@ -676,7 +751,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
           onComplete={handleGenerationComplete}
           onError={handleGenerationError}
           onUserCancel={handleUserCancel}
-          isUserClosing={isUserClosing}
+          sensitivePatterns={sensitiveFilePatterns}
         />
       )}
     </div>

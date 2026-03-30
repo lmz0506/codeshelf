@@ -568,6 +568,9 @@ pub async fn get_sensitive_file_patterns() -> Result<Vec<String>, String> {
             ".npmrc".to_string(), ".pypirc".to_string(),
             "id_rsa".to_string(), "id_ed25519".to_string(),
             "config.local.json".to_string(),
+            "application*.yml".to_string(), "application*.yaml".to_string(),
+            "application*.properties".to_string(),
+            "bootstrap*.yml".to_string(), "bootstrap*.yaml".to_string(),
         ]);
     }
 

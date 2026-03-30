@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Bot, Loader2, XCircle, CheckCircle, FileText } from "lucide-react";
+import { Bot, Loader2, XCircle, CheckCircle, FileText, X, AlertTriangle, ShieldAlert, ChevronDown } from "lucide-react";
 import { chatCancel, chatStream } from "@/services/chat";
 import { readProjectFiles, buildProjectAnalysisPrompt } from "@/services/resume/projectFileAnalyzer";
 import type { CommitAnalysisData } from "@/services/resume/projectFileAnalyzer";
@@ -19,7 +19,7 @@ interface ProjectAnalyzerProps {
   onComplete: (resume: GeneratedResume) => void;
   onError: (error: string) => void;
   onUserCancel: () => void;
-  isUserClosing: boolean;
+  sensitivePatterns?: string[];
 }
 
 interface AnalysisStep {
@@ -30,6 +30,7 @@ interface AnalysisStep {
   message?: string;
   aiResponse?: string;
   thinkingContent?: string;
+  filteredFiles?: { filename: string; reason: string }[];
   result?: {
     techStack: string[];
     situation: string;
@@ -49,17 +50,23 @@ export function ProjectAnalyzer({
   onComplete,
   onError,
   onUserCancel,
-  isUserClosing,
+  sensitivePatterns,
 }: ProjectAnalyzerProps) {
   const [steps, setSteps] = useState<AnalysisStep[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [streamRequestId, setStreamRequestId] = useState<string | null>(null);
   const [isComplete, setIsComplete] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isUserScrollingRef = useRef(false);
   const streamBufferRef = useRef<string>("");
   const thinkingBufferRef = useRef<string>("");
   const resultsRef = useRef<Map<string, AnalysisStep["result"]>>(new Map());
   const commitDataRef = useRef<Map<string, CommitAnalysisData>>(new Map());
+
+  const isAnalyzing = !isComplete && steps.length > 0 && steps.some(
+    (s) => s.status !== "completed" && s.status !== "error"
+  );
 
   // 初始化步骤
   useEffect(() => {
@@ -72,14 +79,27 @@ export function ProjectAnalyzer({
         timestamp: Date.now(),
       }));
       setSteps(initialSteps);
-      // 开始分析第一个项目
       analyzeProject(0);
     }
   }, [isOpen, projects]);
 
-  // 滚动到底部
+  // 处理滚动容器的用户滚动检测
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+    // 在距底部 30px 范围内认为用户在底部
+    isUserScrollingRef.current = distanceFromBottom > 30;
+  }, []);
+
+  // 自动滚动到底部（仅在用户没有手动滚动时）
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!isUserScrollingRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [steps, currentIndex]);
 
   // 监听流式消息
@@ -136,7 +156,6 @@ export function ProjectAnalyzer({
   // 分析单个项目
   const analyzeProject = async (index: number) => {
     if (index >= projects.length) {
-      // 所有项目分析完成，直接完成生成
       completeGeneration();
       return;
     }
@@ -144,18 +163,15 @@ export function ProjectAnalyzer({
     setCurrentIndex(index);
     const project = projects[index];
 
-    // 更新状态为读取文件
     updateStep(index, { status: "reading_files" });
 
     try {
-      // 1. 并行读取项目文件、获取提交历史和解析依赖
       const [fileAnalysis, commits, dependencyAnalysis] = await Promise.all([
-        readProjectFiles(project),
+        readProjectFiles(project, sensitivePatterns),
         getCommitHistory(project.path, 50).catch(() => []),
         parseProjectDependencies(project.path).catch(() => null),
       ]);
 
-      // 2. 分析提交数据
       let commitData: CommitAnalysisData | undefined;
       if (commits.length > 0) {
         const commitStats = analyzeCommits(commits);
@@ -174,7 +190,6 @@ export function ProjectAnalyzer({
         commitDataRef.current.set(project.id, commitData);
       }
 
-      // 3. 合并依赖分析到技术栈
       if (dependencyAnalysis) {
         if (dependencyAnalysis.framework && !fileAnalysis.techStack.includes(dependencyAnalysis.framework)) {
           fileAnalysis.techStack.push(dependencyAnalysis.framework);
@@ -188,20 +203,17 @@ export function ProjectAnalyzer({
         }
       }
 
-      // 4. 更新状态为分析中
       updateStep(index, {
         status: "analyzing",
         message: `已读取 ${fileAnalysis.files.length} 个文件${commits.length > 0 ? `，${commits.length} 条提交` : ""}`,
+        filteredFiles: fileAnalysis.filteredFiles.length > 0 ? fileAnalysis.filteredFiles : undefined,
       });
 
-      // 5. 构建 Prompt（包含 commit 数据）
       const prompt = buildProjectAnalysisPrompt(fileAnalysis, jobDirection, commitData);
 
-      // 6. 清空缓冲区
       streamBufferRef.current = "";
       thinkingBufferRef.current = "";
 
-      // 7. 获取默认模型
       const defaultModel = provider.models.find((m) => m.isDefault && m.enabled) ??
                           provider.models.find((m) => m.enabled);
 
@@ -210,7 +222,6 @@ export function ProjectAnalyzer({
         return;
       }
 
-      // 8. 发送流式请求
       const requestId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       setStreamRequestId(requestId);
 
@@ -246,7 +257,6 @@ export function ProjectAnalyzer({
   const handleStreamComplete = () => {
     const content = streamBufferRef.current;
 
-    // 解析项目分析结果
     let result: AnalysisStep["result"] = {
       techStack: [],
       situation: "",
@@ -280,7 +290,6 @@ export function ProjectAnalyzer({
 
     setStreamRequestId(null);
 
-    // 分析下一个项目
     setTimeout(() => {
       analyzeProject(currentIndex + 1);
     }, 300);
@@ -299,7 +308,6 @@ export function ProjectAnalyzer({
     setIsComplete(true);
     setStreamRequestId(null);
 
-    // 构建最终的简历数据
     const experiences: ProjectExperience[] = projects.map((project) => {
       const result = resultsRef.current.get(project.id);
       const commitData = commitDataRef.current.get(project.id);
@@ -340,7 +348,6 @@ export function ProjectAnalyzer({
       };
     });
 
-    // 收集所有技术栈
     const allTechStack = new Set<string>();
     experiences.forEach((exp) => {
       exp.techStack.forEach((tech) => allTechStack.add(tech));
@@ -359,27 +366,18 @@ export function ProjectAnalyzer({
     onComplete(resume);
   };
 
-  // 处理关闭 - 区分用户主动取消 vs 菜单切换
+  // 关闭弹窗（只隐藏，不终止分析）
   const handleClose = () => {
-    if (isUserClosing) {
-      // 用户主动点击取消，停止分析
-      if (streamRequestId) {
-        chatCancel(streamRequestId);
-      }
-      onUserCancel();
-    } else {
-      // 菜单切换导致关闭，只隐藏界面，继续分析
-      onClose();
-    }
+    onClose();
   };
 
-  // 监听 isUserClosing 变化 - 如果变为 true 表示用户主动取消
-  useEffect(() => {
-    if (isUserClosing && streamRequestId) {
+  // 终止分析
+  const handleCancel = () => {
+    if (streamRequestId) {
       chatCancel(streamRequestId);
-      onUserCancel();
     }
-  }, [isUserClosing, streamRequestId, onUserCancel]);
+    onUserCancel();
+  };
 
   if (!isOpen) return null;
 
@@ -394,20 +392,32 @@ export function ProjectAnalyzer({
           <div>
             <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
               <Bot size={20} className="text-blue-600" />
-              项目分析中
+              {isComplete ? "分析完成" : "项目分析中"}
             </h3>
             <p className="text-sm text-gray-500 mt-1">
-              正在分析项目 {currentIndex + 1} / {projects.length}
-              <span className="ml-2">{completedCount >= projects.length ? "✓" : "🔄"}</span>
+              {isComplete
+                ? `已完成 ${projects.length} 个项目的分析`
+                : `正在分析项目 ${Math.min(currentIndex + 1, projects.length)} / ${projects.length}`}
             </p>
           </div>
-          <button
-            onClick={handleClose}
-            className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1"
-          >
-            <XCircle size={14} />
-            取消
-          </button>
+          <div className="flex items-center gap-2">
+            {isAnalyzing && (
+              <button
+                onClick={handleCancel}
+                className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1"
+              >
+                <XCircle size={14} />
+                终止分析
+              </button>
+            )}
+            <button
+              onClick={handleClose}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+              title="关闭"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Progress */}
@@ -425,7 +435,11 @@ export function ProjectAnalyzer({
         </div>
 
         {/* Steps */}
-        <div className="flex-1 overflow-auto p-4 space-y-3">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-auto p-4 space-y-3"
+        >
           {steps.map((step, index) => (
             <ProjectAnalysisCard
               key={step.id}
@@ -443,12 +457,14 @@ export function ProjectAnalyzer({
                   <div className="font-medium text-green-900">简历生成完成！</div>
                   <div className="text-sm text-green-600">所有项目分析完成，可以查看和编辑</div>
                 </div>
-              </div>            </div>
+              </div>
+            </div>
           )}
 
           <div ref={messagesEndRef} />
         </div>
-      </div>    </div>
+      </div>
+    </div>
   );
 }
 
@@ -462,6 +478,7 @@ function ProjectAnalysisCard({
   isPending: boolean;
 }) {
   const [showDetails, setShowDetails] = useState(false);
+  const [showFilteredFiles, setShowFilteredFiles] = useState(false);
 
   const getStatusIcon = () => {
     switch (step.status) {
@@ -501,7 +518,8 @@ function ProjectAnalysisCard({
         <div className="flex items-center gap-3">
           {getStatusIcon()}
           <span className="text-sm text-gray-500">{step.projectName}</span>
-        </div>      </div>
+        </div>
+      </div>
     );
   }
 
@@ -512,13 +530,40 @@ function ProjectAnalysisCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
             <span className="font-medium text-gray-900">{step.projectName}</span>
-            <span className="text-xs text-gray-500">{getStatusText()}</span>          </div>
+            <span className="text-xs text-gray-500">{getStatusText()}</span>
+          </div>
 
           {step.message && (
             <div className="mt-1 text-xs text-gray-500 flex items-center gap-1">
               <FileText size={12} />
               {step.message}
-            </div>          )}
+            </div>
+          )}
+
+          {/* 敏感文件过滤提示 */}
+          {step.filteredFiles && step.filteredFiles.length > 0 && (
+            <div className="mt-1.5">
+              <button
+                onClick={() => setShowFilteredFiles(!showFilteredFiles)}
+                className="text-xs text-amber-600 hover:text-amber-700 flex items-center gap-1"
+              >
+                <ShieldAlert size={12} />
+                已过滤 {step.filteredFiles.length} 个敏感文件
+                <ChevronDown size={12} className={`transition-transform ${showFilteredFiles ? "rotate-180" : ""}`} />
+              </button>
+              {showFilteredFiles && (
+                <div className="mt-1 p-2 bg-amber-50 rounded text-xs space-y-0.5">
+                  {step.filteredFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 text-amber-700">
+                      <AlertTriangle size={10} className="flex-shrink-0" />
+                      <span className="font-mono">{f.filename}</span>
+                      <span className="text-amber-500">({f.reason})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 思考过程 */}
           {step.thinkingContent && (
@@ -528,7 +573,8 @@ function ProjectAnalysisCard({
               </summary>
               <div className="mt-2 p-2 bg-gray-100 rounded text-xs text-gray-600 whitespace-pre-wrap max-h-32 overflow-auto">
                 {step.thinkingContent}
-              </div>            </details>
+              </div>
+            </details>
           )}
 
           {/* AI 响应 */}
@@ -550,8 +596,10 @@ function ProjectAnalysisCard({
                           {step.result.techStack.map((tech) => (
                             <span key={tech} className="px-1.5 py-0.5 bg-white rounded text-xs">
                               {tech}
-                            </span>                          ))}
-                        </div>                      </div>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                       <div>
                         <span className="text-xs text-gray-500">背景：</span>
                         <p className="mt-0.5 text-gray-700">{step.result.situation}</p>
@@ -567,10 +615,17 @@ function ProjectAnalysisCard({
                       <div>
                         <span className="text-xs text-gray-500">成果：</span>
                         <p className="mt-0.5 text-gray-700">{step.result.result}</p>
-                      </div>                    </div>                  ) : (
-                    <pre className="text-xs text-gray-600 whitespace-pre-wrap">{step.aiResponse.slice(0, 500)}...</pre>                  )}
-                </div>              )}
-            </div>          )}
-        </div>      </div>    </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <pre className="text-xs text-gray-600 whitespace-pre-wrap">{step.aiResponse.slice(0, 500)}...</pre>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
