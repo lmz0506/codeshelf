@@ -605,3 +605,39 @@ pub async fn reset_recommended_template() -> Result<(), String> {
     }
     Ok(())
 }
+
+// ============== 简历数据持久化 ==============
+
+#[tauri::command]
+pub async fn get_resumes() -> Result<serde_json::Value, String> {
+    let config = get_storage_config()?;
+    let path = config.resumes_file();
+
+    if !path.exists() {
+        return Ok(serde_json::json!([]));
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("读取简历数据失败: {}", e))?;
+
+    if content.trim().is_empty() {
+        return Ok(serde_json::json!([]));
+    }
+
+    let data: serde_json::Value = serde_json::from_str(&content)
+        .unwrap_or(serde_json::json!([]));
+    Ok(data)
+}
+
+#[tauri::command]
+pub async fn save_resumes(data: serde_json::Value) -> Result<(), String> {
+    let config = get_storage_config()?;
+    config.ensure_dirs()?;
+
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("序列化简历数据失败: {}", e))?;
+
+    fs::write(config.resumes_file(), content)
+        .map_err(|e| format!("保存简历数据失败: {}", e))?;
+    Ok(())
+}

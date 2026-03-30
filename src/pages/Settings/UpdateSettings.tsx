@@ -91,7 +91,7 @@ export function UpdateSettings() {
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-green-700">
                 <Download size={16} />
-                <span className="text-sm font-medium">发现新版本：v{updateInfo.version}</span>
+                <span className="text-sm font-medium">发现新版本{updateInfo.version ? `：v${updateInfo.version}` : ''}</span>
               </div>
               {updateInfo.body && (
                 <div className="text-xs text-gray-600 whitespace-pre-wrap max-h-32 overflow-y-auto">

@@ -15,6 +15,9 @@ import {
   ChevronDown,
   X,
   Plus,
+  Save,
+  History,
+  Trash2,
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { formatTimeRange } from "./useResumeData";
@@ -45,6 +48,10 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     clearResumeGeneratorState,
     sensitiveFilePatterns,
     setSensitiveFilePatterns,
+    savedResumes,
+    saveCurrentResume,
+    loadSavedResume,
+    deleteSavedResume,
   } = useAppStore();
 
   // 从 store 恢复状态
@@ -157,6 +164,10 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     setResumeGeneratorAnalyzing(false);
     setActiveTab("preview"); // 自动切换到预览标签
     showToast("success", "简历生成完成");
+    // 自动保存到持久化存储
+    setTimeout(() => {
+      useAppStore.getState().saveCurrentResume();
+    }, 100);
   };
 
   // 处理生成错误
@@ -191,6 +202,10 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       updatedAt: new Date().toISOString(),
     };
     setGeneratedResume(newResume);
+    // 自动保存编辑后的内容
+    setTimeout(() => {
+      useAppStore.getState().saveCurrentResume();
+    }, 100);
   }, [resumeGeneratorState.generatedResume]);
 
   // 导出 Markdown（让用户选择路径）
@@ -239,6 +254,27 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     } catch (err) {
       showToast("error", "重新生成失败");
     }
+  };
+
+  // 加载已保存的简历
+  const handleLoadResume = (resume: GeneratedResume) => {
+    loadSavedResume(resume);
+    setSelectedDirection(resume.jobDirection);
+    setSelectedProjects(new Set(resume.experiences.map((e) => e.projectId)));
+    setActiveTab("preview");
+  };
+
+  // 删除已保存的简历
+  const handleDeleteResume = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    await deleteSavedResume(id);
+    showToast("success", "已删除简历记录");
+  };
+
+  // 手动保存
+  const handleSaveResume = async () => {
+    await saveCurrentResume();
+    showToast("success", "简历已保存");
   };
 
   // 切换岗位方向
@@ -630,6 +666,13 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
               >
                 <RefreshCw size={14} />
                 {resumeGeneratorState.isAnalyzing ? "生成中..." : "重新生成"}
+              </button>
+              <button
+                onClick={handleSaveResume}
+                className="px-3 py-1.5 text-xs border border-green-200 text-green-700 rounded-lg hover:bg-green-50 flex items-center gap-1"
+              >
+                <Save size={14} />
+                保存
               </button>
               <button
                 onClick={handleExportMarkdown}

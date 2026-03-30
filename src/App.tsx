@@ -12,6 +12,7 @@ import { ToastContainer, UpdateNotification, ShortcutQuickLookup, ClipboardQuick
 import { useAppStore } from "@/stores/appStore";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import type { Project, Notification, AppShortcutBinding, AiProviderConfig } from "@/types";
+import type { GeneratedResume } from "@/types/resume";
 import type { ToolType } from "@/types/toolbox";
 import type { EditorConfig, TerminalConfig, Theme } from "@/stores/appStore";
 
@@ -62,7 +63,7 @@ async function initializeApp() {
 
   try {
     // 并行加载所有数据
-    const [settings, labels, categories, editors, terminal, projects, uiState, notifications, appShortcuts, aiProviders, sensitiveFilePatterns] = await Promise.all([
+    const [settings, labels, categories, editors, terminal, projects, uiState, notifications, appShortcuts, aiProviders, sensitiveFilePatterns, savedResumes] = await Promise.all([
       invoke<AppSettings>("get_app_settings"),
       invoke<string[]>("get_labels"),
       invoke<string[]>("get_categories"),
@@ -74,6 +75,7 @@ async function initializeApp() {
       invoke<AppShortcutBinding[]>("get_app_shortcuts"),
       invoke<AiProviderConfig[]>("get_ai_providers"),
       invoke<string[]>("get_sensitive_file_patterns"),
+      invoke<GeneratedResume[]>("get_resumes"),
     ]);
 
     // 转换终端配置格式
@@ -114,6 +116,7 @@ async function initializeApp() {
       appShortcuts: appShortcuts || [],
       aiProviders: normalizedAiProviders,
       sensitiveFilePatterns: sensitiveFilePatterns || [],
+      savedResumes: savedResumes || [],
       initialized: true,
     });
 

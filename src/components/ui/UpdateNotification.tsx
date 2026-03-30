@@ -43,7 +43,7 @@ export function UpdateNotification() {
         // 记录到通知中心（含更新说明）
         showToast(
           "info",
-          `发现新版本 v${info.version}`,
+          `发现新版本${info.version ? ` v${info.version}` : ''}`,
           notes,
         );
         // 自动开始下载
@@ -70,7 +70,7 @@ export function UpdateNotification() {
       const notes = getReleaseNotes(info);
       showToast(
         "success",
-        `v${info.version} 更新已就绪`,
+        `${info.version ? `v${info.version} ` : ''}更新已就绪`,
         notes,
       );
     } catch (error) {
@@ -144,7 +144,7 @@ export function UpdateNotification() {
                   ? "更新已就绪"
                   : state === "error"
                   ? "自动更新失败"
-                  : `发现新版本 v${updateInfo?.version}`}
+                  : `发现新版本${updateInfo?.version ? ` v${updateInfo.version}` : ''}`}
               </p>
               <p className="text-xs text-gray-500 mt-0.5">
                 {state === "downloading"

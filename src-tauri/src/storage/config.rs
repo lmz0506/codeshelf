@@ -145,6 +145,10 @@ impl StorageConfig {
     pub fn sensitive_file_patterns_file(&self) -> PathBuf {
         self.data_dir.join("sensitive_file_patterns.json")
     }
+
+    pub fn resumes_file(&self) -> PathBuf {
+        self.data_dir.join("resumes.json")
+    }
 }
 
 /// 初始化存储配置

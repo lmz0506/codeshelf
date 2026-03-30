@@ -161,6 +161,12 @@ interface AppState {
     isOpen: boolean;
     isAnalyzing: boolean; // 是否正在分析中（用于菜单切换时保持）
   };
+  // 已保存的简历列表（持久化到后端）
+  savedResumes: GeneratedResume[];
+  setSavedResumes: (resumes: GeneratedResume[]) => void;
+  saveCurrentResume: () => Promise<void>;
+  loadSavedResume: (resume: GeneratedResume) => void;
+  deleteSavedResume: (id: string) => Promise<void>;
   setResumeGeneratorData: (data: ResumeDataSource | null) => void;
   setGeneratedResume: (resume: GeneratedResume | null) => void;
   setResumeGeneratorDirection: (direction: JobDirection) => void;
@@ -535,6 +541,51 @@ export const useAppStore = create<AppState>()((set, get) => ({
     selectedProjects: [],
     isOpen: false,
     isAnalyzing: false,
+  },
+  savedResumes: [],
+  setSavedResumes: (savedResumes) => set({ savedResumes }),
+  saveCurrentResume: async () => {
+    const state = get();
+    const resume = state.resumeGeneratorState.generatedResume;
+    if (!resume) return;
+    const saved = { ...resume, isSaved: true, updatedAt: new Date().toISOString() };
+    // 替换或新增
+    const existing = state.savedResumes.findIndex((r) => r.id === saved.id);
+    const updated = [...state.savedResumes];
+    if (existing >= 0) {
+      updated[existing] = saved;
+    } else {
+      updated.unshift(saved);
+    }
+    set({ savedResumes: updated });
+    set((s) => ({ resumeGeneratorState: { ...s.resumeGeneratorState, generatedResume: saved } }));
+    try {
+      await invoke("save_resumes", { data: updated });
+    } catch (err) {
+      console.error("保存简历失败:", err);
+    }
+  },
+  loadSavedResume: (resume) => set((state) => ({
+    resumeGeneratorState: {
+      ...state.resumeGeneratorState,
+      generatedResume: resume,
+      selectedDirection: resume.jobDirection,
+      selectedProjects: resume.experiences.map((e) => e.projectId),
+    },
+  })),
+  deleteSavedResume: async (id) => {
+    const state = get();
+    const updated = state.savedResumes.filter((r) => r.id !== id);
+    set({ savedResumes: updated });
+    // 如果当前正在查看的简历被删除，清除当前状态
+    if (state.resumeGeneratorState.generatedResume?.id === id) {
+      set((s) => ({ resumeGeneratorState: { ...s.resumeGeneratorState, generatedResume: null } }));
+    }
+    try {
+      await invoke("save_resumes", { data: updated });
+    } catch (err) {
+      console.error("删除简历失败:", err);
+    }
   },
   setResumeGeneratorData: (data) => set((state) => ({
     resumeGeneratorState: { ...state.resumeGeneratorState, data },

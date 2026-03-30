@@ -217,14 +217,6 @@ pub fn run() {
             // 启动剪贴板监控
             commands::toolbox::clipboard::start_clipboard_monitor(app.handle().clone());
 
-            // 仅在 debug 或 devtools feature 启用时打开开发者工具
-            #[cfg(any(debug_assertions, feature = "devtools"))]
-            {
-                if let Some(window) = app.get_webview_window("main") {
-                    window.open_devtools();
-                }
-            }
-
             Ok(())
         })
         // 拦截窗口关闭事件：隐藏到托盘而不是退出
@@ -444,6 +436,9 @@ pub fn run() {
             // Settings - Sensitive File Patterns commands
             settings::get_sensitive_file_patterns,
             settings::save_sensitive_file_patterns,
+            // Settings - Resume commands
+            settings::get_resumes,
+            settings::save_resumes,
             // Keyboard hook commands
             keyboard_hook::register_global_shortcuts,
             keyboard_hook::unregister_all_global_shortcuts,
