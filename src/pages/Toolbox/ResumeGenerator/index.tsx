@@ -576,6 +576,57 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
           </div>
         </div>
       )}
+
+      {/* 已保存的简历历史 */}
+      {savedResumes.length > 0 && (
+        <div className="pt-4 border-t border-gray-200">
+          <div className="flex items-center gap-2 mb-3">
+            <History size={16} className="text-gray-500" />
+            <h3 className="text-sm font-medium text-gray-900">历史简历</h3>
+            <span className="text-xs text-gray-400">({savedResumes.length})</span>
+          </div>
+          <div className="space-y-2 max-h-[200px] overflow-auto">
+            {savedResumes.map((resume) => (
+              <div
+                key={resume.id}
+                onClick={() => handleLoadResume(resume)}
+                className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition-all group"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-900">
+                      {JOB_DIRECTIONS.find((d) => d.id === resume.jobDirection)?.name || resume.jobDirection}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {resume.experiences.length} 个项目
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {new Date(resume.updatedAt || resume.createdAt).toLocaleString("zh-CN")}
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {resume.experiences.slice(0, 3).map((e) => (
+                      <span key={e.projectId} className="px-1.5 py-0.5 rounded text-[10px] bg-gray-100 text-gray-600">
+                        {e.projectName}
+                      </span>
+                    ))}
+                    {resume.experiences.length > 3 && (
+                      <span className="text-[10px] text-gray-400">+{resume.experiences.length - 3}</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={(e) => handleDeleteResume(e, resume.id)}
+                  className="p-1.5 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                  title="删除"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 
