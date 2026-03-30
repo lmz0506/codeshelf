@@ -47,7 +47,7 @@ export function UpdateNotification() {
           notes,
         );
         // 自动开始下载
-        startDownload();
+        startDownload(info);
       } else {
         setState("idle");
       }
@@ -58,7 +58,7 @@ export function UpdateNotification() {
     return () => clearTimeout(timer);
   }, []);
 
-  async function startDownload() {
+  async function startDownload(info: UpdateInfo) {
     setState("downloading");
     setProgress(0);
     try {
@@ -67,11 +67,10 @@ export function UpdateNotification() {
       });
       setState("ready");
       setShowNotes(true);
-      // 记录下载完成（含更新说明，写入通知中心）
-      const notes = getReleaseNotes(updateInfo);
+      const notes = getReleaseNotes(info);
       showToast(
         "success",
-        `v${updateInfo?.version} 更新已就绪`,
+        `v${info.version} 更新已就绪`,
         notes,
       );
     } catch (error) {
