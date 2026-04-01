@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { MessageSquare, X, Plus, Pencil, Trash2, Send, Square } from "lucide-react";
+import { MessageSquare, X, Plus, Pencil, Trash2, Send, Square, Paperclip } from "lucide-react";
+import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import { AiProviderSettings, type AiProviderSettingsHandle } from "@/pages/Settings/AiProviderSettings";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
@@ -68,13 +70,14 @@ function getDefaultOptionKey(providers: AiProviderConfig[]): string | null {
   return `${defaultProvider.id}:${defaultModel.id}`;
 }
 
-function buildMessage(role: ChatMessage["role"], content: string, thinkingContent?: string): ChatMessage {
+function buildMessage(role: ChatMessage["role"], content: string, thinkingContent?: string, attachments?: Array<{ name: string; path: string }>): ChatMessage {
   const newVar = {
     id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     role,
     content,
     createdAt: new Date().toISOString(),
     thinkingContent,
+    attachments,
   };
   return newVar;
 }
@@ -98,6 +101,7 @@ export function AiProvidersPage() {
   const [showChatFull, setShowChatFull] = useState(true);
   const [expandedThinkingIds, setExpandedThinkingIds] = useState<Set<string>>(new Set());
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; content: string; path: string }>>([]);
   const streamBufferRef = useRef<string>("");
   const thinkingBufferRef = useRef<string>("");
   const sessionLoadSeq = useRef(0);
@@ -336,10 +340,63 @@ export function AiProvidersPage() {
     }
   }
 
+  async function handleAttachFiles() {
+    try {
+      const selected = await dialogOpen({
+        multiple: true,
+        title: "选择要附加的文件",
+        filters: [
+          {
+            name: "文本文件",
+            extensions: [
+              "txt", "md", "json", "js", "ts", "tsx", "jsx", "py", "java",
+              "c", "cpp", "h", "hpp", "rs", "go", "rb", "php", "html", "css",
+              "scss", "less", "xml", "yaml", "yml", "toml", "ini", "cfg",
+              "sh", "bash", "zsh", "sql", "vue", "svelte", "swift", "kt",
+              "csv", "log", "env", "conf", "gitignore", "dockerfile",
+            ],
+          },
+        ],
+      });
+      if (!selected) return;
+      const paths = Array.isArray(selected) ? selected : [selected];
+      const newFiles: Array<{ name: string; content: string; path: string }> = [];
+      for (const filePath of paths) {
+        const p = typeof filePath === "string" ? filePath : (filePath as { path: string }).path;
+        try {
+          const content = await readTextFile(p);
+          const name = p.split("/").pop() ?? p.split("\\").pop() ?? p;
+          newFiles.push({ name, content, path: p });
+        } catch {
+          showToast("warning", `无法读取文件: ${p}`);
+        }
+      }
+      if (newFiles.length > 0) {
+        setAttachedFiles((prev) => [...prev, ...newFiles]);
+      }
+    } catch {
+      showToast("error", "选择文件失败");
+    }
+  }
+
   async function handleSend() {
-    if (!activeSession || !selected || !input.trim() || streaming) return;
-    const content = input.trim();
-    const userMessage = buildMessage("user", content);
+    if (!activeSession || !selected || (!input.trim() && attachedFiles.length === 0) || streaming) return;
+    const userInput = input.trim();
+
+    // Build message content with file contents prepended
+    let content = "";
+    const attachmentMeta: Array<{ name: string; path: string }> = [];
+    if (attachedFiles.length > 0) {
+      for (const file of attachedFiles) {
+        content += `[File: ${file.name}]\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
+        attachmentMeta.push({ name: file.name, path: file.path });
+      }
+    }
+    if (userInput) {
+      content += attachedFiles.length > 0 ? `[User Message]\n${userInput}` : userInput;
+    }
+
+    const userMessage = buildMessage("user", content, undefined, attachmentMeta.length > 0 ? attachmentMeta : undefined);
     const nextSession: ChatSession = {
       ...activeSession,
       providerId: selected.providerId,
@@ -347,6 +404,7 @@ export function AiProvidersPage() {
       messages: [...activeSession.messages, userMessage],
     };
     setInput("");
+    setAttachedFiles([]);
     setActiveSession(nextSession);
     setLoading(true);
 
@@ -545,7 +603,7 @@ export function AiProvidersPage() {
             </div>
 
             <div className="flex flex-1 min-h-0">
-              <aside className="w-64 border-r border-gray-200 p-4 space-y-3">
+              <aside className="w-64 border-r border-gray-200 p-4 space-y-3 bg-gray-50 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold">会话列表</div>
                   <button
@@ -620,6 +678,19 @@ export function AiProvidersPage() {
                         const isUser = msg.role === "user";
                         const hasThinking = !isUser && Boolean(msg.thinkingContent);
                         const isExpanded = hasThinking && expandedThinkingIds.has(msg.id);
+                        // Detect attachments from metadata or content pattern
+                        const fileAttachments = msg.attachments ?? [];
+                        const hasFiles = isUser && (fileAttachments.length > 0 || msg.content.startsWith("[File: "));
+                        // Extract display content (strip file prefixes for user messages with attachments)
+                        let displayContent = msg.content;
+                        if (isUser && hasFiles && !msg.attachments) {
+                          // Legacy: parse from content pattern
+                          const userMsgMatch = msg.content.match(/\[User Message\]\n([\s\S]*)$/);
+                          displayContent = userMsgMatch ? userMsgMatch[1] : msg.content;
+                        } else if (isUser && msg.attachments && msg.attachments.length > 0) {
+                          const userMsgMatch = msg.content.match(/\[User Message\]\n([\s\S]*)$/);
+                          displayContent = userMsgMatch ? userMsgMatch[1] : msg.content.replace(/\[File: [^\]]+\]\n```[\s\S]*?```\n\n/g, "");
+                        }
                         return (
                           <div key={msg.id} className={`group flex items-start gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
                             {isUser && !streaming && (
@@ -635,6 +706,22 @@ export function AiProvidersPage() {
                               <div className="w-8 h-8 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center text-xs text-gray-600 shrink-0">AI</div>
                             )}
                             <div className="max-w-[70%] space-y-2">
+                              {isUser && hasFiles && (
+                                <div className={`flex flex-wrap gap-1 ${isUser ? "justify-end" : ""}`}>
+                                  {(msg.attachments ?? []).map((att, i) => (
+                                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded">
+                                      <Paperclip size={10} />
+                                      {att.name}
+                                    </span>
+                                  ))}
+                                  {!msg.attachments && hasFiles && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded">
+                                      <Paperclip size={10} />
+                                      附件文件
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                               {hasThinking && (
                                 <div className="rounded-2xl border border-purple-200 bg-purple-50 text-purple-700">
                                   <button
@@ -663,7 +750,7 @@ export function AiProvidersPage() {
                                 isUser ? "bg-blue-500 text-white" : "bg-white border border-gray-200 text-gray-800"
                               }`}>
                                 {isUser ? (
-                                  <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                                  <div className="text-sm whitespace-pre-wrap leading-relaxed">{displayContent}</div>
                                 ) : (
                                   <div className="text-sm leading-relaxed"><MarkdownRenderer content={msg.content} /></div>
                                 )}
@@ -697,19 +784,48 @@ export function AiProvidersPage() {
                     </div>
 
                     <div className="border-t border-gray-200 p-4 bg-white shrink-0">
-                      <textarea
-                        className="w-full border border-gray-200 rounded-lg p-3 text-sm"
-                        rows={3}
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSend();
-                          }
-                        }}
-                        placeholder="输入用于验证的内容..."
-                      />
+                      {attachedFiles.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {attachedFiles.map((file, idx) => (
+                            <span
+                              key={`${file.path}-${idx}`}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg"
+                            >
+                              <Paperclip size={10} />
+                              {file.name}
+                              <button
+                                className="ml-1 text-blue-400 hover:text-red-500"
+                                onClick={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                              >
+                                <X size={10} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex items-end gap-2">
+                        <button
+                          className="p-2 text-gray-400 hover:text-blue-500 transition-colors shrink-0"
+                          onClick={handleAttachFiles}
+                          title="附加文件"
+                          disabled={streaming}
+                        >
+                          <Paperclip size={18} />
+                        </button>
+                        <textarea
+                          className="flex-1 border border-gray-200 rounded-lg p-3 text-sm"
+                          rows={3}
+                          value={input}
+                          onChange={(e) => setInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSend();
+                            }
+                          }}
+                          placeholder="输入用于验证的内容..."
+                        />
+                      </div>
                       <div className="flex items-center justify-end gap-2 mt-2">
                         {streaming ? (
                           <button
@@ -722,7 +838,7 @@ export function AiProvidersPage() {
                           <button
                             className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg flex items-center gap-1 disabled:opacity-60"
                             onClick={handleSend}
-                            disabled={loading || !input.trim()}
+                            disabled={loading || (!input.trim() && attachedFiles.length === 0)}
                           >
                             <Send size={12} /> 发送
                           </button>

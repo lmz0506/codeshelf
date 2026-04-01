@@ -139,6 +139,7 @@ export interface ChatMessage {
   tokens?: number;
   thinking?: boolean;
   thinkingContent?: string;
+  attachments?: Array<{ name: string; path: string }>;
 }
 
 export interface ChatSession {
