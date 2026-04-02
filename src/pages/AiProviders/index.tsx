@@ -729,8 +729,8 @@ export function AiProvidersPage() {
               </div>
             </div>
 
-            <div className="flex flex-1 min-h-0">
-              <aside className="w-64 border-r border-gray-200 p-4 space-y-3 bg-gray-50 overflow-y-auto">
+            <div className="flex flex-row flex-1 min-h-0">
+              <aside className="w-64 shrink-0 border-r border-gray-200 p-4 space-y-3 bg-gray-50 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold">会话列表</div>
                   <button
@@ -784,7 +784,7 @@ export function AiProvidersPage() {
                 </div>
               </aside>
 
-              <main className="flex-1 flex flex-col min-h-0">
+              <main className="flex-1 flex flex-col min-h-0 min-w-0">
                 {!isConfigured && (
                   <div className="p-6">
                     <div className="re-card p-5 space-y-3">
