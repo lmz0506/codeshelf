@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { MessageSquare, X, Plus, Pencil, Trash2, Send, Square, Paperclip, FolderOpen, Filter } from "lucide-react";
+import { MessageSquare, X, Plus, Pencil, Trash2, Send, Square, Paperclip, FolderOpen, Filter, Check } from "lucide-react";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { readTextFile, readDir } from "@tauri-apps/plugin-fs";
+import { join } from "@tauri-apps/api/path";
 import { AiProviderSettings, type AiProviderSettingsHandle } from "@/pages/Settings/AiProviderSettings";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
@@ -101,7 +102,7 @@ export function AiProvidersPage() {
   const [showChatFull, setShowChatFull] = useState(true);
   const [expandedThinkingIds, setExpandedThinkingIds] = useState<Set<string>>(new Set());
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
-  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; content: string; path: string }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; content: string; path: string; enabled: boolean }>>([]);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [folderFilter, setFolderFilter] = useState<{ dirPath: string; show: boolean }>({ dirPath: "", show: false });
   const [filterMode, setFilterMode] = useState<"extension" | "filename">("extension");
@@ -365,13 +366,13 @@ export function AiProvidersPage() {
       });
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];
-      const newFiles: Array<{ name: string; content: string; path: string }> = [];
+      const newFiles: Array<{ name: string; content: string; path: string; enabled: boolean }> = [];
       for (const filePath of paths) {
         const p = typeof filePath === "string" ? filePath : (filePath as { path: string }).path;
         try {
           const content = await readTextFile(p);
           const name = p.split("/").pop() ?? p.split("\\").pop() ?? p;
-          newFiles.push({ name, content, path: p });
+          newFiles.push({ name, content, path: p, enabled: true });
         } catch {
           showToast("warning", `无法读取文件: ${p}`);
         }
@@ -385,20 +386,21 @@ export function AiProvidersPage() {
   }
 
   async function handleSend() {
-    if (!activeSession || !selected || (!input.trim() && attachedFiles.length === 0) || streaming) return;
+    if (!activeSession || !selected || (!input.trim() && attachedFiles.filter((f) => f.enabled).length === 0) || streaming) return;
     const userInput = input.trim();
+    const enabledFiles = attachedFiles.filter((f) => f.enabled);
 
     // Build message content with file contents prepended
     let content = "";
     const attachmentMeta: Array<{ name: string; path: string }> = [];
-    if (attachedFiles.length > 0) {
-      for (const file of attachedFiles) {
+    if (enabledFiles.length > 0) {
+      for (const file of enabledFiles) {
         content += `[File: ${file.name}]\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
         attachmentMeta.push({ name: file.name, path: file.path });
       }
     }
     if (userInput) {
-      content += attachedFiles.length > 0 ? `[User Message]\n${userInput}` : userInput;
+      content += enabledFiles.length > 0 ? `[User Message]\n${userInput}` : userInput;
     }
 
     const userMessage = buildMessage("user", content, undefined, attachmentMeta.length > 0 ? attachmentMeta : undefined);
@@ -409,7 +411,6 @@ export function AiProvidersPage() {
       messages: [...activeSession.messages, userMessage],
     };
     setInput("");
-    setAttachedFiles([]);
     setActiveSession(nextSession);
     setLoading(true);
 
@@ -532,7 +533,9 @@ export function AiProvidersPage() {
     try {
       const entries = await readDir(dirPath);
       for (const entry of entries) {
-        const fullPath = dirPath.endsWith("/") ? `${dirPath}${entry.name}` : `${dirPath}/${entry.name}`;
+        // Skip hidden files/directories
+        if (entry.name.startsWith(".")) continue;
+        const fullPath = await join(dirPath, entry.name);
         if (entry.isDirectory) {
           const sub = await collectFilesFromDir(fullPath, extensions, filenamePattern, mode);
           result.push(...sub);
@@ -605,12 +608,12 @@ export function AiProvidersPage() {
         showToast("warning", `匹配到 ${files.length} 个文件，最多附加 50 个`);
       }
       const filesToRead = files.slice(0, 50);
-      const newFiles: Array<{ name: string; content: string; path: string }> = [];
+      const newFiles: Array<{ name: string; content: string; path: string; enabled: boolean }> = [];
       for (const p of filesToRead) {
         try {
           const content = await readTextFile(p);
           const name = p.split("/").pop() ?? p.split("\\").pop() ?? p;
-          newFiles.push({ name, content, path: p });
+          newFiles.push({ name, content, path: p, enabled: true });
         } catch {
           // skip unreadable files
         }
@@ -909,17 +912,28 @@ export function AiProvidersPage() {
 
                     <div className="border-t border-gray-200 p-4 bg-white shrink-0">
                       {attachedFiles.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-2">
+                        <div className="flex flex-wrap gap-1.5 mb-2 max-h-24 overflow-y-auto">
                           {attachedFiles.map((file, idx) => (
                             <span
                               key={`${file.path}-${idx}`}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg"
+                              className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg border cursor-pointer select-none ${
+                                file.enabled
+                                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : "bg-gray-50 text-gray-400 border-gray-200 line-through"
+                              }`}
+                              onClick={() => setAttachedFiles((prev) => prev.map((f, i) => i === idx ? { ...f, enabled: !f.enabled } : f))}
+                              title={file.path}
                             >
+                              <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
+                                file.enabled ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white"
+                              }`}>
+                                {file.enabled && <Check size={10} className="text-white" />}
+                              </span>
                               <Paperclip size={10} />
-                              {file.name}
+                              <span className="max-w-[120px] truncate">{file.name}</span>
                               <button
-                                className="ml-1 text-blue-400 hover:text-red-500"
-                                onClick={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                                className="ml-0.5 text-gray-400 hover:text-red-500"
+                                onClick={(e) => { e.stopPropagation(); setAttachedFiles((prev) => prev.filter((_, i) => i !== idx)); }}
                               >
                                 <X size={10} />
                               </button>
@@ -955,7 +969,7 @@ export function AiProvidersPage() {
                           )}
                         </div>
                         <textarea
-                          className="flex-1 border border-gray-200 rounded-lg p-3 text-sm"
+                          className="flex-1 border border-gray-200 rounded-lg p-3 text-sm resize-none"
                           rows={3}
                           value={input}
                           onChange={(e) => setInput(e.target.value)}
@@ -967,24 +981,24 @@ export function AiProvidersPage() {
                           }}
                           placeholder="输入用于验证的内容..."
                         />
-                      </div>
-                      <div className="flex items-center justify-end gap-2 mt-2">
-                        {streaming ? (
-                          <button
-                            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg flex items-center gap-1"
-                            onClick={handleStop}
-                          >
-                            <Square size={12} /> 停止
-                          </button>
-                        ) : (
-                          <button
-                            className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg flex items-center gap-1 disabled:opacity-60"
-                            onClick={handleSend}
-                            disabled={loading || (!input.trim() && attachedFiles.length === 0)}
-                          >
-                            <Send size={12} /> 发送
-                          </button>
-                        )}
+                        <div className="flex flex-col gap-1 shrink-0">
+                          {streaming ? (
+                            <button
+                              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg flex items-center gap-1"
+                              onClick={handleStop}
+                            >
+                              <Square size={12} /> 停止
+                            </button>
+                          ) : (
+                            <button
+                              className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg flex items-center gap-1 disabled:opacity-60"
+                              onClick={handleSend}
+                              disabled={loading || (!input.trim() && attachedFiles.filter((f) => f.enabled).length === 0)}
+                            >
+                              <Send size={12} /> 发送
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

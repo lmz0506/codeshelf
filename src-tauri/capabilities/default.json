@@ -27,6 +27,7 @@
     "dialog:allow-ask",
     "dialog:allow-confirm",
     "fs:allow-read",
+    "fs:allow-read-dir",
     "fs:allow-write",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
