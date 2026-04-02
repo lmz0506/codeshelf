@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { MessageSquare, X, Plus, Pencil, Trash2, Send, Square, Paperclip } from "lucide-react";
+import { MessageSquare, X, Plus, Pencil, Trash2, Send, Square, Paperclip, FolderOpen, Filter } from "lucide-react";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { readTextFile, readDir } from "@tauri-apps/plugin-fs";
 import { AiProviderSettings, type AiProviderSettingsHandle } from "@/pages/Settings/AiProviderSettings";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
@@ -102,6 +102,11 @@ export function AiProvidersPage() {
   const [expandedThinkingIds, setExpandedThinkingIds] = useState<Set<string>>(new Set());
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; content: string; path: string }>>([]);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [folderFilter, setFolderFilter] = useState<{ dirPath: string; show: boolean }>({ dirPath: "", show: false });
+  const [filterMode, setFilterMode] = useState<"extension" | "filename">("extension");
+  const [filterValue, setFilterValue] = useState("");
+  const attachMenuRef = useRef<HTMLDivElement>(null);
   const streamBufferRef = useRef<string>("");
   const thinkingBufferRef = useRef<string>("");
   const sessionLoadSeq = useRef(0);
@@ -502,6 +507,125 @@ export function AiProvidersPage() {
     }
   }, [showChat, showChatFull]);
 
+  // Close attach menu on outside click
+  useEffect(() => {
+    if (!showAttachMenu) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(e.target as Node)) {
+        setShowAttachMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showAttachMenu]);
+
+  const TEXT_EXTENSIONS = [
+    "txt", "md", "json", "js", "ts", "tsx", "jsx", "py", "java",
+    "c", "cpp", "h", "hpp", "rs", "go", "rb", "php", "html", "css",
+    "scss", "less", "xml", "yaml", "yml", "toml", "ini", "cfg",
+    "sh", "bash", "zsh", "sql", "vue", "svelte", "swift", "kt",
+    "csv", "log", "env", "conf", "gitignore", "dockerfile",
+  ];
+
+  async function collectFilesFromDir(dirPath: string, extensions: string[], filenamePattern: string, mode: "extension" | "filename"): Promise<string[]> {
+    const result: string[] = [];
+    try {
+      const entries = await readDir(dirPath);
+      for (const entry of entries) {
+        const fullPath = dirPath.endsWith("/") ? `${dirPath}${entry.name}` : `${dirPath}/${entry.name}`;
+        if (entry.isDirectory) {
+          const sub = await collectFilesFromDir(fullPath, extensions, filenamePattern, mode);
+          result.push(...sub);
+        } else if (entry.isFile) {
+          if (mode === "extension") {
+            if (extensions.length === 0) {
+              // No filter, include all text-like files
+              const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
+              if (TEXT_EXTENSIONS.includes(ext)) result.push(fullPath);
+            } else {
+              const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
+              if (extensions.includes(ext)) result.push(fullPath);
+            }
+          } else {
+            // filename mode: simple glob-like matching
+            if (!filenamePattern) {
+              const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
+              if (TEXT_EXTENSIONS.includes(ext)) result.push(fullPath);
+            } else {
+              const pattern = filenamePattern.toLowerCase();
+              const name = entry.name.toLowerCase();
+              if (pattern.includes("*")) {
+                const regex = new RegExp("^" + pattern.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$");
+                if (regex.test(name)) result.push(fullPath);
+              } else {
+                if (name.includes(pattern)) result.push(fullPath);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // skip unreadable dirs
+    }
+    return result;
+  }
+
+  async function handleAttachFolder() {
+    try {
+      const selected = await dialogOpen({
+        directory: true,
+        multiple: false,
+        title: "选择要附加的文件夹",
+      });
+      if (!selected || typeof selected !== "string") return;
+      setFolderFilter({ dirPath: selected, show: true });
+      setFilterMode("extension");
+      setFilterValue("");
+    } catch {
+      showToast("error", "选择文件夹失败");
+    }
+  }
+
+  async function handleConfirmFolderFilter() {
+    const { dirPath } = folderFilter;
+    if (!dirPath) return;
+
+    const extensions = filterMode === "extension" && filterValue.trim()
+      ? filterValue.split(",").map((s) => s.trim().toLowerCase().replace(/^\./, "")).filter(Boolean)
+      : [];
+    const filenamePattern = filterMode === "filename" ? filterValue.trim() : "";
+
+    try {
+      const files = await collectFilesFromDir(dirPath, extensions, filenamePattern, filterMode);
+      if (files.length === 0) {
+        showToast("warning", "未找到匹配的文件");
+        return;
+      }
+      if (files.length > 50) {
+        showToast("warning", `匹配到 ${files.length} 个文件，最多附加 50 个`);
+      }
+      const filesToRead = files.slice(0, 50);
+      const newFiles: Array<{ name: string; content: string; path: string }> = [];
+      for (const p of filesToRead) {
+        try {
+          const content = await readTextFile(p);
+          const name = p.split("/").pop() ?? p.split("\\").pop() ?? p;
+          newFiles.push({ name, content, path: p });
+        } catch {
+          // skip unreadable files
+        }
+      }
+      if (newFiles.length > 0) {
+        setAttachedFiles((prev) => [...prev, ...newFiles]);
+        showToast("success", `已附加 ${newFiles.length} 个文件`);
+      }
+    } catch {
+      showToast("error", "读取文件夹失败");
+    } finally {
+      setFolderFilter({ dirPath: "", show: false });
+    }
+  }
+
   function handleDeleteMessage(msgId: string) {
     if (!activeSession || streaming) return;
     const updated: ChatSession = {
@@ -804,14 +928,32 @@ export function AiProvidersPage() {
                         </div>
                       )}
                       <div className="flex items-end gap-2">
-                        <button
-                          className="p-2 text-gray-400 hover:text-blue-500 transition-colors shrink-0"
-                          onClick={handleAttachFiles}
-                          title="附加文件"
-                          disabled={streaming}
-                        >
-                          <Paperclip size={18} />
-                        </button>
+                        <div className="relative shrink-0" ref={attachMenuRef}>
+                          <button
+                            className="p-2 text-gray-400 hover:text-blue-500 transition-colors"
+                            onClick={() => setShowAttachMenu((prev) => !prev)}
+                            title="附加文件/文件夹"
+                            disabled={streaming}
+                          >
+                            <Paperclip size={18} />
+                          </button>
+                          {showAttachMenu && (
+                            <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-36 z-10">
+                              <button
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center gap-2"
+                                onClick={() => { setShowAttachMenu(false); handleAttachFiles(); }}
+                              >
+                                <Paperclip size={14} /> 选择文件
+                              </button>
+                              <button
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center gap-2"
+                                onClick={() => { setShowAttachMenu(false); handleAttachFolder(); }}
+                              >
+                                <FolderOpen size={14} /> 选择文件夹
+                              </button>
+                            </div>
+                          )}
+                        </div>
                         <textarea
                           className="flex-1 border border-gray-200 rounded-lg p-3 text-sm"
                           rows={3}
@@ -848,6 +990,50 @@ export function AiProvidersPage() {
                   </div>
                 )}
               </main>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {folderFilter.show && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-5 w-96 space-y-4">
+            <div className="flex items-center gap-2">
+              <Filter size={16} className="text-blue-500" />
+              <div className="text-sm font-semibold">文件夹过滤</div>
+            </div>
+            <div className="text-xs text-gray-500 break-all">{folderFilter.dirPath}</div>
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <button
+                  className={`px-3 py-1.5 text-xs rounded-lg border ${filterMode === "extension" ? "bg-blue-500 text-white border-blue-500" : "border-gray-200 text-gray-600"}`}
+                  onClick={() => setFilterMode("extension")}
+                >
+                  按后缀过滤
+                </button>
+                <button
+                  className={`px-3 py-1.5 text-xs rounded-lg border ${filterMode === "filename" ? "bg-blue-500 text-white border-blue-500" : "border-gray-200 text-gray-600"}`}
+                  onClick={() => setFilterMode("filename")}
+                >
+                  按文件名过滤
+                </button>
+              </div>
+              <div>
+                <input
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  placeholder={filterMode === "extension" ? "如: ts,tsx,js（留空则包含所有文本文件）" : "如: *.test.ts 或 config（支持 * 通配符）"}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleConfirmFolderFilter(); }}
+                />
+                <div className="text-xs text-gray-400 mt-1">
+                  {filterMode === "extension" ? "多个后缀用逗号分隔，留空包含所有常见文本文件" : "支持 * 通配符匹配，留空包含所有常见文本文件"}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg" onClick={() => setFolderFilter({ dirPath: "", show: false })}>取消</button>
+              <button className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg" onClick={handleConfirmFolderFilter}>确认</button>
             </div>
           </div>
         </div>
