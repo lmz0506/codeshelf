@@ -140,6 +140,7 @@ export interface ChatMessage {
   thinking?: boolean;
   thinkingContent?: string;
   attachments?: Array<{ name: string; path: string }>;
+  edited?: boolean;
 }
 
 export interface ChatSession {
@@ -150,6 +151,13 @@ export interface ChatSession {
   createdAt: string;
   updatedAt: string;
   messages: ChatMessage[];
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  pinned?: boolean;
 }
 
 export interface ChatSessionSummary {
@@ -160,6 +168,7 @@ export interface ChatSessionSummary {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  pinned?: boolean;
 }
 
 // ============== 应用快捷键 ==============

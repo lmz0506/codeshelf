@@ -158,6 +158,13 @@ pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
             created_at: current_iso_time(),
             updated_at: current_iso_time(),
             messages: Vec::new(),
+            system_prompt: None,
+            temperature: None,
+            max_tokens: None,
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            pinned: None,
         });
         summaries.push(ChatSessionSummary {
             id: session.id,
@@ -167,6 +174,7 @@ pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
             created_at: session.created_at,
             updated_at: session.updated_at,
             message_count: session.messages.len(),
+            pinned: session.pinned,
         });
     }
 
@@ -210,6 +218,13 @@ pub async fn create_chat_session(input: CreateChatSessionInput) -> Result<ChatSe
         created_at: now.clone(),
         updated_at: now,
         messages: Vec::new(),
+        system_prompt: None,
+        temperature: None,
+        max_tokens: None,
+        top_p: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        pinned: None,
     };
 
     save_chat_session(session.clone()).await?;
