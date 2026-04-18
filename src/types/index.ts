@@ -139,7 +139,8 @@ export interface ToolCall {
 
 export type ChatAttachment =
   | { kind: "image"; dataUrl: string; name?: string }
-  | { kind: "file"; path: string; name: string };
+  | { kind: "file"; path: string; name: string }
+  | { kind: "text"; name: string; content: string };
 
 export interface ChatMessage {
   id: string;

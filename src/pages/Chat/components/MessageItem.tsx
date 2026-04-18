@@ -116,7 +116,7 @@ export function MessageItem({
         </div>
       )}
       <div
-        className={`max-w-[75%] rounded-2xl px-4 py-3 shadow-sm ${
+        className={`max-w-[75%] min-w-0 overflow-hidden rounded-2xl px-4 py-3 shadow-sm ${
           isUser ? "bg-blue-500 text-white" : "bg-white border border-gray-200 text-gray-800"
         }`}
       >

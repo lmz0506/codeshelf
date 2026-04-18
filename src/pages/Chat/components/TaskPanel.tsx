@@ -32,6 +32,9 @@ export function TaskPanel({ sessionId, open, onClose }: TaskPanelProps) {
   const [addOpen, setAddOpen] = useState(false);
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
+  const [hintDismissed, setHintDismissed] = useState<boolean>(() => {
+    try { return localStorage.getItem("chat.taskPanelHintDismissed") === "1"; } catch { return false; }
+  });
 
   async function refresh() {
     try {
@@ -117,6 +120,23 @@ export function TaskPanel({ sessionId, open, onClose }: TaskPanelProps) {
             </button>
           </div>
         </div>
+        {!hintDismissed && (
+          <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 text-[11px] text-blue-800 flex items-start gap-2">
+            <div className="flex-1 leading-tight">
+              本会话的待办清单。启用工具后，LLM 可通过 <code className="font-mono">TaskCreate</code> / <code className="font-mono">TaskUpdate</code> / <code className="font-mono">TaskList</code> 自动维护（简化版 Claude Code 任务追踪）；也可手动增删改。
+            </div>
+            <button
+              className="text-blue-500 hover:text-blue-700 flex-shrink-0"
+              onClick={() => {
+                try { localStorage.setItem("chat.taskPanelHintDismissed", "1"); } catch { /* ignore */ }
+                setHintDismissed(true);
+              }}
+              title="不再提示"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
         {addOpen && (
           <div className="px-4 py-3 space-y-2 border-b border-gray-200 bg-gray-50">
             <input

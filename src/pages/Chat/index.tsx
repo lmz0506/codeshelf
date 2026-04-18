@@ -14,7 +14,7 @@ import {
   renameChatSession,
   saveChatSession,
 } from "@/services/chat";
-import { getGlobalMemory, saveGlobalMemory, readMentionFile } from "@/services/chat";
+import { getGlobalMemory, saveGlobalMemory, readMentionFile, listDirEntries } from "@/services/chat";
 import type { ChatStreamMessage, ToolSchema } from "@/services/chat";
 import type { AiModelConfig, AiProviderConfig, ChatAttachment, ChatMessage, ChatSession, ChatSessionSummary, ToolCall } from "@/types";
 
@@ -102,7 +102,7 @@ function summarizeTitle(messages: ChatMessage[]): string | null {
 }
 
 export function ChatPage() {
-  const { aiProviders, setCurrentPage, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed, projects } = useAppStore();
+  const { aiProviders, setCurrentPage, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed, projects, saveAiProviders } = useAppStore();
 
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -125,6 +125,10 @@ export function ChatPage() {
   const [memoryDraft, setMemoryDraft] = useState("");
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [modelManagerOpen, setModelManagerOpen] = useState(false);
+  const [qmProviderId, setQmProviderId] = useState<string>("");
+  const [qmModelId, setQmModelId] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
   const approvalResolverRef = useRef<((d: "once" | "always" | "reject") => void) | null>(null);
 
@@ -230,7 +234,11 @@ export function ChatPage() {
   }
 
   async function handleCreateSession() {
-    if (!selected) return;
+    if (!selected) {
+      showToast("warning", "请先在 AI 页面配置可用的供应商与模型");
+      setCurrentPage("aiProviders");
+      return;
+    }
     try {
       const session = await createChatSession({
         title: "新会话",
@@ -345,12 +353,54 @@ export function ChatPage() {
   }
 
   const mentionContextRef = useRef<string>("");
+  const projectContextRef = useRef<string>("");
+
+  // 构建项目上下文（目录路径 + 浅层文件树 + CLAUDE.md/README.md 摘要），注入 system
+  useEffect(() => {
+    const cwd = activeSession?.allowedCwd;
+    if (!cwd) {
+      projectContextRef.current = "";
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const parts: string[] = [`[项目上下文]\n项目根目录: ${cwd}`];
+      try {
+        const entries = await listDirEntries(cwd, 200);
+        if (entries.length > 0) {
+          const lines = entries
+            .slice(0, 120)
+            .map((e) => (e.isDir ? `${e.path}/` : e.path));
+          const more = entries.length > 120 ? `\n…（共 ${entries.length} 项，已截断）` : "";
+          parts.push(`## 文件树（浅层，隐藏文件与 node_modules/target/dist 已过滤）\n${lines.join("\n")}${more}`);
+        }
+      } catch { /* ignore */ }
+
+      const docCandidates = ["CLAUDE.md", "AGENTS.md", "README.md", "README"];
+      for (const name of docCandidates) {
+        try {
+          const content = await readMentionFile(cwd, name);
+          if (content && content.trim()) {
+            const MAX = 8000;
+            const trimmed = content.length > MAX ? content.slice(0, MAX) + "\n…（已截断）" : content;
+            parts.push(`## ${name}\n${trimmed}`);
+            break;
+          }
+        } catch { /* next */ }
+      }
+
+      if (!cancelled) projectContextRef.current = parts.join("\n\n");
+    })();
+    return () => { cancelled = true; };
+  }, [activeSession?.id, activeSession?.allowedCwd]);
+
 
   /** 将 ChatSession.messages 转为 OpenAI 协议消息（含 tool_calls / tool 结果） */
   function toStreamMessages(session: ChatSession): ChatStreamMessage[] {
     const out: ChatStreamMessage[] = [];
     const sysParts: string[] = [];
     if (globalMemory.trim()) sysParts.push(`[全局记忆 MEMORY.md]\n${globalMemory.trim()}`);
+    if (projectContextRef.current.trim()) sysParts.push(projectContextRef.current.trim());
     if (session.systemPrompt?.trim()) sysParts.push(session.systemPrompt.trim());
     if (mentionContextRef.current.trim()) sysParts.push(mentionContextRef.current.trim());
     if (sysParts.length) out.push({ role: "system", content: sysParts.join("\n\n---\n\n") });
@@ -381,11 +431,20 @@ export function ChatPage() {
           | { type: "text"; text: string }
           | { type: "image_url"; image_url: { url: string } }
         > = [];
-        if (m.content.trim()) parts.push({ type: "text", text: m.content });
+        const textAtts = m.attachments.filter((a) => a.kind === "text") as Array<{ kind: "text"; name: string; content: string }>;
+        const textPrefix = textAtts.length
+          ? textAtts.map((a) => `### ${a.name}\n\`\`\`\n${a.content}\n\`\`\``).join("\n\n") + "\n\n"
+          : "";
+        const combined = textPrefix + (m.content.trim() ? m.content : "");
+        if (combined.trim()) parts.push({ type: "text", text: combined });
         for (const a of m.attachments) {
           if (a.kind === "image") parts.push({ type: "image_url", image_url: { url: a.dataUrl } });
         }
         out.push({ role: "user", content: parts });
+      } else if (m.role === "user" && m.attachments?.some((a) => a.kind === "text")) {
+        const textAtts = m.attachments.filter((a) => a.kind === "text") as Array<{ kind: "text"; name: string; content: string }>;
+        const prefix = textAtts.map((a) => `### ${a.name}\n\`\`\`\n${a.content}\n\`\`\``).join("\n\n");
+        out.push({ role: "user", content: `${prefix}\n\n${m.content}`.trim() });
       } else {
         out.push({ role: m.role, content: m.content });
       }
@@ -790,7 +849,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-full">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
       <header className="re-header sticky top-0 z-20" data-tauri-drag-region>
         <span className="toggle" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
           ☰
@@ -819,104 +878,126 @@ export function ChatPage() {
               ))}
             </select>
           )}
+          <button
+            className="px-2 py-1 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
+            onClick={() => {
+              setQmProviderId(normalized.filter((p) => p.enabled)[0]?.id ?? "");
+              setQmModelId("");
+              setModelManagerOpen(true);
+            }}
+            title="管理模型"
+          >
+            模型…
+          </button>
           {activeSession && (
             <>
-              <label className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 cursor-pointer border ${toolsEnabled ? "bg-blue-50 border-blue-300 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
-                <input
-                  type="checkbox"
-                  className="hidden"
-                  checked={toolsEnabled}
-                  onChange={(e) => setToolsEnabled(e.target.checked)}
-                  disabled={streaming}
-                />
-                🛠 工具 {toolsEnabled ? "已启用" : "未启用"}
-              </label>
-              <select
-                className="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white text-gray-700 max-w-[220px]"
-                value={
-                  activeSession.allowedCwd &&
-                  projects.find((p) => p.path === activeSession.allowedCwd)
-                    ? `project:${activeSession.allowedCwd}`
-                    : activeSession.allowedCwd
-                      ? "custom"
-                      : ""
-                }
-                onChange={async (e) => {
-                  const v = e.target.value;
-                  if (v === "") return;
-                  if (v === "custom") {
-                    await handlePickAllowedCwd();
-                    return;
-                  }
-                  if (v.startsWith("project:")) {
-                    const path = v.slice("project:".length);
-                    const next: ChatSession = { ...activeSession, allowedCwd: path };
-                    await persistSession(next);
-                    showToast("success", "已绑定项目目录");
-                  }
-                }}
-                disabled={streaming}
-                title="选择项目目录或自定义目录"
-              >
-                <option value="">未选目录</option>
-                {projects.length > 0 && (
-                  <optgroup label="📚 书架项目">
-                    {projects.map((p) => (
-                      <option key={p.id} value={`project:${p.path}`}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </optgroup>
+              <span className="text-[11px] text-gray-400 truncate max-w-[220px]" title={activeSession.allowedCwd || "未选目录"}>
+                {activeSession.allowedCwd ? `📁 ${activeSession.allowedCwd.split("/").pop()}` : "未选目录（普通对话）"}
+              </span>
+              {toolsEnabled && (
+                <span className="text-[11px] text-blue-600" title="工具已启用">🛠 工具</span>
+              )}
+              <div className="relative">
+                <button
+                  className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  title="会话工具"
+                >
+                  <Settings size={12} /> 会话
+                </button>
+                {menuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                    <div className="absolute right-0 top-full mt-1 w-[320px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-3 space-y-3 text-xs">
+                      {/* 工具 */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-semibold text-gray-700">🛠 工具</span>
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <input type="checkbox" checked={toolsEnabled} onChange={(e) => setToolsEnabled(e.target.checked)} disabled={streaming} />
+                            <span className={toolsEnabled ? "text-blue-600" : "text-gray-500"}>{toolsEnabled ? "已启用" : "未启用"}</span>
+                          </label>
+                        </div>
+                        {toolsEnabled && (
+                          <div className="border border-gray-100 rounded p-2 max-h-[180px] overflow-y-auto space-y-1">
+                            {toolSchemas.map((t) => {
+                              const enabled = (activeSession.enabledTools ?? toolSchemas.map((x) => x.name)).includes(t.name);
+                              return (
+                                <label key={t.name} className="flex items-start gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                                  <input
+                                    type="checkbox"
+                                    className="mt-0.5"
+                                    checked={enabled}
+                                    onChange={async (e) => {
+                                      const current = new Set(activeSession.enabledTools ?? toolSchemas.map((x) => x.name));
+                                      if (e.target.checked) current.add(t.name);
+                                      else current.delete(t.name);
+                                      await persistSession({ ...activeSession, enabledTools: Array.from(current) });
+                                    }}
+                                    disabled={streaming}
+                                  />
+                                  <div>
+                                    <div className="font-mono text-gray-800">{t.name}</div>
+                                    <div className="text-[10px] text-gray-500 leading-tight">{t.description}</div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 目录 */}
+                      <div>
+                        <div className="font-semibold text-gray-700 mb-1">📁 目录（选了才会把项目上下文注入 system）</div>
+                        <select
+                          className="w-full px-2 py-1 border border-gray-200 rounded"
+                          value={
+                            activeSession.allowedCwd && projects.find((p) => p.path === activeSession.allowedCwd)
+                              ? `project:${activeSession.allowedCwd}`
+                              : activeSession.allowedCwd ? "custom" : ""
+                          }
+                          onChange={async (e) => {
+                            const v = e.target.value;
+                            if (v === "") {
+                              await persistSession({ ...activeSession, allowedCwd: undefined });
+                              return;
+                            }
+                            if (v === "custom") { await handlePickAllowedCwd(); return; }
+                            if (v.startsWith("project:")) {
+                              const path = v.slice("project:".length);
+                              await persistSession({ ...activeSession, allowedCwd: path });
+                              showToast("success", "已绑定项目目录");
+                            }
+                          }}
+                          disabled={streaming}
+                        >
+                          <option value="">未选（普通对话）</option>
+                          {projects.length > 0 && (
+                            <optgroup label="📚 书架项目">
+                              {projects.map((p) => (<option key={p.id} value={`project:${p.path}`}>{p.name}</option>))}
+                            </optgroup>
+                          )}
+                          <option value="custom">自定义目录…</option>
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 flex items-center justify-center gap-1" onClick={() => { setMenuOpen(false); setMemoryDraft(globalMemory); setMemoryEditorOpen(true); }}>
+                          <Brain size={12} /> 记忆
+                        </button>
+                        <button className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50" onClick={() => { setMenuOpen(false); setSkillsOpen(true); }}>📚 Skills</button>
+                        <button className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 flex items-center justify-center gap-1" onClick={() => { setMenuOpen(false); setTaskPanelOpen((v) => !v); }} title="LLM 可通过 TaskCreate/Update/List 工具维护本会话的待办清单">
+                          <ListChecks size={12} /> 任务
+                        </button>
+                        <button className="col-span-2 px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 flex items-center justify-center gap-1" onClick={() => { setMenuOpen(false); setConfigFocus(undefined); setConfigOpen(true); }}>
+                          <Settings size={12} /> 会话设置
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
-                <option value="custom">📁 自定义目录…</option>
-              </select>
-              <button
-                className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
-                onClick={() => {
-                  setMemoryDraft(globalMemory);
-                  setMemoryEditorOpen(true);
-                }}
-                title="全局记忆 MEMORY.md"
-              >
-                <Brain size={12} /> 记忆
-              </button>
-              <button
-                className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
-                onClick={() => {
-                  if (!activeSession?.allowedCwd) {
-                    showToast("warning", "请先选择会话根目录");
-                    return;
-                  }
-                  setMentionOpen(true);
-                }}
-                title="引用文件（@ 注入内容）"
-              >
-                @ 文件
-              </button>
-              <button
-                className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
-                onClick={() => setSkillsOpen(true)}
-                title="Skills"
-              >
-                📚 Skills
-              </button>
-              <button
-                className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
-                onClick={() => setTaskPanelOpen((v) => !v)}
-                title="任务面板"
-              >
-                <ListChecks size={12} /> 任务
-              </button>
-              <button
-                className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
-                onClick={() => {
-                  setConfigFocus(undefined);
-                  setConfigOpen(true);
-                }}
-                title="会话设置"
-              >
-                <Settings size={12} /> 设置
-              </button>
+              </div>
             </>
           )}
         </div>
@@ -926,7 +1007,7 @@ export function ChatPage() {
         </div>
       </header>
 
-      <div className="flex flex-1" style={{ marginTop: "40px" }}>
+      <div className="flex flex-1 min-w-0 min-h-0 overflow-hidden">
         <SessionSidebar
           sessions={sessions}
           activeSessionId={activeSessionId}
@@ -942,7 +1023,7 @@ export function ChatPage() {
           onExport={handleExport}
         />
 
-        <main className="flex-1 p-5 space-y-4 min-h-0">
+        <main className="flex-1 p-5 space-y-4 min-h-0 min-w-0 overflow-hidden">
           {!isConfigured && (
             <div className="re-card p-5 space-y-3">
               <div className="text-sm text-gray-700">尚未配置可用的 AI 供应商</div>
@@ -961,7 +1042,7 @@ export function ChatPage() {
           )}
 
           {isConfigured && activeSession && (
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full min-w-0">
               {activeSession.systemPrompt && (
                 <div className="text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3 truncate">
                   <span className="font-semibold text-gray-600">System:</span> {activeSession.systemPrompt}
@@ -985,9 +1066,23 @@ export function ChatPage() {
                 streaming={streaming}
                 disabled={loading}
                 userHistory={userHistory}
+                mentionRoot={activeSession.allowedCwd ?? null}
                 onImagePaste={(dataUrl) =>
                   setPendingAttachments((prev) => [...prev, { kind: "image", dataUrl }])
                 }
+                onFilesDropped={(files) => {
+                  setPendingAttachments((prev) => {
+                    const next = [...prev];
+                    for (const f of files) {
+                      if (f.kind === "image" && f.dataUrl) {
+                        next.push({ kind: "image", dataUrl: f.dataUrl, name: f.name });
+                      } else if (f.kind === "text" && typeof f.content === "string") {
+                        next.push({ kind: "text", name: f.name, content: f.content });
+                      }
+                    }
+                    return next;
+                  });
+                }}
                 attachmentsSlot={
                   pendingAttachments.length > 0 ? (
                     <div className="flex gap-2 mb-2 flex-wrap">
@@ -1000,6 +1095,17 @@ export function ChatPage() {
                               onClick={() =>
                                 setPendingAttachments((prev) => prev.filter((_, i) => i !== idx))
                               }
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ) : a.kind === "text" ? (
+                          <div key={idx} className="relative px-2 py-1 border border-gray-200 rounded text-[11px] text-gray-700 bg-gray-50 flex items-center gap-2 group" title={a.name}>
+                            <span>📄 {a.name}</span>
+                            <span className="text-gray-400">{Math.ceil(a.content.length / 1024)}KB</span>
+                            <button
+                              className="text-gray-400 hover:text-red-500"
+                              onClick={() => setPendingAttachments((prev) => prev.filter((_, i) => i !== idx))}
                             >
                               ×
                             </button>
@@ -1051,6 +1157,104 @@ export function ChatPage() {
           setInput((prev) => (prev.trim() ? `${prev} ${snippet}` : snippet));
         }}
       />
+      {modelManagerOpen && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setModelManagerOpen(false)}>
+          <div className="bg-white rounded-lg w-[560px] max-w-[92vw] max-h-[80vh] overflow-y-auto p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold">模型管理</div>
+              <button className="text-xs text-blue-500 hover:underline" onClick={() => { setModelManagerOpen(false); setCurrentPage("aiProviders"); }}>
+                完整设置 →
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {normalized.filter((p) => p.enabled).map((p) => (
+                <div key={p.id} className="border border-gray-200 rounded p-2">
+                  <div className="text-xs font-semibold text-gray-700 mb-1">{p.name} {p.isDefaultProvider && <span className="text-[10px] text-blue-500">(默认)</span>}</div>
+                  <div className="space-y-1">
+                    {p.models.map((m) => (
+                      <div key={m.id} className="flex items-center gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={m.enabled}
+                          onChange={async (e) => {
+                            const next = aiProviders.map((pp) => pp.id === p.id ? {
+                              ...pp,
+                              models: pp.models.map((mm) => mm.id === m.id ? { ...mm, enabled: e.target.checked } : mm),
+                            } : pp);
+                            await saveAiProviders(next);
+                          }}
+                        />
+                        <span className="font-mono flex-1 truncate">{m.model}</span>
+                        {m.isDefault && <span className="text-[10px] text-blue-500">默认</span>}
+                        <button
+                          className="text-gray-300 hover:text-red-500"
+                          title="删除"
+                          onClick={async () => {
+                            if (!confirm(`删除模型 ${m.model}？`)) return;
+                            const next = aiProviders.map((pp) => pp.id === p.id ? {
+                              ...pp,
+                              models: pp.models.filter((mm) => mm.id !== m.id),
+                            } : pp);
+                            await saveAiProviders(next);
+                          }}
+                        >×</button>
+                      </div>
+                    ))}
+                    {p.models.length === 0 && <div className="text-[11px] text-gray-400">此供应商下暂无模型</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-gray-200 pt-3 space-y-2">
+              <div className="text-xs font-semibold text-gray-700">快速添加模型</div>
+              <div className="flex items-center gap-2">
+                <select
+                  className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded"
+                  value={qmProviderId}
+                  onChange={(e) => setQmProviderId(e.target.value)}
+                >
+                  {normalized.filter((p) => p.enabled).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <input
+                  className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded"
+                  placeholder="模型 id，如 gpt-4o-mini"
+                  value={qmModelId}
+                  onChange={(e) => setQmModelId(e.target.value)}
+                />
+                <button
+                  className="px-3 py-1 text-xs bg-blue-500 text-white rounded disabled:opacity-60"
+                  disabled={!qmProviderId || !qmModelId.trim()}
+                  onClick={async () => {
+                    const modelName = qmModelId.trim();
+                    const next = aiProviders.map((pp) => pp.id === qmProviderId ? {
+                      ...pp,
+                      models: [...pp.models, {
+                        id: `${pp.id}-${modelName}-${Date.now()}`,
+                        model: modelName,
+                        enabled: true,
+                        isDefault: false,
+                        thinking: false,
+                        stream: true,
+                      }],
+                    } : pp);
+                    await saveAiProviders(next);
+                    setQmModelId("");
+                    showToast("success", "已添加");
+                  }}
+                >添加</button>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button className="px-3 py-1.5 text-xs border border-gray-200 rounded" onClick={() => setModelManagerOpen(false)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {memoryEditorOpen && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">

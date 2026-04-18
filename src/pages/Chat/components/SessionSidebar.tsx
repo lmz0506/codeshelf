@@ -44,7 +44,7 @@ export function SessionSidebar({
   const groups = useMemo(() => groupSessions(filtered), [filtered]);
 
   return (
-    <aside className="w-72 border-r border-gray-200 p-4 space-y-3 flex flex-col overflow-hidden">
+    <aside className="w-72 flex-shrink-0 border-r border-gray-200 p-4 space-y-3 flex flex-col overflow-hidden bg-white">
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold">会话列表</div>
         <div className="flex items-center gap-1">
@@ -58,7 +58,7 @@ export function SessionSidebar({
           <button
             className="px-2 py-1 text-xs bg-blue-500 text-white rounded-lg flex items-center gap-1 disabled:opacity-60"
             onClick={onCreate}
-            disabled={!isConfigured}
+            title={isConfigured ? "新建会话" : "尚未配置模型，先去配置"}
           >
             <Plus size={12} /> 新建
           </button>

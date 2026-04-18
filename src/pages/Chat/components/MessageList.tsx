@@ -39,7 +39,7 @@ export function MessageList({
   );
 
   return (
-    <div className="flex-1 space-y-4 overflow-auto pb-4">
+    <div className="flex-1 space-y-4 overflow-auto overflow-x-hidden pb-4 min-w-0">
       {messages.map((msg, idx) => (
         <MessageItem
           key={msg.id}
