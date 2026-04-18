@@ -400,7 +400,7 @@ pub struct ApiEndpoint {
     #[serde(default)]
     pub headers: Vec<(String, String)>,
     /// 覆盖组鉴权
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_override: Option<ApiAuthConfig>,
     /// 喂给 LLM function-calling 的 JSON Schema
     pub params_schema: serde_json::Value,

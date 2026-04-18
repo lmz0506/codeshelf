@@ -37,14 +37,13 @@ pub struct ChatStreamRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ChatStreamMessage {
     pub role: String,
     /// string 或 OpenAI 多模态内容数组
     pub content: serde_json::Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "toolCalls")]
     pub tool_calls: Option<Vec<serde_json::Value>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "toolCallId")]
     pub tool_call_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
