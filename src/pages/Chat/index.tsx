@@ -26,6 +26,7 @@ import { SessionConfigPanel, type SessionConfigValues } from "./components/Sessi
 import { ToolApprovalDialog, type PendingApproval } from "./components/ToolApprovalDialog";
 import { TaskPanel } from "./components/TaskPanel";
 import { SkillsPicker } from "./components/SkillsPicker";
+import { ToolPicker } from "./components/ToolPicker";
 import { AtMentionPicker } from "./components/AtMentionPicker";
 import { useChatStream } from "./hooks/useChatStream";
 import { exportSessionAsJson, exportSessionAsMarkdown, importSessionFromJson } from "./utils/exportSession";
@@ -102,7 +103,7 @@ function summarizeTitle(messages: ChatMessage[]): string | null {
 }
 
 export function ChatPage() {
-  const { aiProviders, setCurrentPage, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed, projects, saveAiProviders } = useAppStore();
+  const { aiProviders, setCurrentPage, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed, projects, saveAiProviders, editors } = useAppStore();
 
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -124,6 +125,7 @@ export function ChatPage() {
   const [memoryEditorOpen, setMemoryEditorOpen] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelManagerOpen, setModelManagerOpen] = useState(false);
@@ -408,6 +410,14 @@ export function ChatPage() {
     const sysParts: string[] = [];
     if (globalMemory.trim()) sysParts.push(`[全局记忆 MEMORY.md]\n${globalMemory.trim()}`);
     if (projectContextRef.current.trim()) sysParts.push(projectContextRef.current.trim());
+    if (editors.length > 0) {
+      const lines = editors
+        .map((e) => `- ${e.name}${e.is_default ? "（默认）" : ""}: ${e.path}`)
+        .join("\n");
+      sysParts.push(
+        `[可用编辑器]\n调用 OpenInEditor 工具时 editor 参数优先从下列用户已配置的真实路径中选；若用户未指明哪个编辑器，用带"（默认）"那一个。\n${lines}`
+      );
+    }
     if (session.systemPrompt?.trim()) sysParts.push(session.systemPrompt.trim());
     if (mentionContextRef.current.trim()) sysParts.push(mentionContextRef.current.trim());
     if (sysParts.length) out.push({ role: "system", content: sysParts.join("\n\n---\n\n") });
@@ -886,10 +896,13 @@ export function ChatPage() {
       case "skills":
         setSkillsOpen(true);
         break;
+      case "tool":
+        setToolPickerOpen(true);
+        break;
       case "help":
         showToast(
           "info",
-          "/clear 清空 · /new 新会话 · /export 导出 md · /system 系统提示 · /config 参数 · /regen 重生成"
+          "/clear 清空 · /new 新会话 · /export 导出 md · /system 系统提示 · /config 参数 · /regen 重生成 · /tool 选工具"
         );
         break;
     }
@@ -1206,6 +1219,13 @@ export function ChatPage() {
         open={skillsOpen}
         onClose={() => setSkillsOpen(false)}
         onSelect={(rendered) => setInput((prev) => (prev.trim() ? `${prev}\n\n${rendered}` : rendered))}
+      />
+
+      <ToolPicker
+        open={toolPickerOpen}
+        toolSchemas={toolSchemas}
+        onClose={() => setToolPickerOpen(false)}
+        onSelect={(hint) => setInput((prev) => (prev.trim() ? `${prev}\n\n${hint}` : hint))}
       />
 
       <AtMentionPicker

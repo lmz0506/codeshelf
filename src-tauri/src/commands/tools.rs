@@ -95,6 +95,30 @@ fn truncate(s: String, max: usize) -> String {
     }
 }
 
+/// 展开路径开头的 `~` / `~/` 为 $HOME（Windows 下为 %USERPROFILE%）。
+/// 其它情况原样返回。
+fn expand_home(input: &str) -> String {
+    let home = if cfg!(windows) {
+        std::env::var("USERPROFILE").ok()
+    } else {
+        std::env::var("HOME").ok()
+    };
+    let Some(home) = home else { return input.to_string() };
+    if input == "~" {
+        return home;
+    }
+    if let Some(rest) = input.strip_prefix("~/") {
+        return format!("{}/{}", home.trim_end_matches('/'), rest);
+    }
+    #[cfg(windows)]
+    {
+        if let Some(rest) = input.strip_prefix("~\\") {
+            return format!("{}\\{}", home.trim_end_matches('\\'), rest);
+        }
+    }
+    input.to_string()
+}
+
 // ========== 工具 schema ==========
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -794,14 +818,19 @@ fn tool_task_list(ctx: &ToolCtx) -> Result<String, String> {
 // ========== OS open / file ops ==========
 
 async fn tool_open_path(args: &Value) -> Result<String, String> {
-    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?.to_string();
+    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
+    let path = expand_home(path);
     crate::commands::system::open_in_explorer(path.clone()).await?;
     Ok(format!("已在文件管理器中打开：{}", path))
 }
 
 async fn tool_open_in_editor(args: &Value) -> Result<String, String> {
-    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?.to_string();
-    let editor = args.get("editor").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
+    let path = expand_home(path);
+    let editor = args
+        .get("editor")
+        .and_then(|v| v.as_str())
+        .map(expand_home);
     if let Some(e) = &editor {
         if e.contains("&&") || e.contains("||") || e.contains(';') || e.contains('|') || e.contains('`') {
             return Err("editor 参数包含危险字符".into());
@@ -812,7 +841,8 @@ async fn tool_open_in_editor(args: &Value) -> Result<String, String> {
 }
 
 async fn tool_open_terminal(args: &Value) -> Result<String, String> {
-    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?.to_string();
+    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
+    let path = expand_home(path);
     let terminal = args.get("terminal").and_then(|v| v.as_str()).map(|s| s.to_string());
     crate::commands::system::open_in_terminal(path.clone(), terminal, None, None).await?;
     Ok(format!("已在终端打开：{}", path))
@@ -847,9 +877,11 @@ fn copy_recursively(src: &Path, dst: &Path) -> std::io::Result<()> {
 fn tool_copy_file(args: &Value) -> Result<String, String> {
     let src = args.get("src").and_then(|v| v.as_str()).ok_or("缺少 src")?;
     let dst = args.get("dst").and_then(|v| v.as_str()).ok_or("缺少 dst")?;
+    let src = expand_home(src);
+    let dst = expand_home(dst);
     let overwrite = args.get("overwrite").and_then(|v| v.as_bool()).unwrap_or(false);
-    let src_p = Path::new(src);
-    let dst_p = Path::new(dst);
+    let src_p = Path::new(&src);
+    let dst_p = Path::new(&dst);
     if !src_p.exists() {
         return Err(format!("源不存在：{}", src));
     }
@@ -867,9 +899,11 @@ fn tool_copy_file(args: &Value) -> Result<String, String> {
 fn tool_move_file(args: &Value) -> Result<String, String> {
     let src = args.get("src").and_then(|v| v.as_str()).ok_or("缺少 src")?;
     let dst = args.get("dst").and_then(|v| v.as_str()).ok_or("缺少 dst")?;
+    let src = expand_home(src);
+    let dst = expand_home(dst);
     let overwrite = args.get("overwrite").and_then(|v| v.as_bool()).unwrap_or(false);
-    let src_p = Path::new(src);
-    let dst_p = Path::new(dst);
+    let src_p = Path::new(&src);
+    let dst_p = Path::new(&dst);
     if !src_p.exists() { return Err(format!("源不存在：{}", src)); }
     if dst_p.exists() && !overwrite {
         return Err(format!("目标已存在（传 overwrite=true 覆盖）：{}", dst));
@@ -892,8 +926,9 @@ fn tool_move_file(args: &Value) -> Result<String, String> {
 
 fn tool_delete_file(args: &Value) -> Result<String, String> {
     let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
+    let path = expand_home(path);
     let recursive = args.get("recursive").and_then(|v| v.as_bool()).unwrap_or(false);
-    let p = Path::new(path);
+    let p = Path::new(&path);
     if !p.exists() { return Err(format!("路径不存在：{}", path)); }
 
     // 跨平台受保护路径（大小写不敏感比较）

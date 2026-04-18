@@ -10,6 +10,7 @@ export type SlashCommandId =
   | "regenerate"
   | "compact"
   | "skills"
+  | "tool"
   | "help";
 
 export interface SlashCommand {
@@ -31,6 +32,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { id: "regenerate", name: "/regenerate", description: "对最后一条 assistant 消息重新生成", aliases: ["/regen"] },
   { id: "compact", name: "/compact", description: "压缩早期对话为摘要，保留最近 4 条" },
   { id: "skills", name: "/skills", description: "打开 Skills / Prompt 库选择器" },
+  { id: "tool", name: "/tool", description: "选择一个工具，输入框自动插入工具 hint 前缀" },
   { id: "help", name: "/help", description: "列出全部可用命令" },
 ];
 
