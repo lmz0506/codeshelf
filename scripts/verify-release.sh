@@ -8,6 +8,26 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# 兜底：在 Windows Git Bash / 某些 shell 下，npm 唤起的 bash 未必继承 ~/.cargo/bin。
+# cargo 若不在 PATH，尝试常见安装位置。
+if ! command -v cargo >/dev/null 2>&1; then
+  for candidate in \
+    "$HOME/.cargo/bin" \
+    "${USERPROFILE:-}/.cargo/bin" \
+    "/c/Users/${USERNAME:-$USER}/.cargo/bin"; do
+    if [ -n "$candidate" ] && [ -x "$candidate/cargo" -o -x "$candidate/cargo.exe" ]; then
+      export PATH="$candidate:$PATH"
+      break
+    fi
+  done
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "❌ cargo not found. Install Rust: https://rustup.rs/" >&2
+  echo "   Or ensure ~/.cargo/bin is in PATH for the shell npm uses." >&2
+  exit 1
+fi
+
 echo "==> [1/2] Frontend: npm install + tsc + vite build"
 if [ -f package-lock.json ]; then
   npm ci
