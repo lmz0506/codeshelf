@@ -277,6 +277,11 @@ pub struct AppSettingsInput {
     pub scan_depth: Option<u32>,
     pub auto_update: Option<bool>,
     pub chat_history_dir: Option<String>,
+    pub chat_bridge_enabled: Option<bool>,
+    pub openclaw_relay_endpoint: Option<String>,
+    pub bridge_provider_id: Option<String>,
+    pub bridge_model_id: Option<String>,
+    pub bridge_client_id: Option<String>,
 }
 
 #[tauri::command]
@@ -296,7 +301,7 @@ pub async fn get_app_settings() -> Result<AppSettings, String> {
 }
 
 #[tauri::command]
-pub async fn save_app_settings(input: AppSettingsInput) -> Result<AppSettings, String> {
+pub async fn save_app_settings(app: tauri::AppHandle, input: AppSettingsInput) -> Result<AppSettings, String> {
     let mut settings = get_app_settings().await?;
 
     if let Some(theme) = input.theme { settings.theme = theme; }
@@ -305,6 +310,11 @@ pub async fn save_app_settings(input: AppSettingsInput) -> Result<AppSettings, S
     if let Some(scan_depth) = input.scan_depth { settings.scan_depth = scan_depth; }
     if let Some(auto_update) = input.auto_update { settings.auto_update = auto_update; }
     if let Some(chat_history_dir) = input.chat_history_dir { settings.chat_history_dir = Some(chat_history_dir); }
+    if let Some(v) = input.chat_bridge_enabled { settings.chat_bridge_enabled = v; }
+    if let Some(v) = input.openclaw_relay_endpoint { settings.openclaw_relay_endpoint = Some(v); }
+    if let Some(v) = input.bridge_provider_id { settings.bridge_provider_id = Some(v); }
+    if let Some(v) = input.bridge_model_id { settings.bridge_model_id = Some(v); }
+    if let Some(v) = input.bridge_client_id { settings.bridge_client_id = Some(v); }
 
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -314,6 +324,9 @@ pub async fn save_app_settings(input: AppSettingsInput) -> Result<AppSettings, S
 
     fs::write(config.app_settings_file(), content)
         .map_err(|e| format!("保存应用设置失败: {}", e))?;
+
+    // 通知聊天桥接 poller 重新加载配置
+    super::chat_bridge::notify_reload(&app).await;
 
     Ok(settings)
 }

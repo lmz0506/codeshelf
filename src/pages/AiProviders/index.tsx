@@ -72,13 +72,13 @@ function getDefaultOptionKey(providers: AiProviderConfig[]): string | null {
 }
 
 function buildMessage(role: ChatMessage["role"], content: string, thinkingContent?: string, attachments?: Array<{ name: string; path: string }>): ChatMessage {
-  const newVar = {
+  const newVar: ChatMessage = {
     id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     role,
     content,
     createdAt: new Date().toISOString(),
     thinkingContent,
-    attachments,
+    attachments: attachments?.map((a) => ({ kind: "file" as const, path: a.path, name: a.name })),
   };
   return newVar;
 }

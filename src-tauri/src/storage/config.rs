@@ -133,7 +133,19 @@ impl StorageConfig {
     pub fn conversations_dir(&self) -> PathBuf {
         self.data_dir.join("conversations")
       }
-  
+
+    pub fn memory_file(&self) -> PathBuf {
+        self.data_dir.join("MEMORY.md")
+    }
+
+    pub fn skills_dir(&self) -> PathBuf {
+        self.data_dir.join("skills")
+    }
+
+    pub fn workflows_dir(&self) -> PathBuf {
+        self.data_dir.join("workflows")
+    }
+
     pub fn clipboard_history_file(&self) -> PathBuf {
         self.data_dir.join("clipboard_history.json")
     }
@@ -148,6 +160,18 @@ impl StorageConfig {
 
     pub fn resumes_file(&self) -> PathBuf {
         self.data_dir.join("resumes.json")
+    }
+
+    pub fn api_groups_file(&self) -> PathBuf {
+        self.data_dir.join("api_groups.json")
+    }
+
+    pub fn api_endpoints_file(&self) -> PathBuf {
+        self.data_dir.join("api_endpoints.json")
+    }
+
+    pub fn api_chat_sessions_dir(&self) -> PathBuf {
+        self.data_dir.join("api_chat_sessions")
     }
 }
 

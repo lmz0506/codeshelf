@@ -117,6 +117,7 @@ export interface AiModelConfig {
   isDefault: boolean;
   thinking: boolean;
   stream: boolean;
+  vision?: boolean;
 }
 
 export interface AiProviderConfig {
@@ -131,15 +132,36 @@ export interface AiProviderConfig {
   models: AiModelConfig[];
 }
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+export type ChatAttachment =
+  | { kind: "image"; dataUrl: string; name?: string }
+  | { kind: "file"; path: string; name: string }
+  | { kind: "text"; name: string; content: string };
+
 export interface ChatMessage {
   id: string;
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
   createdAt: string;
   tokens?: number;
   thinking?: boolean;
   thinkingContent?: string;
-  attachments?: Array<{ name: string; path: string }>;
+  attachments?: ChatAttachment[];
+  edited?: boolean;
+  toolCalls?: ToolCall[];
+  toolCallId?: string;
+  toolName?: string;
+  toolStatus?: number;
+  toolMethod?: string;
+  toolUrl?: string;
+  toolElapsedMs?: number;
+  toolBodyBytes?: number;
+  toolTruncated?: boolean;
 }
 
 export interface ChatSession {
@@ -150,6 +172,16 @@ export interface ChatSession {
   createdAt: string;
   updatedAt: string;
   messages: ChatMessage[];
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  pinned?: boolean;
+  allowedTools?: string[];
+  enabledTools?: string[];
+  allowedCwd?: string;
 }
 
 export interface ChatSessionSummary {
@@ -160,6 +192,7 @@ export interface ChatSessionSummary {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  pinned?: boolean;
 }
 
 // ============== 应用快捷键 ==============
@@ -172,4 +205,79 @@ export interface AppShortcutBinding {
   defaultKeys: string;
   enabled: boolean;
   global: boolean;
+}
+
+// ============== ApiChat：通用 API 对话 ==============
+
+export type SessionInject =
+  | { type: "cookie" }
+  | { type: "header"; name: string; format: string };
+
+export type ApiAuthConfig =
+  | { type: "none" }
+  | { type: "bearer"; token: string }
+  | { type: "basic"; username: string; password: string }
+  | { type: "apiKey"; header: string; value: string }
+  | {
+      type: "session";
+      loginUrl: string;
+      loginMethod: string;
+      credentialsJson: string;
+      tokenJsonPath?: string;
+      injectAs: SessionInject;
+    };
+
+export interface ApiGroup {
+  id: string;
+  name: string;
+  description?: string;
+  baseUrl: string;
+  auth: ApiAuthConfig;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiEndpoint {
+  id: string;
+  name: string;
+  description?: string;
+  groupId?: string;
+  method: string;
+  url: string;
+  headers: [string, string][];
+  authOverride?: ApiAuthConfig;
+  paramsSchema: Record<string, unknown>;
+  responseTrimBytes?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiChatSession {
+  id: string;
+  title: string;
+  providerId: string;
+  modelId: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatMessage[];
+  selectedEndpointIds: string[];
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  pinned?: boolean;
+}
+
+export interface ApiChatSessionSummary {
+  id: string;
+  title: string;
+  providerId: string;
+  modelId: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  endpointCount: number;
+  pinned?: boolean;
 }

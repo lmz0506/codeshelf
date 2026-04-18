@@ -58,6 +58,21 @@ pub struct AppSettings {
     pub auto_update: bool,
     #[serde(default)]
     pub chat_history_dir: Option<String>,
+    /// 是否启用 OpenClaw 聊天桥接（外部聊天平台通过中继 relay 入站）
+    #[serde(default)]
+    pub chat_bridge_enabled: bool,
+    /// 中继服务 base URL，例如 https://relay.example.com
+    #[serde(default)]
+    pub openclaw_relay_endpoint: Option<String>,
+    /// 桥接时用于回复的 provider id（复用 ai_providers 配置）
+    #[serde(default)]
+    pub bridge_provider_id: Option<String>,
+    /// 桥接时使用的 model id
+    #[serde(default)]
+    pub bridge_model_id: Option<String>,
+    /// 客户端标识，默认 codeshelf-<hostname>
+    #[serde(default)]
+    pub bridge_client_id: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -73,6 +88,11 @@ impl Default for AppSettings {
             scan_depth: 3,
             auto_update: true,
             chat_history_dir: None,
+            chat_bridge_enabled: false,
+            openclaw_relay_endpoint: None,
+            bridge_provider_id: None,
+            bridge_model_id: None,
+            bridge_client_id: None,
         }
     }
 }
@@ -157,6 +177,8 @@ pub struct AiModelConfig {
     pub thinking: bool,
     #[serde(default = "default_true")]
     pub stream: bool,
+    #[serde(default)]
+    pub vision: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -185,6 +207,28 @@ pub struct ChatMessage {
     pub tokens: Option<u32>,
     pub thinking: Option<bool>,
     pub thinking_content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_elapsed_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_body_bytes: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_truncated: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -197,6 +241,29 @@ pub struct ChatSession {
     pub created_at: String,
     pub updated_at: String,
     pub messages: Vec<ChatMessage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
+    /// 会话级"始终允许"的工具名列表（用户在授权弹窗勾"始终允许"后写入）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>,
+    /// 会话启用的工具集合；缺省使用全局默认
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled_tools: Option<Vec<String>>,
+    /// 工具（Read/Write/Bash 等）允许操作的根目录；缺省则禁止写入/执行类工具
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_cwd: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -209,6 +276,8 @@ pub struct ChatSessionSummary {
     pub created_at: String,
     pub updated_at: String,
     pub message_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
 }
 
 
@@ -258,4 +327,142 @@ pub fn generate_id() -> String {
         .unwrap()
         .as_nanos();
     format!("{:x}", timestamp)
+}
+
+// ============== API 对话（ApiChat）数据 ==============
+
+/// Session 鉴权中 token 如何注入后续请求
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SessionInject {
+    /// 完全依赖 reqwest 的 cookie_store
+    Cookie,
+    /// 从登录响应 JSON 抽 token，按 format 注入到指定 header
+    Header {
+        name: String,
+        /// 例如 "Bearer {token}"
+        format: String,
+    },
+}
+
+/// API 鉴权配置
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ApiAuthConfig {
+    None,
+    Bearer {
+        token: String,
+    },
+    Basic {
+        username: String,
+        password: String,
+    },
+    ApiKey {
+        header: String,
+        value: String,
+    },
+    Session {
+        /// 可为相对路径（拼 group.baseUrl）或绝对 URL
+        login_url: String,
+        /// 通常 "POST"
+        login_method: String,
+        /// 登录 body，用户自定义 JSON 字符串
+        credentials_json: String,
+        /// 从登录响应提取 token 的 JSON path，如 "data.token"；为空依赖 Cookie
+        token_json_path: Option<String>,
+        inject_as: SessionInject,
+    },
+}
+
+impl Default for ApiAuthConfig {
+    fn default() -> Self {
+        ApiAuthConfig::None
+    }
+}
+
+/// 接口分组（同一项目共享鉴权）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiGroup {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub base_url: String,
+    pub auth: ApiAuthConfig,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 单个 API 接口
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiEndpoint {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// None 表示独立接口（不属于任何组）
+    #[serde(default)]
+    pub group_id: Option<String>,
+    /// GET / POST / PUT / PATCH / DELETE
+    pub method: String,
+    /// 可含 {path_param}；或绝对 URL（此时忽略组 baseUrl）
+    pub url: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    /// 覆盖组鉴权
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_override: Option<ApiAuthConfig>,
+    /// 喂给 LLM function-calling 的 JSON Schema
+    pub params_schema: serde_json::Value,
+    /// 响应截断字节数（默认 8192）
+    #[serde(default)]
+    pub response_trim_bytes: Option<u32>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// API 对话会话（与 ChatSession 字段大致对齐，额外携带绑定的接口集合）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiChatSession {
+    pub id: String,
+    pub title: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub messages: Vec<ChatMessage>,
+    #[serde(default)]
+    pub selected_endpoint_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiChatSessionSummary {
+    pub id: String,
+    pub title: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub message_count: usize,
+    pub endpoint_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
 }

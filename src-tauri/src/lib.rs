@@ -2,7 +2,7 @@ mod commands;
 mod keyboard_hook;
 mod storage;
 
-use commands::{git, project, stats, system, toolbox, settings, chat};
+use commands::{git, project, stats, system, toolbox, settings, chat, tools, extras, api_chat};
 use tauri::{
     Emitter, Manager, RunEvent,
     tray::TrayIconBuilder,
@@ -174,6 +174,18 @@ pub fn run() {
 
             // 初始化 Netcat 状态
             app.manage(toolbox::netcat::NetcatState::new());
+
+            // 启动工作流调度器
+            {
+                let handle = commands::workflows::spawn_scheduler(app.handle().clone());
+                app.manage(std::sync::Arc::new(tokio::sync::RwLock::new(handle)));
+            }
+
+            // 启动聊天桥接 poller
+            {
+                let handle = commands::chat_bridge::spawn_bridge(app.handle().clone());
+                app.manage(std::sync::Arc::new(tokio::sync::RwLock::new(handle)));
+            }
 
             // 初始化 macOS/Linux 全局快捷键插件
             #[cfg(not(target_os = "windows"))]
@@ -386,6 +398,44 @@ pub fn run() {
             chat::delete_chat_session,
             chat::chat_stream,
             chat::chat_cancel,
+            // ApiChat: Groups / Endpoints / Sessions / LLM bridge
+            api_chat::list_api_groups,
+            api_chat::save_api_group,
+            api_chat::delete_api_group,
+            api_chat::list_api_endpoints,
+            api_chat::save_api_endpoint,
+            api_chat::delete_api_endpoint,
+            api_chat::list_api_chat_sessions,
+            api_chat::get_api_chat_session,
+            api_chat::create_api_chat_session,
+            api_chat::save_api_chat_session,
+            api_chat::rename_api_chat_session,
+            api_chat::delete_api_chat_session,
+            api_chat::build_api_tools,
+            api_chat::execute_api_endpoint,
+            // Chat tools / tasks
+            tools::chat_list_tools,
+            tools::chat_execute_tool,
+            tools::list_chat_tasks,
+            tools::create_chat_task,
+            tools::update_chat_task,
+            tools::delete_chat_task,
+            // Memory / Skills / Mention
+            extras::get_global_memory,
+            extras::save_global_memory,
+            extras::list_skills,
+            extras::save_skill,
+            extras::delete_skill,
+            extras::list_dir_entries,
+            extras::read_mention_file,
+            // Workflows
+            commands::workflows::workflow_list,
+            commands::workflows::workflow_get,
+            commands::workflows::workflow_save,
+            commands::workflows::workflow_delete,
+            commands::workflows::workflow_run_now,
+            commands::workflows::workflow_set_enabled,
+            commands::chat_bridge::chat_bridge_test,
             // Toolbox - Clipboard commands
             toolbox::clipboard::get_clipboard_history,
             toolbox::clipboard::add_clipboard_entry,

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
-import { Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard } from "lucide-react";
+import { Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard, Link2 } from "lucide-react";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import { getVersion } from "@tauri-apps/api/app";
 import { EditorSettings } from "./EditorSettings";
@@ -11,8 +11,9 @@ import { LabelSettings } from "./LabelSettings";
 import { UpdateSettings } from "./UpdateSettings";
 import { AboutSettings } from "./AboutSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
+import { ChatBridgeSettings } from "./ChatBridgeSettings";
 
-type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "shortcuts" | "update" | "about" | null;
+type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "shortcuts" | "chatBridge" | "update" | "about" | null;
 
 export function SettingsPage() {
   const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, labels, appShortcuts } = useAppStore();
@@ -95,6 +96,14 @@ export function SettingsPage() {
       icon: Keyboard,
       value: `${appShortcuts.filter((s) => s.enabled).length || 11} 个启用`,
       component: ShortcutSettings,
+    },
+    {
+      id: "chatBridge" as const,
+      title: "聊天桥接",
+      description: "OpenClaw 中继，接入飞书/钉钉/企微",
+      icon: Link2,
+      value: "点击配置",
+      component: ChatBridgeSettings,
     },
     {
       id: "update" as const,

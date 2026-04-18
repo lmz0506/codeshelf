@@ -5,3 +5,8 @@ pub mod system;
 pub mod toolbox;
 pub mod settings;
 pub mod chat;
+pub mod tools;
+pub mod extras;
+pub mod workflows;
+pub mod chat_bridge;
+pub mod api_chat;
