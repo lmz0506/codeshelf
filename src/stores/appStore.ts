@@ -193,6 +193,11 @@ const saveAppSettings = debounce(async (settings: {
   scan_depth?: number;
   auto_update?: boolean;
   chat_history_dir?: string;
+  chat_bridge_enabled?: boolean;
+  openclaw_relay_endpoint?: string;
+  bridge_provider_id?: string;
+  bridge_model_id?: string;
+  bridge_client_id?: string;
 }) => {
   try {
     await invoke("save_app_settings", { input: settings });

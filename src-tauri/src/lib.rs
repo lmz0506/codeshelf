@@ -181,6 +181,12 @@ pub fn run() {
                 app.manage(std::sync::Arc::new(tokio::sync::RwLock::new(handle)));
             }
 
+            // 启动聊天桥接 poller
+            {
+                let handle = commands::chat_bridge::spawn_bridge(app.handle().clone());
+                app.manage(std::sync::Arc::new(tokio::sync::RwLock::new(handle)));
+            }
+
             // 初始化 macOS/Linux 全局快捷键插件
             #[cfg(not(target_os = "windows"))]
             {
@@ -414,6 +420,7 @@ pub fn run() {
             commands::workflows::workflow_delete,
             commands::workflows::workflow_run_now,
             commands::workflows::workflow_set_enabled,
+            commands::chat_bridge::chat_bridge_test,
             // Toolbox - Clipboard commands
             toolbox::clipboard::get_clipboard_history,
             toolbox::clipboard::add_clipboard_entry,

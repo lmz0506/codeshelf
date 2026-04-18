@@ -8,3 +8,4 @@ pub mod chat;
 pub mod tools;
 pub mod extras;
 pub mod workflows;
+pub mod chat_bridge;
