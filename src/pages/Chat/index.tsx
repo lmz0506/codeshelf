@@ -486,13 +486,41 @@ export function ChatPage() {
 
   const MAX_TOOL_ROUNDS = 10;
 
+  /** 扫最近一条 user 消息是否以 `[使用 NAME 工具]` 开头，若是返回工具名 */
+  function detectForcedTool(session: ChatSession): string | null {
+    const last = [...session.messages].reverse().find((m) => m.role === "user");
+    if (!last) return null;
+    const m = last.content.match(/^\s*\[使用\s+([A-Za-z_][A-Za-z0-9_]*)\s+工具\]/);
+    return m ? m[1] : null;
+  }
+
   async function runChatRequest(session: ChatSession, round: number = 0): Promise<void> {
     if (!selected) return;
     if (round >= MAX_TOOL_ROUNDS) {
       showToast("warning", `已达到最大工具循环轮次（${MAX_TOOL_ROUNDS}），请检查`);
       return;
     }
-    const tools = activeTools(session);
+    let tools = activeTools(session);
+    let toolChoice: { type: "function"; function: { name: string } } | undefined;
+
+    // 仅在第 0 轮做 soft-force：后续工具循环按常规 auto
+    if (round === 0) {
+      const forced = detectForcedTool(session);
+      if (forced) {
+        const schema = toolSchemas.find((t) => t.name === forced);
+        if (!schema) {
+          showToast("warning", `未找到工具 ${forced}，已退回普通对话`);
+        } else {
+          tools = [
+            {
+              type: "function" as const,
+              function: { name: schema.name, description: schema.description, parameters: schema.parameters },
+            },
+          ];
+          toolChoice = { type: "function", function: { name: schema.name } };
+        }
+      }
+    }
 
     try {
       await startStream(
@@ -510,6 +538,7 @@ export function ChatPage() {
           presencePenalty: session.presencePenalty,
           messages: toStreamMessages(session),
           tools,
+          toolChoice,
         },
         {
           onDelta: (full, thinking) => {
@@ -1224,8 +1253,33 @@ export function ChatPage() {
       <ToolPicker
         open={toolPickerOpen}
         toolSchemas={toolSchemas}
+        sessionId={activeSession?.id ?? null}
+        allowedCwd={activeSession?.allowedCwd ?? null}
         onClose={() => setToolPickerOpen(false)}
-        onSelect={(hint) => setInput((prev) => (prev.trim() ? `${prev}\n\n${hint}` : hint))}
+        onInsertHint={(hint) => setInput((prev) => (prev.trim() ? `${prev}\n\n${hint}` : hint))}
+        onExecuted={async (toolName, argumentsJson, result) => {
+          const session = activeSessionRef.current;
+          if (!session) return;
+          const callId = typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          const assistantMsg = makeMessage("assistant", "", {
+            toolCalls: [{ id: callId, name: toolName, arguments: argumentsJson }],
+          });
+          const toolMsg = makeMessage("tool", result, {
+            toolCallId: callId,
+            toolName,
+          });
+          const next: ChatSession = {
+            ...session,
+            messages: [...session.messages, assistantMsg, toolMsg],
+          };
+          try {
+            await persistSession(next);
+          } catch {
+            showToast("error", "保存消息失败");
+          }
+        }}
       />
 
       <AtMentionPicker
