@@ -187,6 +187,14 @@ pub struct ChatMessage {
     pub thinking_content: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edited: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -213,6 +221,15 @@ pub struct ChatSession {
     pub presence_penalty: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<bool>,
+    /// 会话级"始终允许"的工具名列表（用户在授权弹窗勾"始终允许"后写入）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>,
+    /// 会话启用的工具集合；缺省使用全局默认
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled_tools: Option<Vec<String>>,
+    /// 工具（Read/Write/Bash 等）允许操作的根目录；缺省则禁止写入/执行类工具
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_cwd: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

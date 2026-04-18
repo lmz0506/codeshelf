@@ -30,13 +30,33 @@ pub struct ChatStreamRequest {
     pub top_p: Option<f32>,
     pub frequency_penalty: Option<f32>,
     pub presence_penalty: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<serde_json::Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatStreamMessage {
     pub role: String,
-    pub content: String,
+    /// string 或 OpenAI 多模态内容数组
+    pub content: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<serde_json::Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallDelta {
+    pub index: u32,
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub arguments_delta: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +67,25 @@ pub struct ChatStreamEvent {
     pub done: bool,
     pub error: Option<String>,
     pub thinking_delta: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_delta: Option<ToolCallDelta>,
+    /// 某一轮完成时携带的 finish_reason（"stop" / "tool_calls" 等）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish_reason: Option<String>,
+}
+
+impl ChatStreamEvent {
+    fn new(request_id: &str) -> Self {
+        Self {
+            request_id: request_id.to_string(),
+            delta: None,
+            done: false,
+            error: None,
+            thinking_delta: None,
+            tool_call_delta: None,
+            finish_reason: None,
+        }
+    }
 }
 
 static CHAT_ABORTS: Lazy<Arc<RwLock<HashMap<String, tokio::task::AbortHandle>>>> =
@@ -78,6 +117,11 @@ fn resolve_chat_history_dir() -> Result<PathBuf, String> {
         return Ok(PathBuf::from(dir));
     }
     get_default_chat_dir()
+}
+
+/// 供 tools 模块访问
+pub fn resolve_chat_history_dir_pub() -> Result<PathBuf, String> {
+    resolve_chat_history_dir()
 }
 
 #[tauri::command]
@@ -165,6 +209,9 @@ pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
             frequency_penalty: None,
             presence_penalty: None,
             pinned: None,
+            allowed_tools: None,
+            enabled_tools: None,
+            allowed_cwd: None,
         });
         summaries.push(ChatSessionSummary {
             id: session.id,
@@ -225,6 +272,9 @@ pub async fn create_chat_session(input: CreateChatSessionInput) -> Result<ChatSe
         frequency_penalty: None,
         presence_penalty: None,
         pinned: None,
+        allowed_tools: None,
+        enabled_tools: None,
+        allowed_cwd: None,
     };
 
     save_chat_session(session.clone()).await?;
@@ -291,11 +341,24 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
 
     let use_stream = request.stream.unwrap_or(true);
 
-    // Filter out empty assistant messages to avoid API 400 errors
+    // 过滤空 assistant 消息避免 API 400（content 可能是 string 或数组）
     let filtered_messages: Vec<&ChatStreamMessage> = request
         .messages
         .iter()
-        .filter(|m| m.role != "assistant" || !m.content.trim().is_empty())
+        .filter(|m| {
+            if m.role != "assistant" {
+                return true;
+            }
+            // 若有 tool_calls 则保留，哪怕 content 为空
+            if m.tool_calls.as_ref().map_or(false, |t| !t.is_empty()) {
+                return true;
+            }
+            match &m.content {
+                serde_json::Value::String(s) => !s.trim().is_empty(),
+                serde_json::Value::Array(a) => !a.is_empty(),
+                _ => true,
+            }
+        })
         .collect();
 
     let mut payload = serde_json::json!({
@@ -323,6 +386,16 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
         payload["enable_thinking"] = serde_json::json!(true);
         payload["reasoning"] = serde_json::json!({ "effort": "medium" });
     }
+    if let Some(tools) = request.tools.as_ref() {
+        if !tools.is_empty() {
+            payload["tools"] = serde_json::json!(tools);
+            if let Some(tc) = request.tool_choice.as_ref() {
+                payload["tool_choice"] = tc.clone();
+            } else {
+                payload["tool_choice"] = serde_json::json!("auto");
+            }
+        }
+    }
 
     let body = payload;
 
@@ -336,16 +409,10 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
             .await;
 
         let send_error = |err: String| async {
-            let _ = app_handle.emit(
-                "chat-stream",
-                ChatStreamEvent {
-                    request_id: request_id.clone(),
-                    delta: None,
-                    done: true,
-                    error: Some(err),
-                    thinking_delta: None,
-                },
-            );
+            let mut ev = ChatStreamEvent::new(&request_id);
+            ev.done = true;
+            ev.error = Some(err);
+            let _ = app_handle.emit("chat-stream", ev);
         };
 
         let response = match response {
@@ -364,7 +431,7 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
         }
 
         if !use_stream {
-            // Non-streaming: read the full response body at once
+            // 非流式：一次性读取
             let text = match response.text().await {
                 Ok(t) => t,
                 Err(err) => {
@@ -379,59 +446,64 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
                     return;
                 }
             };
-            let content = parsed
-                .get("choices")
-                .and_then(|v| v.get(0))
-                .and_then(|v| v.get("message"))
+            let choice0 = parsed.get("choices").and_then(|v| v.get(0));
+            let message = choice0.and_then(|v| v.get("message"));
+            let content = message
                 .and_then(|v| v.get("content"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let reasoning = parsed
-                .get("choices")
-                .and_then(|v| v.get(0))
-                .and_then(|v| v.get("message"))
+            let reasoning = message
                 .and_then(|v| v.get("reasoning_content"))
                 .and_then(|v| v.as_str());
+            let tool_calls = message.and_then(|v| v.get("tool_calls")).and_then(|v| v.as_array());
+            let finish_reason = choice0
+                .and_then(|v| v.get("finish_reason"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
             if let Some(r) = reasoning {
-                let _ = app_handle.emit(
-                    "chat-stream",
-                    ChatStreamEvent {
-                        request_id: request_id.clone(),
-                        delta: None,
-                        done: false,
-                        error: None,
-                        thinking_delta: Some(r.to_string()),
-                    },
-                );
+                let mut ev = ChatStreamEvent::new(&request_id);
+                ev.thinking_delta = Some(r.to_string());
+                let _ = app_handle.emit("chat-stream", ev);
             }
             if !content.is_empty() {
-                let _ = app_handle.emit(
-                    "chat-stream",
-                    ChatStreamEvent {
-                        request_id: request_id.clone(),
-                        delta: Some(content.to_string()),
-                        done: false,
-                        error: None,
-                        thinking_delta: None,
-                    },
-                );
+                let mut ev = ChatStreamEvent::new(&request_id);
+                ev.delta = Some(content.to_string());
+                let _ = app_handle.emit("chat-stream", ev);
             }
-            let _ = app_handle.emit(
-                "chat-stream",
-                ChatStreamEvent {
-                    request_id: request_id.clone(),
-                    delta: None,
-                    done: true,
-                    error: None,
-                    thinking_delta: None,
-                },
-            );
+            if let Some(calls) = tool_calls {
+                for (idx, call) in calls.iter().enumerate() {
+                    let id = call.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let func = call.get("function");
+                    let name = func
+                        .and_then(|v| v.get("name"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let args = func
+                        .and_then(|v| v.get("arguments"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let mut ev = ChatStreamEvent::new(&request_id);
+                    ev.tool_call_delta = Some(ToolCallDelta {
+                        index: idx as u32,
+                        id,
+                        name,
+                        arguments_delta: args,
+                    });
+                    let _ = app_handle.emit("chat-stream", ev);
+                }
+            }
+            let mut ev = ChatStreamEvent::new(&request_id);
+            ev.done = true;
+            ev.finish_reason = finish_reason;
+            let _ = app_handle.emit("chat-stream", ev);
             return;
         }
 
-        // Streaming mode
+        // 流式
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
+        let mut last_finish: Option<String> = None;
 
         while let Some(chunk) = stream.next().await {
             match chunk {
@@ -446,71 +518,81 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
                         }
                         let data = line.trim_start_matches("data:").trim();
                         if data == "[DONE]" {
-                            let _ = app_handle.emit(
-                                "chat-stream",
-                                ChatStreamEvent {
-                                    request_id: request_id.clone(),
-                                    delta: None,
-                                    done: true,
-                                    error: None,
-                                    thinking_delta: None,
-                                },
-                            );
+                            let mut ev = ChatStreamEvent::new(&request_id);
+                            ev.done = true;
+                            ev.finish_reason = last_finish.clone();
+                            let _ = app_handle.emit("chat-stream", ev);
                             return;
                         }
                         let parsed: serde_json::Value = match serde_json::from_str(data) {
                             Ok(v) => v,
                             Err(_) => continue,
                         };
-                        if let Some(delta) = parsed
-                            .get("choices")
-                            .and_then(|v| v.get(0))
-                            .and_then(|v| v.get("delta"))
+                        let choice0 = parsed.get("choices").and_then(|v| v.get(0));
+                        let delta = choice0.and_then(|v| v.get("delta"));
+
+                        if let Some(fr) = choice0
+                            .and_then(|v| v.get("finish_reason"))
+                            .and_then(|v| v.as_str())
+                        {
+                            last_finish = Some(fr.to_string());
+                        }
+
+                        if let Some(content) = delta
                             .and_then(|v| v.get("content"))
                             .and_then(|v| v.as_str())
                         {
-                            let _ = app_handle.emit(
-                                "chat-stream",
-                                ChatStreamEvent {
-                                    request_id: request_id.clone(),
-                                    delta: Some(delta.to_string()),
-                                    done: false,
-                                    error: None,
-                                    thinking_delta: None,
-                                },
-                            );
+                            let mut ev = ChatStreamEvent::new(&request_id);
+                            ev.delta = Some(content.to_string());
+                            let _ = app_handle.emit("chat-stream", ev);
                         }
-                        if let Some(thinking) = parsed
-                            .get("choices")
-                            .and_then(|v| v.get(0))
-                            .and_then(|v| v.get("delta"))
+                        if let Some(thinking) = delta
                             .and_then(|v| v.get("reasoning_content"))
                             .and_then(|v| v.as_str())
                         {
-                            let _ = app_handle.emit(
-                                "chat-stream",
-                                ChatStreamEvent {
-                                    request_id: request_id.clone(),
-                                    delta: None,
-                                    done: false,
-                                    error: None,
-                                    thinking_delta: Some(thinking.to_string()),
-                                },
-                            );
+                            let mut ev = ChatStreamEvent::new(&request_id);
+                            ev.thinking_delta = Some(thinking.to_string());
+                            let _ = app_handle.emit("chat-stream", ev);
+                        }
+                        if let Some(tool_calls) = delta
+                            .and_then(|v| v.get("tool_calls"))
+                            .and_then(|v| v.as_array())
+                        {
+                            for call in tool_calls {
+                                let index = call
+                                    .get("index")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0) as u32;
+                                let id = call.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                let func = call.get("function");
+                                let name = func
+                                    .and_then(|v| v.get("name"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                let args = func
+                                    .and_then(|v| v.get("arguments"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                if id.is_none() && name.is_none() && args.is_none() {
+                                    continue;
+                                }
+                                let mut ev = ChatStreamEvent::new(&request_id);
+                                ev.tool_call_delta = Some(ToolCallDelta {
+                                    index,
+                                    id,
+                                    name,
+                                    arguments_delta: args,
+                                });
+                                let _ = app_handle.emit("chat-stream", ev);
+                            }
                         }
                     }
                 }
                 Err(err) => {
-                    let _ = app_handle.emit(
-                        "chat-stream",
-                        ChatStreamEvent {
-                            request_id: request_id.clone(),
-                            delta: None,
-                            done: true,
-                            error: Some(format!("读取流失败: {}", err)),
-                            thinking_delta: None,
-                        },
-                    );
+                    let mut ev = ChatStreamEvent::new(&request_id);
+                    ev.done = true;
+                    ev.error = Some(format!("读取流失败: {}", err));
+                    let _ = app_handle.emit("chat-stream", ev);
                     return;
                 }
             }

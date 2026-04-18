@@ -1,25 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Settings } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Settings, FolderCog, ListChecks } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import {
   createChatSession,
   deleteChatSession,
+  executeTool,
   getChatSession,
   listChatSessions,
+  listTools,
   renameChatSession,
   saveChatSession,
 } from "@/services/chat";
-import type { AiModelConfig, AiProviderConfig, ChatMessage, ChatSession, ChatSessionSummary } from "@/types";
+import type { ChatStreamMessage, ToolSchema } from "@/services/chat";
+import type { AiModelConfig, AiProviderConfig, ChatMessage, ChatSession, ChatSessionSummary, ToolCall } from "@/types";
 
 import { SessionSidebar } from "./components/SessionSidebar";
 import { MessageList } from "./components/MessageList";
 import { ChatInput } from "./components/ChatInput";
 import { RenameDialog } from "./components/RenameDialog";
 import { SessionConfigPanel, type SessionConfigValues } from "./components/SessionConfigPanel";
+import { ToolApprovalDialog, type PendingApproval } from "./components/ToolApprovalDialog";
+import { TaskPanel } from "./components/TaskPanel";
 import { useChatStream } from "./hooks/useChatStream";
 import { exportSessionAsJson, exportSessionAsMarkdown, importSessionFromJson } from "./utils/exportSession";
+import { sessionTokens } from "./utils/tokens";
 import { type SlashCommandId } from "./utils/slashCommands";
 
 interface ModelOption {
@@ -104,6 +111,16 @@ export function ChatPage() {
   const [renameTarget, setRenameTarget] = useState<ChatSessionSummary | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [configFocus, setConfigFocus] = useState<"system" | "params" | undefined>(undefined);
+
+  const [toolsEnabled, setToolsEnabled] = useState(false);
+  const [toolSchemas, setToolSchemas] = useState<ToolSchema[]>([]);
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [taskPanelOpen, setTaskPanelOpen] = useState(false);
+  const approvalResolverRef = useRef<((d: "once" | "always" | "reject") => void) | null>(null);
+
+  useEffect(() => {
+    listTools().then(setToolSchemas).catch(() => {});
+  }, []);
 
   const activeSessionRef = useRef<ChatSession | null>(null);
   activeSessionRef.current = activeSession;
@@ -302,14 +319,76 @@ export function ChatPage() {
     }
   }
 
-  async function runChatRequest(session: ChatSession) {
+  function requestApproval(call: ToolCall): Promise<"once" | "always" | "reject"> {
+    return new Promise((resolve) => {
+      approvalResolverRef.current = resolve;
+      setPendingApproval({ id: call.id, name: call.name, argumentsJson: call.arguments });
+    });
+  }
+
+  function handleApprovalDecision(decision: "once" | "always" | "reject") {
+    const fn = approvalResolverRef.current;
+    approvalResolverRef.current = null;
+    setPendingApproval(null);
+    fn?.(decision);
+  }
+
+  /** 将 ChatSession.messages 转为 OpenAI 协议消息（含 tool_calls / tool 结果） */
+  function toStreamMessages(session: ChatSession): ChatStreamMessage[] {
+    const out: ChatStreamMessage[] = [];
+    if (session.systemPrompt?.trim()) {
+      out.push({ role: "system", content: session.systemPrompt.trim() });
+    }
+    for (const m of session.messages) {
+      if (m.role === "assistant") {
+        const hasToolCalls = (m.toolCalls?.length ?? 0) > 0;
+        if (!hasToolCalls && (!m.content || !m.content.trim())) continue;
+        out.push({
+          role: "assistant",
+          content: m.content ?? "",
+          toolCalls: hasToolCalls
+            ? m.toolCalls!.map((tc) => ({
+                id: tc.id,
+                type: "function" as const,
+                function: { name: tc.name, arguments: tc.arguments || "{}" },
+              }))
+            : undefined,
+        });
+      } else if (m.role === "tool") {
+        out.push({
+          role: "tool",
+          content: m.content,
+          toolCallId: m.toolCallId,
+          name: m.toolName,
+        });
+      } else {
+        out.push({ role: m.role, content: m.content });
+      }
+    }
+    return out;
+  }
+
+  /** 构建 OpenAI tools 参数；仅在 toolsEnabled 时返回 */
+  function activeTools(session: ChatSession) {
+    if (!toolsEnabled) return undefined;
+    const enabled = session.enabledTools ?? toolSchemas.map((t) => t.name);
+    const list = toolSchemas.filter((t) => enabled.includes(t.name));
+    if (list.length === 0) return undefined;
+    return list.map((t) => ({
+      type: "function" as const,
+      function: { name: t.name, description: t.description, parameters: t.parameters },
+    }));
+  }
+
+  const MAX_TOOL_ROUNDS = 10;
+
+  async function runChatRequest(session: ChatSession, round: number = 0): Promise<void> {
     if (!selected) return;
-    const baseMessages = session.messages
-      .filter((m) => m.role !== "assistant" || m.content.trim() !== "")
-      .map((m) => ({ role: m.role, content: m.content }));
-    const payload = session.systemPrompt?.trim()
-      ? [{ role: "system" as const, content: session.systemPrompt.trim() }, ...baseMessages]
-      : baseMessages;
+    if (round >= MAX_TOOL_ROUNDS) {
+      showToast("warning", `已达到最大工具循环轮次（${MAX_TOOL_ROUNDS}），请检查`);
+      return;
+    }
+    const tools = activeTools(session);
 
     try {
       await startStream(
@@ -325,7 +404,8 @@ export function ChatPage() {
           topP: session.topP,
           frequencyPenalty: session.frequencyPenalty,
           presencePenalty: session.presencePenalty,
-          messages: payload,
+          messages: toStreamMessages(session),
+          tools,
         },
         {
           onDelta: (full, thinking) => {
@@ -333,33 +413,56 @@ export function ChatPage() {
               if (!prev) return prev;
               const messages = [...prev.messages];
               const last = messages[messages.length - 1];
-              if (last?.role === "assistant") {
-                messages[messages.length - 1] = { ...last, content: full, thinkingContent: thinking || last.thinkingContent };
+              if (last?.role === "assistant" && !last.toolCalls) {
+                messages[messages.length - 1] = {
+                  ...last,
+                  content: full,
+                  thinkingContent: thinking || last.thinkingContent,
+                };
               } else {
                 messages.push(makeMessage("assistant", full, { thinkingContent: thinking || undefined }));
               }
               return { ...prev, messages };
             });
           },
-          onThinking: () => {
-            // thinkingBuffer 由 hook 提供，用于非 assistant 末尾的展示；
-            // 若已经有 assistant 占位，则在 onDelta 里更新 thinkingContent。
-          },
-          onDone: async () => {
-            const session = activeSessionRef.current;
-            if (!session) return;
-            let toSave = session;
-            // 自动生成标题
-            if ((toSave.title === "新会话" || !toSave.title.trim()) && toSave.messages.length >= 2) {
-              const generated = summarizeTitle(toSave.messages);
-              if (generated) toSave = { ...toSave, title: generated };
+          onThinking: () => {},
+          onToolCallDelta: () => {},
+          onDone: async (finalContent, finalThinking, toolCalls, finishReason) => {
+            const current = activeSessionRef.current;
+            if (!current) return;
+
+            // 写入 assistant 消息（含 toolCalls）
+            const assistantMsg: ChatMessage = makeMessage("assistant", finalContent, {
+              thinkingContent: finalThinking || undefined,
+              toolCalls: toolCalls.length > 0 ? toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments })) : undefined,
+            });
+            const lastIdx = current.messages.length - 1;
+            const last = current.messages[lastIdx];
+            let nextMessages: ChatMessage[];
+            if (last?.role === "assistant" && !last.toolCalls) {
+              // 流式过程中已占位的消息，合并字段
+              nextMessages = [...current.messages];
+              nextMessages[lastIdx] = { ...last, ...assistantMsg, id: last.id, createdAt: last.createdAt };
+            } else {
+              nextMessages = [...current.messages, assistantMsg];
+            }
+            let updatedSession: ChatSession = { ...current, messages: nextMessages };
+            if ((updatedSession.title === "新会话" || !updatedSession.title.trim()) && updatedSession.messages.length >= 2) {
+              const generated = summarizeTitle(updatedSession.messages);
+              if (generated) updatedSession = { ...updatedSession, title: generated };
             }
             try {
-              const saved = await saveChatSession(toSave);
+              const saved = await saveChatSession(updatedSession);
               setActiveSession(saved);
               syncSummary(saved);
+              updatedSession = saved;
             } catch {
               /* ignore */
+            }
+
+            // 若本轮因 tool_calls 结束，走工具循环
+            if (finishReason === "tool_calls" && toolCalls.length > 0) {
+              await executeAndContinue(updatedSession, toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments })), round);
             }
           },
           onError: (msg) => {
@@ -370,6 +473,65 @@ export function ChatPage() {
     } catch {
       showToast("error", "发送失败");
     }
+  }
+
+  async function executeAndContinue(sessionAfterAssistant: ChatSession, calls: ToolCall[], round: number) {
+    let session = sessionAfterAssistant;
+    // 加载一次最新 allowedTools（可能用户在之前回合勾选了"始终允许"）
+    let allowedTools = new Set<string>(session.allowedTools ?? []);
+
+    for (const call of calls) {
+      let approved: "once" | "always" | "reject";
+      if (allowedTools.has(call.name)) {
+        approved = "once";
+      } else {
+        approved = await requestApproval(call);
+      }
+      if (approved === "always") {
+        allowedTools.add(call.name);
+        session = { ...session, allowedTools: Array.from(allowedTools) };
+        try {
+          const saved = await saveChatSession(session);
+          setActiveSession(saved);
+          syncSummary(saved);
+          session = saved;
+        } catch {
+          /* ignore */
+        }
+      }
+
+      let resultContent: string;
+      if (approved === "reject") {
+        resultContent = "（用户拒绝执行此工具）";
+      } else {
+        try {
+          resultContent = await executeTool({
+            sessionId: session.id,
+            toolName: call.name,
+            argumentsJson: call.arguments || "{}",
+          });
+        } catch (err) {
+          resultContent = `执行失败: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+
+      const toolMessage: ChatMessage = makeMessage("tool", resultContent, {
+        toolCallId: call.id,
+        toolName: call.name,
+      });
+      session = { ...session, messages: [...session.messages, toolMessage] };
+      try {
+        const saved = await saveChatSession(session);
+        setActiveSession(saved);
+        syncSummary(saved);
+        session = saved;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // 全部工具已处理，递归进入下一轮
+    await runChatRequest(session, round + 1);
   }
 
   async function handleSend() {
@@ -413,6 +575,19 @@ export function ChatPage() {
       messages: activeSession.messages.filter((m) => m.id !== msg.id),
     };
     await persistSession(updated);
+  }
+
+  async function handlePickAllowedCwd() {
+    if (!activeSession) return;
+    try {
+      const picked = await openDialog({ directory: true, multiple: false, title: "选择允许工具操作的目录" });
+      if (!picked || Array.isArray(picked)) return;
+      const nextSession: ChatSession = { ...activeSession, allowedCwd: picked as string };
+      await persistSession(nextSession);
+      showToast("success", "已设置目录");
+    } catch {
+      showToast("error", "设置失败");
+    }
   }
 
   function handleCopyMessage(msg: ChatMessage) {
@@ -471,71 +646,67 @@ export function ChatPage() {
     showToast("success", "设置已保存");
   }
 
-  const handleSlashCommand = useCallback(
-    async (id: SlashCommandId) => {
-      switch (id) {
-        case "clear":
-          await handleClearMessages();
-          break;
-        case "new":
-          await handleCreateSession();
-          break;
-        case "export": {
-          const s = activeSessionRef.current;
-          if (!s) return;
-          try {
-            if (await exportSessionAsMarkdown(s)) showToast("success", "已导出为 Markdown");
-          } catch {
-            showToast("error", "导出失败");
-          }
-          break;
+  async function handleSlashCommand(id: SlashCommandId) {
+    switch (id) {
+      case "clear":
+        await handleClearMessages();
+        break;
+      case "new":
+        await handleCreateSession();
+        break;
+      case "export": {
+        const s = activeSessionRef.current;
+        if (!s) return;
+        try {
+          if (await exportSessionAsMarkdown(s)) showToast("success", "已导出为 Markdown");
+        } catch {
+          showToast("error", "导出失败");
         }
-        case "exportJson": {
-          const s = activeSessionRef.current;
-          if (!s) return;
-          try {
-            if (await exportSessionAsJson(s)) showToast("success", "已导出为 JSON");
-          } catch {
-            showToast("error", "导出失败");
-          }
-          break;
-        }
-        case "import":
-          await handleImport();
-          break;
-        case "system":
-          setConfigFocus("system");
-          setConfigOpen(true);
-          break;
-        case "config":
-          setConfigFocus("params");
-          setConfigOpen(true);
-          break;
-        case "model":
-          modelSelectRef.current?.focus();
-          break;
-        case "regenerate": {
-          const session = activeSessionRef.current;
-          if (!session) return;
-          const last = [...session.messages].reverse().find((m) => m.role === "assistant");
-          if (!last) {
-            showToast("warning", "没有可重新生成的消息");
-            return;
-          }
-          await handleRegenerateAssistant(last);
-          break;
-        }
-        case "help":
-          showToast(
-            "info",
-            "/clear 清空 · /new 新会话 · /export 导出 md · /system 系统提示 · /config 参数 · /regen 重生成"
-          );
-          break;
+        break;
       }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeSession]
-  );
+      case "exportJson": {
+        const s = activeSessionRef.current;
+        if (!s) return;
+        try {
+          if (await exportSessionAsJson(s)) showToast("success", "已导出为 JSON");
+        } catch {
+          showToast("error", "导出失败");
+        }
+        break;
+      }
+      case "import":
+        await handleImport();
+        break;
+      case "system":
+        setConfigFocus("system");
+        setConfigOpen(true);
+        break;
+      case "config":
+        setConfigFocus("params");
+        setConfigOpen(true);
+        break;
+      case "model":
+        modelSelectRef.current?.focus();
+        break;
+      case "regenerate": {
+        const session = activeSessionRef.current;
+        if (!session) return;
+        const last = [...session.messages].reverse().find((m) => m.role === "assistant");
+        if (!last) {
+          showToast("warning", "没有可重新生成的消息");
+          return;
+        }
+        await handleRegenerateAssistant(last);
+        break;
+      }
+      case "help":
+        showToast(
+          "info",
+          "/clear 清空 · /new 新会话 · /export 导出 md · /system 系统提示 · /config 参数 · /regen 重生成"
+        );
+        break;
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-full">
@@ -546,6 +717,11 @@ export function ChatPage() {
 
         <div className="flex-1 flex items-center gap-3" data-tauri-drag-region>
           <span className="text-lg font-semibold ml-2">💬 对话</span>
+          {activeSession && (
+            <span className="text-[11px] text-gray-400" title="估算 tokens（char/4 近似）">
+              ~{sessionTokens(activeSession.messages).toLocaleString()} tokens
+            </span>
+          )}
           {modelOptions.length > 0 && (
             <select
               ref={modelSelectRef}
@@ -563,16 +739,44 @@ export function ChatPage() {
             </select>
           )}
           {activeSession && (
-            <button
-              className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
-              onClick={() => {
-                setConfigFocus(undefined);
-                setConfigOpen(true);
-              }}
-              title="会话设置"
-            >
-              <Settings size={12} /> 设置
-            </button>
+            <>
+              <label className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 cursor-pointer border ${toolsEnabled ? "bg-blue-50 border-blue-300 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                <input
+                  type="checkbox"
+                  className="hidden"
+                  checked={toolsEnabled}
+                  onChange={(e) => setToolsEnabled(e.target.checked)}
+                  disabled={streaming}
+                />
+                🛠 工具 {toolsEnabled ? "已启用" : "未启用"}
+              </label>
+              <button
+                className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
+                onClick={handlePickAllowedCwd}
+                title="选择允许工具操作的根目录"
+                disabled={streaming}
+              >
+                <FolderCog size={12} />
+                {activeSession.allowedCwd ? activeSession.allowedCwd.split("/").slice(-2).join("/") : "未选目录"}
+              </button>
+              <button
+                className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
+                onClick={() => setTaskPanelOpen((v) => !v)}
+                title="任务面板"
+              >
+                <ListChecks size={12} /> 任务
+              </button>
+              <button
+                className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
+                onClick={() => {
+                  setConfigFocus(undefined);
+                  setConfigOpen(true);
+                }}
+                title="会话设置"
+              >
+                <Settings size={12} /> 设置
+              </button>
+            </>
           )}
         </div>
 
@@ -660,6 +864,12 @@ export function ChatPage() {
         onClose={() => setConfigOpen(false)}
         onSave={handleSaveConfig}
       />
+
+      <ToolApprovalDialog pending={pendingApproval} onDecide={handleApprovalDecision} />
+
+      {activeSession && (
+        <TaskPanel sessionId={activeSession.id} open={taskPanelOpen} onClose={() => setTaskPanelOpen(false)} />
+      )}
     </div>
   );
 }

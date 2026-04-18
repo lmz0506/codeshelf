@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MarkdownRenderer } from "@/components/project/MarkdownRenderer";
 import type { ChatMessage } from "@/types";
 import { MessageActions } from "./MessageActions";
+import { ToolCallBubble } from "./ToolCallBubble";
 import { formatAbsoluteTime, formatRelativeTime } from "../utils/time";
+import { messageTokens } from "../utils/tokens";
 
 interface MessageItemProps {
   message: ChatMessage;
@@ -28,6 +30,12 @@ export function MessageItem({
   const isUser = message.role === "user";
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.content);
+  const [thinkingOpen, setThinkingOpen] = useState(streamingThisMessage);
+  const [toolResultOpen, setToolResultOpen] = useState(false);
+
+  useEffect(() => {
+    setThinkingOpen(streamingThisMessage);
+  }, [streamingThisMessage]);
 
   function startEdit() {
     setEditValue(message.content);
@@ -57,6 +65,30 @@ export function MessageItem({
     }
   }
 
+  // 工具结果消息单独样式
+  if (message.role === "tool") {
+    return (
+      <div className="group flex items-start gap-2 justify-start">
+        <div className="max-w-[75%] rounded-2xl px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">
+          <details open={toolResultOpen} onToggle={(e) => setToolResultOpen((e.target as HTMLDetailsElement).open)}>
+            <summary className="cursor-pointer select-none flex items-center gap-2">
+              <span className="font-semibold">↳ {message.toolName || "tool"} 结果</span>
+              <span className="text-[10px] text-emerald-500" title={formatAbsoluteTime(message.createdAt)}>
+                {formatRelativeTime(message.createdAt)}
+              </span>
+            </summary>
+            <pre className="font-mono whitespace-pre-wrap break-all mt-2 max-h-96 overflow-auto">
+              {message.content}
+            </pre>
+          </details>
+        </div>
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-2">
+          <MessageActions role="assistant" canRegenerate={false} streaming={streaming} onCopy={onCopy} onDelete={onDelete} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`group flex items-start gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
       {isUser && (
@@ -83,12 +115,18 @@ export function MessageItem({
           <span>{isUser ? "你" : "助手"}</span>
           <span>·</span>
           <span>{formatRelativeTime(message.createdAt)}</span>
+          <span>·</span>
+          <span title="估算 tokens">~{messageTokens(message)} tok</span>
           {message.edited && <span className="italic">(已编辑)</span>}
           {streamingThisMessage && <span className="italic animate-pulse">正在生成…</span>}
         </div>
 
         {!isUser && message.thinkingContent && (
-          <details className="mb-2 p-2 text-xs text-purple-600 bg-purple-50 rounded-lg" open={streamingThisMessage}>
+          <details
+            className="mb-2 p-2 text-xs text-purple-600 bg-purple-50 rounded-lg"
+            open={thinkingOpen}
+            onToggle={(e) => setThinkingOpen((e.target as HTMLDetailsElement).open)}
+          >
             <summary className="font-semibold cursor-pointer select-none">thinking</summary>
             <div className="whitespace-pre-wrap mt-1">{message.thinkingContent}</div>
           </details>
@@ -116,9 +154,18 @@ export function MessageItem({
         ) : isUser ? (
           <div className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</div>
         ) : (
-          <div className="text-sm leading-relaxed">
-            <MarkdownRenderer content={message.content} />
-          </div>
+          <>
+            {message.content && (
+              <div className="text-sm leading-relaxed">
+                <MarkdownRenderer content={message.content} />
+              </div>
+            )}
+            {message.toolCalls && message.toolCalls.length > 0 && (
+              <div className={message.content ? "mt-2" : ""}>
+                <ToolCallBubble toolCalls={message.toolCalls} />
+              </div>
+            )}
+          </>
         )}
       </div>
       {!isUser && (

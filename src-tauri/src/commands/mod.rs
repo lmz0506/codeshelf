@@ -5,3 +5,4 @@ pub mod system;
 pub mod toolbox;
 pub mod settings;
 pub mod chat;
+pub mod tools;

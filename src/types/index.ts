@@ -131,16 +131,29 @@ export interface AiProviderConfig {
   models: AiModelConfig[];
 }
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+export type ChatAttachment =
+  | { kind: "image"; dataUrl: string; name?: string }
+  | { kind: "file"; path: string; name: string };
+
 export interface ChatMessage {
   id: string;
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
   createdAt: string;
   tokens?: number;
   thinking?: boolean;
   thinkingContent?: string;
-  attachments?: Array<{ name: string; path: string }>;
+  attachments?: ChatAttachment[];
   edited?: boolean;
+  toolCalls?: ToolCall[];
+  toolCallId?: string;
+  toolName?: string;
 }
 
 export interface ChatSession {
@@ -158,6 +171,9 @@ export interface ChatSession {
   frequencyPenalty?: number;
   presencePenalty?: number;
   pinned?: boolean;
+  allowedTools?: string[];
+  enabledTools?: string[];
+  allowedCwd?: string;
 }
 
 export interface ChatSessionSummary {
