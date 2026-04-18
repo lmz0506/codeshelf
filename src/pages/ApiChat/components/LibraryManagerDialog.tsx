@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Edit2, Plus, Trash2, X } from "lucide-react";
+import { Download, Edit2, Plus, Trash2, Upload, X } from "lucide-react";
 import { showToast } from "@/components/ui";
 import type { ApiEndpoint, ApiGroup } from "@/types";
 import {
@@ -12,6 +12,7 @@ import {
 } from "@/services/api_chat";
 import { GroupEditor } from "./GroupEditor";
 import { EndpointEditor } from "./EndpointEditor";
+import { exportApiLibrary, importApiLibrary } from "../utils/exportLibrary";
 
 interface LibraryManagerDialogProps {
   open: boolean;
@@ -104,6 +105,81 @@ export function LibraryManagerDialog({ open, onClose, onChanged }: LibraryManage
     }
   }
 
+  async function handleExport() {
+    if (groups.length === 0 && endpoints.length === 0) {
+      showToast("warning", "接口库为空，无可导出内容");
+      return;
+    }
+    try {
+      const ok = await exportApiLibrary(groups, endpoints);
+      if (ok) {
+        showToast("success", `已导出 ${groups.length} 个分组 / ${endpoints.length} 个接口`);
+      }
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "导出失败");
+    }
+  }
+
+  async function handleImport() {
+    try {
+      const parsed = await importApiLibrary();
+      if (!parsed) return;
+      const totalIncoming = parsed.groups.length + parsed.endpoints.length;
+      if (totalIncoming === 0) {
+        showToast("info", "文件中没有可导入的数据");
+        return;
+      }
+      if (
+        !confirm(
+          `即将导入 ${parsed.groups.length} 个分组 / ${parsed.endpoints.length} 个接口，\n相同 ID 将覆盖现有条目。继续？`,
+        )
+      ) {
+        return;
+      }
+      setLoading(true);
+      let gAdded = 0;
+      let gUpdated = 0;
+      let eAdded = 0;
+      let eUpdated = 0;
+      const existingGroupIds = new Set(groups.map((g) => g.id));
+      const existingEndpointIds = new Set(endpoints.map((e) => e.id));
+      for (const g of parsed.groups) {
+        try {
+          await saveApiGroup(g);
+          if (existingGroupIds.has(g.id)) gUpdated += 1;
+          else gAdded += 1;
+        } catch (err) {
+          showToast(
+            "error",
+            `导入分组「${g.name}」失败：${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      for (const ep of parsed.endpoints) {
+        try {
+          await saveApiEndpoint(ep);
+          if (existingEndpointIds.has(ep.id)) eUpdated += 1;
+          else eAdded += 1;
+        } catch (err) {
+          showToast(
+            "error",
+            `导入接口「${ep.name}」失败：${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      await reload();
+      onChanged?.();
+      showToast(
+        "success",
+        `导入完成：新增分组 ${gAdded} 更新 ${gUpdated}，新增接口 ${eAdded} 更新 ${eUpdated}`,
+      );
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "导入失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (!open) return null;
 
   return (
@@ -114,9 +190,27 @@ export function LibraryManagerDialog({ open, onClose, onChanged }: LibraryManage
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <div className="text-sm font-semibold">📚 接口库管理</div>
-          <button className="text-gray-400 hover:text-gray-700" onClick={onClose}>
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              className="px-2 py-1 text-xs border border-gray-200 rounded text-gray-600 hover:bg-gray-50 flex items-center gap-1 disabled:opacity-50"
+              onClick={handleImport}
+              disabled={loading}
+              title="从 JSON 文件导入（按 ID 合并，同 ID 将覆盖）"
+            >
+              <Upload size={12} /> 导入
+            </button>
+            <button
+              className="px-2 py-1 text-xs border border-gray-200 rounded text-gray-600 hover:bg-gray-50 flex items-center gap-1 disabled:opacity-50"
+              onClick={handleExport}
+              disabled={loading || (groups.length === 0 && endpoints.length === 0)}
+              title="导出为 JSON（⚠️ 包含鉴权凭据，请妥善保管）"
+            >
+              <Download size={12} /> 导出
+            </button>
+            <button className="text-gray-400 hover:text-gray-700 ml-1" onClick={onClose}>
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 flex min-h-0">
