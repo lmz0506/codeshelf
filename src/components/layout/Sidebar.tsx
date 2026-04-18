@@ -8,6 +8,7 @@ import {
   Wrench,
   Sparkles,
   MessageSquare,
+  Workflow,
 } from "lucide-react";
 import { useAppStore, type PageType } from "@/stores/appStore";
 import { AnimatedLogo } from "@/components/ui/AnimatedLogo";
@@ -25,6 +26,7 @@ const navItems: { id: PageType; label: string; icon: typeof BookOpen }[] = [
   { id: "dashboard", label: "数据统计", icon: LayoutDashboard },
   { id: "aiProviders", label: "AI模型", icon: Sparkles },
   { id: "chat", label: "对话", icon: MessageSquare },
+  { id: "workflows", label: "工作流", icon: Workflow },
   { id: "toolbox", label: "工具箱", icon: Wrench },
   { id: "settings", label: "设置", icon: Settings },
 ];
@@ -163,7 +165,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
         {navItems.map((item) => {
           const isActive = currentPage === item.id;
           // navItems
-          const label = item.id === "shelf" ? "📖 书架" : item.id === "dashboard" ? "📊 统计" : item.id === "aiProviders" ? "✨ 模型" : item.id === "chat" ? "💬 对话" : item.id === "toolbox" ? "🧰 工具" : "⚙️ 设置";
+          const label = item.id === "shelf" ? "📖 书架" : item.id === "dashboard" ? "📊 统计" : item.id === "aiProviders" ? "✨ 模型" : item.id === "chat" ? "💬 对话" : item.id === "workflows" ? "⚡ 流程" : item.id === "toolbox" ? "🧰 工具" : "⚙️ 设置";
           return (
             <button
               key={item.id}

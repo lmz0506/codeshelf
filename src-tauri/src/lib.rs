@@ -175,6 +175,12 @@ pub fn run() {
             // 初始化 Netcat 状态
             app.manage(toolbox::netcat::NetcatState::new());
 
+            // 启动工作流调度器
+            {
+                let handle = commands::workflows::spawn_scheduler(app.handle().clone());
+                app.manage(std::sync::Arc::new(tokio::sync::RwLock::new(handle)));
+            }
+
             // 初始化 macOS/Linux 全局快捷键插件
             #[cfg(not(target_os = "windows"))]
             {
@@ -401,6 +407,13 @@ pub fn run() {
             extras::delete_skill,
             extras::list_dir_entries,
             extras::read_mention_file,
+            // Workflows
+            commands::workflows::workflow_list,
+            commands::workflows::workflow_get,
+            commands::workflows::workflow_save,
+            commands::workflows::workflow_delete,
+            commands::workflows::workflow_run_now,
+            commands::workflows::workflow_set_enabled,
             // Toolbox - Clipboard commands
             toolbox::clipboard::get_clipboard_history,
             toolbox::clipboard::add_clipboard_entry,

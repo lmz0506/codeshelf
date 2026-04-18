@@ -238,6 +238,128 @@ pub fn all_tools() -> Vec<ToolSchema> {
             }),
             requires_cwd: false,
         },
+        ToolSchema {
+            name: "OpenPath".into(),
+            description: "在系统文件管理器（macOS Finder / Windows Explorer / Linux xdg-open）中打开指定路径。可打开文件或目录。".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "绝对路径"}},
+                "required": ["path"]
+            }),
+            requires_cwd: false,
+        },
+        ToolSchema {
+            name: "OpenInEditor".into(),
+            description: "在代码编辑器中打开指定文件或目录，默认 VS Code。editor 可传可执行路径（如 /usr/local/bin/cursor）或 macOS 应用包路径（如 /Applications/Sublime Text.app）。".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "绝对路径"},
+                    "editor": {"type": "string", "description": "可选，编辑器路径。不填使用 VS Code"}
+                },
+                "required": ["path"]
+            }),
+            requires_cwd: false,
+        },
+        ToolSchema {
+            name: "OpenTerminal".into(),
+            description: "在指定目录打开终端。macOS 默认 Terminal.app，Windows 可选 powershell/cmd/wt，Linux 用默认 X 终端。".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "要切换到的目录绝对路径"},
+                    "terminal": {"type": "string", "description": "可选，终端类型：default/iterm/powershell/cmd/wt"}
+                },
+                "required": ["path"]
+            }),
+            requires_cwd: false,
+        },
+        ToolSchema {
+            name: "OpenUrl".into(),
+            description: "在默认浏览器中打开 URL。".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"]
+            }),
+            requires_cwd: false,
+        },
+        ToolSchema {
+            name: "CopyFile".into(),
+            description: "复制文件或目录（目录递归）。若目标已存在，默认拒绝；overwrite=true 才覆盖。".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "src": {"type": "string", "description": "源路径（绝对）"},
+                    "dst": {"type": "string", "description": "目标路径（绝对）"},
+                    "overwrite": {"type": "boolean", "description": "默认 false"}
+                },
+                "required": ["src", "dst"]
+            }),
+            requires_cwd: false,
+        },
+        ToolSchema {
+            name: "MoveFile".into(),
+            description: "移动/重命名文件或目录。同盘用 rename，跨盘自动 copy+delete。".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "src": {"type": "string"},
+                    "dst": {"type": "string"},
+                    "overwrite": {"type": "boolean", "description": "默认 false"}
+                },
+                "required": ["src", "dst"]
+            }),
+            requires_cwd: false,
+        },
+        ToolSchema {
+            name: "DeleteFile".into(),
+            description: "⚠️ 危险：删除文件或目录（目录需 recursive=true）。无法恢复，调用前务必与用户确认。".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "recursive": {"type": "boolean", "description": "删除目录时必须为 true"}
+                },
+                "required": ["path"]
+            }),
+            requires_cwd: false,
+        },
+        ToolSchema {
+            name: "CreateWorkflow".into(),
+            description: "创建一个定时工作流。nodes 支持 web_fetch / llm / webhook 三类节点；cron 为 5 段表达式（分 时 日 月 周）。创建后立即生效。".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "cron": {"type": "string", "description": "5 段 cron，如 '0 9 * * *' 每天 9 点"},
+                    "enabled": {"type": "boolean", "description": "默认 true"},
+                    "nodes": {
+                        "type": "array",
+                        "description": "节点数组，每个 {id, nodeType, config, dependsOn[]}",
+                        "items": {"type": "object"}
+                    }
+                },
+                "required": ["name", "cron", "nodes"]
+            }),
+            requires_cwd: false,
+        },
+        ToolSchema {
+            name: "RunWorkflowNow".into(),
+            description: "立即触发一次指定 id 的工作流，忽略 cron 时间。".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "required": ["id"]
+            }),
+            requires_cwd: false,
+        },
+        ToolSchema {
+            name: "ListWorkflows".into(),
+            description: "列出所有已保存的工作流（含最近一次运行状态）。".into(),
+            parameters: json!({"type": "object", "properties": {}}),
+            requires_cwd: false,
+        },
     ]
 }
 
@@ -669,9 +791,150 @@ fn tool_task_list(ctx: &ToolCtx) -> Result<String, String> {
     Ok(out)
 }
 
+// ========== OS open / file ops ==========
+
+async fn tool_open_path(args: &Value) -> Result<String, String> {
+    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?.to_string();
+    crate::commands::system::open_in_explorer(path.clone()).await?;
+    Ok(format!("已在文件管理器中打开：{}", path))
+}
+
+async fn tool_open_in_editor(args: &Value) -> Result<String, String> {
+    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?.to_string();
+    let editor = args.get("editor").and_then(|v| v.as_str()).map(|s| s.to_string());
+    if let Some(e) = &editor {
+        if e.contains("&&") || e.contains("||") || e.contains(';') || e.contains('|') || e.contains('`') {
+            return Err("editor 参数包含危险字符".into());
+        }
+    }
+    crate::commands::system::open_in_editor(path.clone(), editor.clone()).await?;
+    Ok(format!("已在编辑器打开：{}（{}）", path, editor.as_deref().unwrap_or("默认 VS Code")))
+}
+
+async fn tool_open_terminal(args: &Value) -> Result<String, String> {
+    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?.to_string();
+    let terminal = args.get("terminal").and_then(|v| v.as_str()).map(|s| s.to_string());
+    crate::commands::system::open_in_terminal(path.clone(), terminal, None, None).await?;
+    Ok(format!("已在终端打开：{}", path))
+}
+
+async fn tool_open_url(args: &Value) -> Result<String, String> {
+    let url = args.get("url").and_then(|v| v.as_str()).ok_or("缺少 url")?.to_string();
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("仅支持 http/https URL".into());
+    }
+    crate::commands::system::open_url(url.clone()).await?;
+    Ok(format!("已在浏览器打开：{}", url))
+}
+
+fn copy_recursively(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        fs::create_dir_all(dst)?;
+        for entry in fs::read_dir(src)? {
+            let entry = entry?;
+            let dest = dst.join(entry.file_name());
+            copy_recursively(&entry.path(), &dest)?;
+        }
+    } else {
+        if let Some(parent) = dst.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(src, dst)?;
+    }
+    Ok(())
+}
+
+fn tool_copy_file(args: &Value) -> Result<String, String> {
+    let src = args.get("src").and_then(|v| v.as_str()).ok_or("缺少 src")?;
+    let dst = args.get("dst").and_then(|v| v.as_str()).ok_or("缺少 dst")?;
+    let overwrite = args.get("overwrite").and_then(|v| v.as_bool()).unwrap_or(false);
+    let src_p = Path::new(src);
+    let dst_p = Path::new(dst);
+    if !src_p.exists() {
+        return Err(format!("源不存在：{}", src));
+    }
+    if dst_p.exists() && !overwrite {
+        return Err(format!("目标已存在（传 overwrite=true 覆盖）：{}", dst));
+    }
+    if dst_p.exists() && overwrite {
+        if dst_p.is_dir() { fs::remove_dir_all(dst_p).map_err(|e| e.to_string())?; }
+        else { fs::remove_file(dst_p).map_err(|e| e.to_string())?; }
+    }
+    copy_recursively(src_p, dst_p).map_err(|e| format!("复制失败: {}", e))?;
+    Ok(format!("已复制 {} → {}", src, dst))
+}
+
+fn tool_move_file(args: &Value) -> Result<String, String> {
+    let src = args.get("src").and_then(|v| v.as_str()).ok_or("缺少 src")?;
+    let dst = args.get("dst").and_then(|v| v.as_str()).ok_or("缺少 dst")?;
+    let overwrite = args.get("overwrite").and_then(|v| v.as_bool()).unwrap_or(false);
+    let src_p = Path::new(src);
+    let dst_p = Path::new(dst);
+    if !src_p.exists() { return Err(format!("源不存在：{}", src)); }
+    if dst_p.exists() && !overwrite {
+        return Err(format!("目标已存在（传 overwrite=true 覆盖）：{}", dst));
+    }
+    if dst_p.exists() && overwrite {
+        if dst_p.is_dir() { fs::remove_dir_all(dst_p).map_err(|e| e.to_string())?; }
+        else { fs::remove_file(dst_p).map_err(|e| e.to_string())?; }
+    }
+    match fs::rename(src_p, dst_p) {
+        Ok(_) => Ok(format!("已移动 {} → {}", src, dst)),
+        Err(_) => {
+            // 跨盘：fallback copy + delete
+            copy_recursively(src_p, dst_p).map_err(|e| format!("跨盘复制失败: {}", e))?;
+            if src_p.is_dir() { fs::remove_dir_all(src_p).map_err(|e| format!("删除源失败: {}", e))?; }
+            else { fs::remove_file(src_p).map_err(|e| format!("删除源失败: {}", e))?; }
+            Ok(format!("已跨盘移动 {} → {}", src, dst))
+        }
+    }
+}
+
+fn tool_delete_file(args: &Value) -> Result<String, String> {
+    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
+    let recursive = args.get("recursive").and_then(|v| v.as_bool()).unwrap_or(false);
+    let p = Path::new(path);
+    if !p.exists() { return Err(format!("路径不存在：{}", path)); }
+
+    // 跨平台受保护路径（大小写不敏感比较）
+    let norm = path.trim_end_matches(&['/', '\\'][..]).to_lowercase();
+    let dangerous: &[&str] = &[
+        // unix
+        "/", "/users", "/home", "/etc", "/usr", "/var", "/bin", "/sbin",
+        "/system", "/library", "/opt", "/private", "/tmp",
+        // windows
+        "c:", "c:\\", "c:\\windows", "c:\\program files", "c:\\program files (x86)",
+        "c:\\users", "c:\\programdata", "d:", "d:\\",
+    ];
+    if dangerous.iter().any(|d| norm == *d) {
+        return Err(format!("拒绝删除受保护路径：{}", path));
+    }
+    // 再拒绝 drive root（Windows 任意盘根）
+    if cfg!(windows) && norm.len() <= 3 && norm.ends_with(":\\") {
+        return Err(format!("拒绝删除盘根：{}", path));
+    }
+
+    if p.is_dir() {
+        if !recursive { return Err("删除目录需要 recursive=true".into()); }
+        fs::remove_dir_all(p).map_err(|e| format!("删除失败: {}", e))?;
+    } else {
+        fs::remove_file(p).map_err(|e| format!("删除失败: {}", e))?;
+    }
+    Ok(format!("已删除：{}", path))
+}
+
 // ========== 执行入口 ==========
 
 async fn tool_web_fetch(args: &Value) -> Result<String, String> {
+    run_web_fetch(args).await
+}
+
+/// 供工作流模块调用
+pub async fn run_web_fetch_for_workflow(args: &Value) -> Result<String, String> {
+    run_web_fetch(args).await
+}
+
+async fn run_web_fetch(args: &Value) -> Result<String, String> {
     let url = args.get("url").and_then(|v| v.as_str()).ok_or("缺少 url")?.trim();
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("仅支持 http/https URL".into());
@@ -810,6 +1073,16 @@ pub async fn execute_tool(
         "TaskUpdate" => tool_task_update(&ctx, &args, app),
         "TaskList" => tool_task_list(&ctx),
         "WebFetch" => tool_web_fetch(&args).await,
+        "OpenPath" => tool_open_path(&args).await,
+        "OpenInEditor" => tool_open_in_editor(&args).await,
+        "OpenTerminal" => tool_open_terminal(&args).await,
+        "OpenUrl" => tool_open_url(&args).await,
+        "CopyFile" => tool_copy_file(&args),
+        "MoveFile" => tool_move_file(&args),
+        "DeleteFile" => tool_delete_file(&args),
+        "CreateWorkflow" => crate::commands::workflows::tool_create_workflow(&args, app).await,
+        "RunWorkflowNow" => crate::commands::workflows::tool_run_workflow_now(&args, app).await,
+        "ListWorkflows" => crate::commands::workflows::tool_list_workflows(app).await,
         _ => Err(format!("未知工具: {}", tool_name)),
     }
 }

@@ -142,6 +142,10 @@ impl StorageConfig {
         self.data_dir.join("skills")
     }
 
+    pub fn workflows_dir(&self) -> PathBuf {
+        self.data_dir.join("workflows")
+    }
+
     pub fn clipboard_history_file(&self) -> PathBuf {
         self.data_dir.join("clipboard_history.json")
     }

@@ -7,3 +7,4 @@ pub mod settings;
 pub mod chat;
 pub mod tools;
 pub mod extras;
+pub mod workflows;
