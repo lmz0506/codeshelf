@@ -216,6 +216,18 @@ pub struct ChatMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_elapsed_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_body_bytes: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_truncated: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachments: Option<serde_json::Value>,
 }
 

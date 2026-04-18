@@ -21,6 +21,16 @@ export interface ApiToolsBundle {
   toolNameMap: Record<string, string>;
 }
 
+export interface ApiExecutionResult {
+  status: number;
+  method: string;
+  url: string;
+  elapsedMs: number;
+  totalBytes: number;
+  truncated: boolean;
+  body: string;
+}
+
 // ---------- Group ----------
 export async function listApiGroups(): Promise<ApiGroup[]> {
   return invoke("list_api_groups");
@@ -68,6 +78,6 @@ export async function buildApiTools(endpointIds: string[]): Promise<ApiToolsBund
   return invoke("build_api_tools", { endpointIds });
 }
 
-export async function executeApiEndpoint(endpointId: string, argumentsJson: string): Promise<string> {
+export async function executeApiEndpoint(endpointId: string, argumentsJson: string): Promise<ApiExecutionResult> {
   return invoke("execute_api_endpoint", { endpointId, argumentsJson });
 }

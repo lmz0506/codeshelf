@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { MarkdownRenderer } from "@/components/project/MarkdownRenderer";
 import type { ChatMessage } from "@/types";
 import { MessageActions } from "./MessageActions";
-import { ToolCallBubble } from "./ToolCallBubble";
+import { ToolCallBubble, type EndpointMeta } from "./ToolCallBubble";
 import { formatAbsoluteTime, formatRelativeTime } from "../utils/time";
 import { messageTokens } from "../utils/tokens";
 
@@ -16,6 +16,72 @@ interface MessageItemProps {
   onRegenerate?: () => void;
   onRetry?: () => void;
   onDelete: () => void;
+  endpointLookup?: (toolName: string) => EndpointMeta | null;
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function statusTone(status?: number): {
+  bg: string;
+  border: string;
+  text: string;
+  badge: string;
+} {
+  if (!status) {
+    return {
+      bg: "bg-slate-50",
+      border: "border-slate-200",
+      text: "text-slate-800",
+      badge: "bg-slate-200 text-slate-700",
+    };
+  }
+  if (status >= 200 && status < 300) {
+    return {
+      bg: "bg-emerald-50",
+      border: "border-emerald-200",
+      text: "text-emerald-800",
+      badge: "bg-emerald-200 text-emerald-800",
+    };
+  }
+  if (status >= 400 && status < 500) {
+    return {
+      bg: "bg-amber-50",
+      border: "border-amber-200",
+      text: "text-amber-800",
+      badge: "bg-amber-200 text-amber-800",
+    };
+  }
+  if (status >= 500) {
+    return {
+      bg: "bg-rose-50",
+      border: "border-rose-200",
+      text: "text-rose-800",
+      badge: "bg-rose-200 text-rose-800",
+    };
+  }
+  return {
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+    text: "text-slate-800",
+    badge: "bg-slate-200 text-slate-700",
+  };
+}
+
+function prettyBody(content: string): string {
+  // 旧消息 content 形如 "HTTP 200\n\n<body>"；新消息 content 同样格式，但有独立字段。
+  // 这里统一尝试剥掉 "HTTP xxx\n\n" 前缀再 pretty。
+  let body = content;
+  const match = /^HTTP\s+\d+\s*\n\n?/.exec(content);
+  if (match) body = content.slice(match[0].length);
+  try {
+    return JSON.stringify(JSON.parse(body), null, 2);
+  } catch {
+    return body;
+  }
 }
 
 export function MessageItem({
@@ -27,6 +93,7 @@ export function MessageItem({
   onRegenerate,
   onRetry,
   onDelete,
+  endpointLookup,
 }: MessageItemProps) {
   const isUser = message.role === "user";
   const [editing, setEditing] = useState(false);
@@ -80,18 +147,46 @@ export function MessageItem({
 
   // 工具结果消息单独样式
   if (message.role === "tool") {
+    const tone = statusTone(message.toolStatus);
+    const hasMeta = Boolean(message.toolMethod || message.toolUrl || message.toolStatus);
     return (
       <div className="group flex items-start gap-2 justify-start">
-        <div className="max-w-[75%] rounded-2xl px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">
+        <div className={`max-w-[75%] min-w-0 rounded-2xl px-3 py-2 border text-xs ${tone.bg} ${tone.border} ${tone.text}`}>
           <details open={toolResultOpen} onToggle={(e) => setToolResultOpen((e.target as HTMLDetailsElement).open)}>
-            <summary className="cursor-pointer select-none flex items-center gap-2">
-              <span className="font-semibold">↳ {message.toolName || "tool"} 结果</span>
-              <span className="text-[10px] text-emerald-500" title={formatAbsoluteTime(message.createdAt)}>
+            <summary className="cursor-pointer select-none flex items-center gap-2 flex-wrap">
+              <span className="font-semibold shrink-0">↳</span>
+              {hasMeta ? (
+                <>
+                  {message.toolMethod && (
+                    <span className="font-semibold uppercase shrink-0">{message.toolMethod}</span>
+                  )}
+                  {message.toolUrl && (
+                    <span className="font-mono truncate min-w-0">{message.toolUrl}</span>
+                  )}
+                  {typeof message.toolStatus === "number" && (
+                    <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] shrink-0 ${tone.badge}`}>
+                      {message.toolStatus}
+                    </span>
+                  )}
+                  {typeof message.toolElapsedMs === "number" && (
+                    <span className="text-[10px] opacity-70 shrink-0">{message.toolElapsedMs} ms</span>
+                  )}
+                  {typeof message.toolBodyBytes === "number" && (
+                    <span className="text-[10px] opacity-70 shrink-0">
+                      {formatBytes(message.toolBodyBytes)}
+                      {message.toolTruncated ? " · 已截断" : ""}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="font-semibold">{message.toolName || "tool"} 结果</span>
+              )}
+              <span className="text-[10px] opacity-60 shrink-0" title={formatAbsoluteTime(message.createdAt)}>
                 {formatRelativeTime(message.createdAt)}
               </span>
             </summary>
-            <pre className="font-mono whitespace-pre-wrap break-all mt-2 max-h-96 overflow-auto">
-              {message.content}
+            <pre className="font-mono whitespace-pre-wrap break-all mt-2 max-h-96 overflow-auto text-[11px]">
+              {prettyBody(message.content)}
             </pre>
           </details>
         </div>
@@ -192,7 +287,7 @@ export function MessageItem({
             )}
             {message.toolCalls && message.toolCalls.length > 0 && (
               <div className={message.content ? "mt-2" : ""}>
-                <ToolCallBubble toolCalls={message.toolCalls} />
+                <ToolCallBubble toolCalls={message.toolCalls} endpointLookup={endpointLookup} />
               </div>
             )}
           </>

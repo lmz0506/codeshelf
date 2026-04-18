@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ChatMessage } from "@/types";
 import { MessageItem } from "./MessageItem";
+import type { EndpointMeta } from "./ToolCallBubble";
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -11,6 +12,7 @@ interface MessageListProps {
   onRegenerateAssistant: (msg: ChatMessage) => void;
   onRetryUser: (msg: ChatMessage) => void;
   onDelete: (msg: ChatMessage) => void;
+  endpointLookup?: (toolName: string) => EndpointMeta | null;
 }
 
 export function MessageList({
@@ -22,6 +24,7 @@ export function MessageList({
   onRegenerateAssistant,
   onRetryUser,
   onDelete,
+  endpointLookup,
 }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -54,6 +57,7 @@ export function MessageList({
           onRegenerate={() => onRegenerateAssistant(msg)}
           onRetry={() => onRetryUser(msg)}
           onDelete={() => onDelete(msg)}
+          endpointLookup={endpointLookup}
         />
       ))}
       {thinkingVisible && (

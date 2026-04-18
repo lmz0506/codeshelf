@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use once_cell::sync::Lazy;
@@ -567,6 +567,19 @@ fn trim_response(bytes: &[u8], max_bytes: usize) -> String {
     }
 }
 
+/// 单次接口调用的结构化返回：给前端做"调用链"展示用
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiExecutionResult {
+    pub status: u16,
+    pub method: String,
+    pub url: String,
+    pub elapsed_ms: u64,
+    pub total_bytes: usize,
+    pub truncated: bool,
+    pub body: String,
+}
+
 /// 为请求注入鉴权
 /// 返回 (最终用的 client, 最终 builder)
 /// 注意：Session 类型依赖有 cookie_store 的 client；其他类型用普通 client
@@ -757,7 +770,7 @@ fn resolve_effective_auth<'a>(
 pub async fn execute_api_endpoint(
     endpoint_id: String,
     arguments_json: String,
-) -> Result<String, String> {
+) -> Result<ApiExecutionResult, String> {
     // 1. 加载 endpoint 和所属 group
     let endpoints = load_endpoints()?;
     let endpoint = endpoints
@@ -908,6 +921,7 @@ pub async fn execute_api_endpoint(
     };
 
     // 6. 首次发送 + Session 401/403 重登一次
+    let started = Instant::now();
     let resp = builder
         .send()
         .await
@@ -927,6 +941,7 @@ pub async fn execute_api_endpoint(
 
     // 7. 响应读取与截断
     let status = resp.status();
+    let status_code = status.as_u16();
     let trim = endpoint
         .response_trim_bytes
         .map(|n| n as usize)
@@ -935,7 +950,18 @@ pub async fn execute_api_endpoint(
         .bytes()
         .await
         .map_err(|e| format!("读取响应失败: {}", e))?;
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    let total_bytes = bytes.len();
+    let truncated = total_bytes > trim;
     let body_str = trim_response(&bytes, trim);
 
-    Ok(format!("HTTP {}\n\n{}", status, body_str))
+    Ok(ApiExecutionResult {
+        status: status_code,
+        method: endpoint.method.to_uppercase(),
+        url: final_url,
+        elapsed_ms,
+        total_bytes,
+        truncated,
+        body: body_str,
+    })
 }

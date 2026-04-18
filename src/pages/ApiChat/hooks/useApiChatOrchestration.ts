@@ -189,20 +189,31 @@ export function useApiChatOrchestration() {
     let session = sessionAfterAssistant;
     for (const call of calls) {
       const endpointId = toolNameMap[call.name];
+      let toolExtra: Partial<ChatMessage> = {
+        toolCallId: call.id,
+        toolName: call.name,
+      };
       let resultContent: string;
       if (!endpointId) {
         resultContent = `（未找到工具 ${call.name} 对应的接口）`;
       } else {
         try {
-          resultContent = await executeApiEndpoint(endpointId, call.arguments || "{}");
+          const result = await executeApiEndpoint(endpointId, call.arguments || "{}");
+          resultContent = `HTTP ${result.status}\n\n${result.body}`;
+          toolExtra = {
+            ...toolExtra,
+            toolStatus: result.status,
+            toolMethod: result.method,
+            toolUrl: result.url,
+            toolElapsedMs: result.elapsedMs,
+            toolBodyBytes: result.totalBytes,
+            toolTruncated: result.truncated,
+          };
         } catch (err) {
           resultContent = `执行失败: ${err instanceof Error ? err.message : String(err)}`;
         }
       }
-      const toolMessage = makeMessage("tool", resultContent, {
-        toolCallId: call.id,
-        toolName: call.name,
-      });
+      const toolMessage = makeMessage("tool", resultContent, toolExtra);
       session = { ...session, messages: [...session.messages, toolMessage] };
       try {
         session = await persist(session);
@@ -252,9 +263,29 @@ export function useApiChatOrchestration() {
     }
   }
 
+  async function retryUser(args: RunArgs, targetMessageId: string): Promise<void> {
+    const { session, llm, onSession, onError } = args;
+    currentSessionRef.current = session;
+    onSessionRef.current = onSession;
+    onErrorRef.current = onError;
+    const idx = session.messages.findIndex((m) => m.id === targetMessageId);
+    if (idx < 0) return;
+    if (session.messages[idx].role !== "user") return;
+    // 保留到并包含该用户消息，裁掉其后的助手/工具回复
+    const truncated = session.messages.slice(0, idx + 1);
+    const next: ApiChatSession = { ...session, messages: truncated };
+    setLoading(true);
+    try {
+      const saved = await persist(next);
+      await runRequest(saved, llm);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function stopAll() {
     await stop();
   }
 
-  return { streaming, thinkingBuffer, loading, send, regenerate, stop: stopAll };
+  return { streaming, thinkingBuffer, loading, send, regenerate, retryUser, stop: stopAll };
 }

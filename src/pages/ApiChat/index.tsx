@@ -88,6 +88,15 @@ function summarizeTitle(messages: ChatMessage[]): string | null {
   return trimmed.slice(0, 20) + (trimmed.length > 20 ? "..." : "");
 }
 
+/// 与后端 src-tauri/src/commands/api_chat.rs 的 sanitize_tool_name 保持一致
+function sanitizeToolName(endpointId: string): string {
+  const raw = `ep_${endpointId}`;
+  const cleaned = Array.from(raw)
+    .map((c) => (/[A-Za-z0-9_\-]/.test(c) ? c : "_"))
+    .join("");
+  return cleaned.length <= 60 ? cleaned : cleaned.slice(0, 60);
+}
+
 export function ApiChatPage() {
   const { aiProviders, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed, setCurrentPage } = useAppStore();
 
@@ -110,7 +119,7 @@ export function ApiChatPage() {
     }
   });
 
-  const { streaming, thinkingBuffer, send, regenerate, stop } = useApiChatOrchestration();
+  const { streaming, thinkingBuffer, send, regenerate, retryUser, stop } = useApiChatOrchestration();
 
   const normalized = useMemo(() => ensureAiDefaultProvider(aiProviders), [aiProviders, ensureAiDefaultProvider]);
   const modelOptions = useMemo(() => buildModelOptions(normalized), [normalized]);
@@ -118,6 +127,18 @@ export function ApiChatPage() {
   const effectiveKey = modelOptions.find((o) => o.key === selectedModelKey) ? selectedModelKey : defaultKey;
   const selected = modelOptions.find((o) => o.key === effectiveKey) ?? null;
   const isConfigured = Boolean(selected);
+
+  const endpointLookup = useMemo(() => {
+    const byToolName = new Map<string, ApiEndpoint>();
+    for (const ep of endpoints) {
+      byToolName.set(sanitizeToolName(ep.id), ep);
+    }
+    return (toolName: string) => {
+      const ep = byToolName.get(toolName);
+      if (!ep) return null;
+      return { method: ep.method, url: ep.url, name: ep.name };
+    };
+  }, [endpoints]);
 
   async function reloadLibrary() {
     try {
@@ -433,6 +454,7 @@ export function ApiChatPage() {
                 messages={activeSession.messages}
                 streaming={streaming}
                 thinkingBuffer={thinkingBuffer}
+                endpointLookup={endpointLookup}
                 onCopy={(m) => {
                   navigator.clipboard.writeText(m.content).then(
                     () => showToast("success", "已复制"),
@@ -461,8 +483,24 @@ export function ApiChatPage() {
                     m.id,
                   );
                 }}
-                onRetryUser={() => {
-                  showToast("info", "接口对话暂不支持用户消息重试");
+                onRetryUser={async (m) => {
+                  if (!selected) return;
+                  await retryUser(
+                    {
+                      session: activeSession,
+                      llm: {
+                        providerId: selected.providerId,
+                        model: selected.model.model,
+                        baseUrl: selected.baseUrl,
+                        apiKey: selected.apiKey,
+                        thinking: selected.model.thinking,
+                        stream: selected.model.stream !== false,
+                      },
+                      onSession: handleSession,
+                      onError: (msg) => showToast("error", msg),
+                    },
+                    m.id,
+                  );
                 }}
                 onDelete={async (m) => {
                   const next: ApiChatSession = {

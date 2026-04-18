@@ -156,6 +156,12 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   toolCallId?: string;
   toolName?: string;
+  toolStatus?: number;
+  toolMethod?: string;
+  toolUrl?: string;
+  toolElapsedMs?: number;
+  toolBodyBytes?: number;
+  toolTruncated?: boolean;
 }
 
 export interface ChatSession {
