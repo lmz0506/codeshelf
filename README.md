@@ -126,6 +126,17 @@ CodeShelf-Portable-vX.X.X-x64.zip
 
 ### 发版流程
 
+> **推送前校验**：在推到 `release/**` 分支之前，本地先跑一遍
+> ```bash
+> npm run verify:release
+> ```
+> 这条命令会串联跑 `npm ci` → `npm run build`（tsc + vite）→ `cargo check --release --lib --bins`，严格对齐 `.github/workflows/release.yml` 里 `tauri-action` 实际跑的编译环节（不包 bundle，~30s）。clippy 不强制，想另外跑：`(cd src-tauri && cargo clippy --release)`。
+>
+> 要真·复现 CI 的 macOS ARM 产物：
+> ```bash
+> npm run tauri build -- --target aarch64-apple-darwin --config src-tauri/tauri.release.conf.json
+> ```
+
 使用发版脚本自动更新版本号并触发 GitHub Actions 构建：
 
 ```bash
@@ -218,6 +229,7 @@ codeshelf/
 |------|------|
 | `npm run dev` | 启动前端开发服务器 |
 | `npm run build` | 构建前端生产版本 |
+| `npm run verify:release` | 推送前本地校验：tsc + vite + cargo check（对齐 release.yml 的编译环节） |
 | `npm run tauri dev` | 启动 Tauri 开发模式 |
 | `npm run tauri build` | 构建桌面应用（安装版） |
 | `npm run build:portable` | 构建便携版（绿色版） |
