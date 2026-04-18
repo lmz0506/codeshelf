@@ -8,10 +8,11 @@ interface MessageActionsProps {
   onCopy: () => void;
   onEdit?: () => void;
   onRegenerate?: () => void;
+  onRetry?: () => void;
   onDelete: () => void;
 }
 
-export function MessageActions({ role, canRegenerate, streaming, onCopy, onEdit, onRegenerate, onDelete }: MessageActionsProps) {
+export function MessageActions({ role, canRegenerate, streaming, onCopy, onEdit, onRegenerate, onRetry, onDelete }: MessageActionsProps) {
   const [copied, setCopied] = useState(false);
 
   function handleCopy() {
@@ -32,6 +33,11 @@ export function MessageActions({ role, canRegenerate, streaming, onCopy, onEdit,
       {role === "user" && onEdit && !streaming && (
         <button className="hover:text-blue-500 p-1" title="编辑并重发" onClick={onEdit}>
           <Pencil size={14} />
+        </button>
+      )}
+      {role === "user" && onRetry && !streaming && (
+        <button className="hover:text-blue-500 p-1" title="重新发送（保留原文）" onClick={onRetry}>
+          <RefreshCw size={14} />
         </button>
       )}
       {role === "assistant" && canRegenerate && onRegenerate && !streaming && (

@@ -157,6 +157,8 @@ pub struct AiModelConfig {
     pub thinking: bool,
     #[serde(default = "default_true")]
     pub stream: bool,
+    #[serde(default)]
+    pub vision: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

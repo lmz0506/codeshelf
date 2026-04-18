@@ -14,17 +14,18 @@ interface MessageItemProps {
   onCopy: () => void;
   onEditUser?: (newContent: string) => void;
   onRegenerate?: () => void;
+  onRetry?: () => void;
   onDelete: () => void;
 }
 
 export function MessageItem({
   message,
-  isLastAssistant,
   streaming,
   streamingThisMessage,
   onCopy,
   onEditUser,
   onRegenerate,
+  onRetry,
   onDelete,
 }: MessageItemProps) {
   const isUser = message.role === "user";
@@ -94,7 +95,7 @@ export function MessageItem({
             </pre>
           </details>
         </div>
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-2">
+        <div className="opacity-60 group-hover:opacity-100 transition-opacity mt-2">
           <MessageActions role="assistant" canRegenerate={false} streaming={streaming} onCopy={onCopy} onDelete={onDelete} />
         </div>
       </div>
@@ -104,13 +105,14 @@ export function MessageItem({
   return (
     <div className={`group flex items-start gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
       {isUser && (
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-2">
+        <div className="opacity-60 group-hover:opacity-100 transition-opacity mt-2">
           <MessageActions
             role="user"
             canRegenerate={false}
             streaming={streaming}
             onCopy={onCopy}
             onEdit={onEditUser ? startEdit : undefined}
+            onRetry={onRetry}
             onDelete={onDelete}
           />
         </div>
@@ -197,10 +199,10 @@ export function MessageItem({
         )}
       </div>
       {!isUser && (
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-2">
+        <div className="opacity-60 group-hover:opacity-100 transition-opacity mt-2">
           <MessageActions
             role="assistant"
-            canRegenerate={isLastAssistant}
+            canRegenerate={true}
             streaming={streaming}
             onCopy={onCopy}
             onRegenerate={onRegenerate}

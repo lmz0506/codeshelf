@@ -9,6 +9,7 @@ interface MessageListProps {
   onCopy: (msg: ChatMessage) => void;
   onEditUser: (msg: ChatMessage, newContent: string) => void;
   onRegenerateAssistant: (msg: ChatMessage) => void;
+  onRetryUser: (msg: ChatMessage) => void;
   onDelete: (msg: ChatMessage) => void;
 }
 
@@ -19,6 +20,7 @@ export function MessageList({
   onCopy,
   onEditUser,
   onRegenerateAssistant,
+  onRetryUser,
   onDelete,
 }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
@@ -50,6 +52,7 @@ export function MessageList({
           onCopy={() => onCopy(msg)}
           onEditUser={(next) => onEditUser(msg, next)}
           onRegenerate={() => onRegenerateAssistant(msg)}
+          onRetry={() => onRetryUser(msg)}
           onDelete={() => onDelete(msg)}
         />
       ))}

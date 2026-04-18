@@ -426,7 +426,7 @@ export function ChatPage() {
           toolCallId: m.toolCallId,
           name: m.toolName,
         });
-      } else if (m.role === "user" && m.attachments?.some((a) => a.kind === "image")) {
+      } else if (m.role === "user" && m.attachments?.some((a) => a.kind === "image") && selected?.model.vision) {
         const parts: Array<
           | { type: "text"; text: string }
           | { type: "image_url"; image_url: { url: string } }
@@ -441,10 +441,13 @@ export function ChatPage() {
           if (a.kind === "image") parts.push({ type: "image_url", image_url: { url: a.dataUrl } });
         }
         out.push({ role: "user", content: parts });
-      } else if (m.role === "user" && m.attachments?.some((a) => a.kind === "text")) {
+      } else if (m.role === "user" && m.attachments && m.attachments.length > 0) {
+        // 非视觉模型或仅文本附件：文本附件拼进 content，图片附件降级为占位
         const textAtts = m.attachments.filter((a) => a.kind === "text") as Array<{ kind: "text"; name: string; content: string }>;
+        const imgCount = m.attachments.filter((a) => a.kind === "image").length;
         const prefix = textAtts.map((a) => `### ${a.name}\n\`\`\`\n${a.content}\n\`\`\``).join("\n\n");
-        out.push({ role: "user", content: `${prefix}\n\n${m.content}`.trim() });
+        const imgHint = imgCount > 0 && !selected?.model.vision ? `\n\n（当前模型未开启视觉，已跳过 ${imgCount} 张图片）` : "";
+        out.push({ role: "user", content: `${prefix}${imgHint}\n\n${m.content}`.trim() });
       } else {
         out.push({ role: m.role, content: m.content });
       }
@@ -727,6 +730,18 @@ export function ChatPage() {
     const idx = activeSession.messages.findIndex((m) => m.id === msg.id);
     if (idx < 0) return;
     const truncated = activeSession.messages.slice(0, idx);
+    const nextSession: ChatSession = { ...activeSession, messages: truncated };
+    const saved = await persistSession(nextSession);
+    await runChatRequest(saved);
+  }
+
+  async function handleRetryUserMessage(msg: ChatMessage) {
+    if (!activeSession || !selected || streaming) return;
+    if (msg.role !== "user") return;
+    const idx = activeSession.messages.findIndex((m) => m.id === msg.id);
+    if (idx < 0) return;
+    // 保留到并包含该用户消息，裁掉其后的助手/工具回复
+    const truncated = activeSession.messages.slice(0, idx + 1);
     const nextSession: ChatSession = { ...activeSession, messages: truncated };
     const saved = await persistSession(nextSession);
     await runChatRequest(saved);
@@ -1055,6 +1070,7 @@ export function ChatPage() {
                 onCopy={handleCopyMessage}
                 onEditUser={handleEditUserMessage}
                 onRegenerateAssistant={handleRegenerateAssistant}
+                onRetryUser={handleRetryUserMessage}
                 onDelete={handleDeleteMessage}
               />
               <ChatInput
@@ -1187,6 +1203,20 @@ export function ChatPage() {
                         />
                         <span className="font-mono flex-1 truncate">{m.model}</span>
                         {m.isDefault && <span className="text-[10px] text-blue-500">默认</span>}
+                        <label className="flex items-center gap-1 text-[10px] text-gray-500" title="勾选后会发送 image_url 多模态分片；非视觉模型会报错">
+                          <input
+                            type="checkbox"
+                            checked={!!m.vision}
+                            onChange={async (e) => {
+                              const next = aiProviders.map((pp) => pp.id === p.id ? {
+                                ...pp,
+                                models: pp.models.map((mm) => mm.id === m.id ? { ...mm, vision: e.target.checked } : mm),
+                              } : pp);
+                              await saveAiProviders(next);
+                            }}
+                          />
+                          视觉
+                        </label>
                         <button
                           className="text-gray-300 hover:text-red-500"
                           title="删除"

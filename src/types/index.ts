@@ -117,6 +117,7 @@ export interface AiModelConfig {
   isDefault: boolean;
   thinking: boolean;
   stream: boolean;
+  vision?: boolean;
 }
 
 export interface AiProviderConfig {
