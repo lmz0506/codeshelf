@@ -58,6 +58,21 @@ pub struct AppSettings {
     pub auto_update: bool,
     #[serde(default)]
     pub chat_history_dir: Option<String>,
+    /// 是否启用 OpenClaw 聊天桥接（外部聊天平台通过中继 relay 入站）
+    #[serde(default)]
+    pub chat_bridge_enabled: bool,
+    /// 中继服务 base URL，例如 https://relay.example.com
+    #[serde(default)]
+    pub openclaw_relay_endpoint: Option<String>,
+    /// 桥接时用于回复的 provider id（复用 ai_providers 配置）
+    #[serde(default)]
+    pub bridge_provider_id: Option<String>,
+    /// 桥接时使用的 model id
+    #[serde(default)]
+    pub bridge_model_id: Option<String>,
+    /// 客户端标识，默认 codeshelf-<hostname>
+    #[serde(default)]
+    pub bridge_client_id: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -73,6 +88,11 @@ impl Default for AppSettings {
             scan_depth: 3,
             auto_update: true,
             chat_history_dir: None,
+            chat_bridge_enabled: false,
+            openclaw_relay_endpoint: None,
+            bridge_provider_id: None,
+            bridge_model_id: None,
+            bridge_client_id: None,
         }
     }
 }

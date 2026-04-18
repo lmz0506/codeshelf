@@ -26,7 +26,7 @@ const navTree: NavNode[] = [
   {
     kind: "group",
     id: "ai",
-    label: "🧠 智工",
+    label: "🤖 助手",
     children: [
       { id: "chat", label: "💬 对话" },
       { id: "aiProviders", label: "✨ 模型" },
