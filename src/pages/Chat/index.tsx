@@ -641,11 +641,36 @@ export function ChatPage() {
     return parts.length > 1 ? parts.join("\n") : "";
   }
 
+  /** 从文本里识别 http(s) URL，预抓取内容并拼成 system 片段。 */
+  async function resolveUrls(text: string, sessionId: string): Promise<string> {
+    const re = /\bhttps?:\/\/[^\s<>"'）)）】」>]+/gi;
+    const urls = Array.from(new Set(text.match(re) ?? []));
+    if (urls.length === 0) return "";
+    const parts: string[] = ["[抓取的网页内容]"];
+    for (const url of urls.slice(0, 5)) {
+      try {
+        const result = await executeTool({
+          sessionId,
+          toolName: "WebFetch",
+          argumentsJson: JSON.stringify({ url, max_bytes: 400000 }),
+        });
+        parts.push(`\n### ${url}\n${result}`);
+      } catch (err) {
+        parts.push(`\n### ${url}\n抓取失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return parts.length > 1 ? parts.join("\n") : "";
+  }
+
   async function handleSend() {
     if (!activeSession || !selected || streaming) return;
     if (!input.trim() && pendingAttachments.length === 0) return;
     const content = input.trim();
-    mentionContextRef.current = await resolveMentions(content, activeSession.allowedCwd);
+    const [mentions, urls] = await Promise.all([
+      resolveMentions(content, activeSession.allowedCwd),
+      resolveUrls(content, activeSession.id),
+    ]);
+    mentionContextRef.current = [mentions, urls].filter((s) => s.trim()).join("\n\n---\n\n");
     const userMessage = makeMessage("user", content, {
       attachments: pendingAttachments.length ? pendingAttachments : undefined,
     });
