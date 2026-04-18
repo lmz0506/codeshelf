@@ -200,3 +200,78 @@ export interface AppShortcutBinding {
   enabled: boolean;
   global: boolean;
 }
+
+// ============== ApiChat：通用 API 对话 ==============
+
+export type SessionInject =
+  | { type: "cookie" }
+  | { type: "header"; name: string; format: string };
+
+export type ApiAuthConfig =
+  | { type: "none" }
+  | { type: "bearer"; token: string }
+  | { type: "basic"; username: string; password: string }
+  | { type: "apiKey"; header: string; value: string }
+  | {
+      type: "session";
+      loginUrl: string;
+      loginMethod: string;
+      credentialsJson: string;
+      tokenJsonPath?: string;
+      injectAs: SessionInject;
+    };
+
+export interface ApiGroup {
+  id: string;
+  name: string;
+  description?: string;
+  baseUrl: string;
+  auth: ApiAuthConfig;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiEndpoint {
+  id: string;
+  name: string;
+  description?: string;
+  groupId?: string;
+  method: string;
+  url: string;
+  headers: [string, string][];
+  authOverride?: ApiAuthConfig;
+  paramsSchema: Record<string, unknown>;
+  responseTrimBytes?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiChatSession {
+  id: string;
+  title: string;
+  providerId: string;
+  modelId: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatMessage[];
+  selectedEndpointIds: string[];
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  pinned?: boolean;
+}
+
+export interface ApiChatSessionSummary {
+  id: string;
+  title: string;
+  providerId: string;
+  modelId: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  endpointCount: number;
+  pinned?: boolean;
+}

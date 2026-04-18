@@ -161,6 +161,18 @@ impl StorageConfig {
     pub fn resumes_file(&self) -> PathBuf {
         self.data_dir.join("resumes.json")
     }
+
+    pub fn api_groups_file(&self) -> PathBuf {
+        self.data_dir.join("api_groups.json")
+    }
+
+    pub fn api_endpoints_file(&self) -> PathBuf {
+        self.data_dir.join("api_endpoints.json")
+    }
+
+    pub fn api_chat_sessions_dir(&self) -> PathBuf {
+        self.data_dir.join("api_chat_sessions")
+    }
 }
 
 /// 初始化存储配置

@@ -316,3 +316,141 @@ pub fn generate_id() -> String {
         .as_nanos();
     format!("{:x}", timestamp)
 }
+
+// ============== API 对话（ApiChat）数据 ==============
+
+/// Session 鉴权中 token 如何注入后续请求
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SessionInject {
+    /// 完全依赖 reqwest 的 cookie_store
+    Cookie,
+    /// 从登录响应 JSON 抽 token，按 format 注入到指定 header
+    Header {
+        name: String,
+        /// 例如 "Bearer {token}"
+        format: String,
+    },
+}
+
+/// API 鉴权配置
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ApiAuthConfig {
+    None,
+    Bearer {
+        token: String,
+    },
+    Basic {
+        username: String,
+        password: String,
+    },
+    ApiKey {
+        header: String,
+        value: String,
+    },
+    Session {
+        /// 可为相对路径（拼 group.baseUrl）或绝对 URL
+        login_url: String,
+        /// 通常 "POST"
+        login_method: String,
+        /// 登录 body，用户自定义 JSON 字符串
+        credentials_json: String,
+        /// 从登录响应提取 token 的 JSON path，如 "data.token"；为空依赖 Cookie
+        token_json_path: Option<String>,
+        inject_as: SessionInject,
+    },
+}
+
+impl Default for ApiAuthConfig {
+    fn default() -> Self {
+        ApiAuthConfig::None
+    }
+}
+
+/// 接口分组（同一项目共享鉴权）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiGroup {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub base_url: String,
+    pub auth: ApiAuthConfig,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 单个 API 接口
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiEndpoint {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// None 表示独立接口（不属于任何组）
+    #[serde(default)]
+    pub group_id: Option<String>,
+    /// GET / POST / PUT / PATCH / DELETE
+    pub method: String,
+    /// 可含 {path_param}；或绝对 URL（此时忽略组 baseUrl）
+    pub url: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    /// 覆盖组鉴权
+    #[serde(default)]
+    pub auth_override: Option<ApiAuthConfig>,
+    /// 喂给 LLM function-calling 的 JSON Schema
+    pub params_schema: serde_json::Value,
+    /// 响应截断字节数（默认 8192）
+    #[serde(default)]
+    pub response_trim_bytes: Option<u32>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// API 对话会话（与 ChatSession 字段大致对齐，额外携带绑定的接口集合）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiChatSession {
+    pub id: String,
+    pub title: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub messages: Vec<ChatMessage>,
+    #[serde(default)]
+    pub selected_endpoint_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiChatSessionSummary {
+    pub id: String,
+    pub title: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub message_count: usize,
+    pub endpoint_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
+}

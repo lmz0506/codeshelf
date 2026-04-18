@@ -2,7 +2,7 @@ mod commands;
 mod keyboard_hook;
 mod storage;
 
-use commands::{git, project, stats, system, toolbox, settings, chat, tools, extras};
+use commands::{git, project, stats, system, toolbox, settings, chat, tools, extras, api_chat};
 use tauri::{
     Emitter, Manager, RunEvent,
     tray::TrayIconBuilder,
@@ -398,6 +398,21 @@ pub fn run() {
             chat::delete_chat_session,
             chat::chat_stream,
             chat::chat_cancel,
+            // ApiChat: Groups / Endpoints / Sessions / LLM bridge
+            api_chat::list_api_groups,
+            api_chat::save_api_group,
+            api_chat::delete_api_group,
+            api_chat::list_api_endpoints,
+            api_chat::save_api_endpoint,
+            api_chat::delete_api_endpoint,
+            api_chat::list_api_chat_sessions,
+            api_chat::get_api_chat_session,
+            api_chat::create_api_chat_session,
+            api_chat::save_api_chat_session,
+            api_chat::rename_api_chat_session,
+            api_chat::delete_api_chat_session,
+            api_chat::build_api_tools,
+            api_chat::execute_api_endpoint,
             // Chat tools / tasks
             tools::chat_list_tools,
             tools::chat_execute_tool,

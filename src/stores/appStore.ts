@@ -30,7 +30,7 @@ export interface TerminalConfig {
   };
 }
 
-export type PageType = "shelf" | "dashboard" | "settings" | "toolbox" | "aiProviders" | "chat" | "workflows";
+export type PageType = "shelf" | "dashboard" | "settings" | "toolbox" | "aiProviders" | "chat" | "workflows" | "apiChat";
 
 interface AppState {
   // Initialization

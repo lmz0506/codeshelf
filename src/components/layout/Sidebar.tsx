@@ -29,6 +29,7 @@ const navTree: NavNode[] = [
     label: "🤖 助手",
     children: [
       { id: "chat", label: "💬 对话" },
+      { id: "apiChat", label: "🧪 接口" },
       { id: "aiProviders", label: "✨ 模型" },
       { id: "workflows", label: "⚡ 流程" },
     ],
@@ -43,13 +44,13 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
     // 当前页属于智工组则默认展开
-    const isAiActive = ["chat", "aiProviders", "workflows"].includes(currentPage);
+    const isAiActive = ["chat", "aiProviders", "workflows", "apiChat"].includes(currentPage);
     return { ai: isAiActive };
   });
 
   useEffect(() => {
     // 切页到智工子项时自动展开该组
-    if (["chat", "aiProviders", "workflows"].includes(currentPage)) {
+    if (["chat", "aiProviders", "workflows", "apiChat"].includes(currentPage)) {
       setExpandedGroups((g) => ({ ...g, ai: true }));
     }
   }, [currentPage]);
