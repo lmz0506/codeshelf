@@ -130,6 +130,13 @@ export function ChatPage() {
   const [qmProviderId, setQmProviderId] = useState<string>("");
   const [qmModelId, setQmModelId] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
+  const [sessionListCollapsed, setSessionListCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("chat.sessionListCollapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
   const approvalResolverRef = useRef<((d: "once" | "always" | "reject") => void) | null>(null);
 
   useEffect(() => {
@@ -1054,6 +1061,18 @@ export function ChatPage() {
           isSwitching={sessionLoading}
           isConfigured={isConfigured}
           loading={listLoading}
+          collapsed={sessionListCollapsed}
+          onToggleCollapsed={() => {
+            setSessionListCollapsed((prev) => {
+              const next = !prev;
+              try {
+                localStorage.setItem("chat.sessionListCollapsed", next ? "1" : "0");
+              } catch {
+                /* ignore */
+              }
+              return next;
+            });
+          }}
           onCreate={handleCreateSession}
           onImport={handleImport}
           onSelect={handleSelectSession}

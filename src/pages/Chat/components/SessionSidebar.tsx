@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, Search, Upload } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, Plus, Search, Upload } from "lucide-react";
 import type { ChatSessionSummary } from "@/types";
 import { SessionItem } from "./SessionItem";
 import { groupSessions } from "../utils/groupSessions";
@@ -10,6 +10,8 @@ interface SessionSidebarProps {
   isSwitching: boolean;
   isConfigured: boolean;
   loading: boolean;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   onCreate: () => void;
   onImport: () => void;
   onSelect: (id: string) => void;
@@ -25,6 +27,8 @@ export function SessionSidebar({
   isSwitching,
   isConfigured,
   loading,
+  collapsed,
+  onToggleCollapsed,
   onCreate,
   onImport,
   onSelect,
@@ -43,10 +47,40 @@ export function SessionSidebar({
 
   const groups = useMemo(() => groupSessions(filtered), [filtered]);
 
+  if (collapsed) {
+    return (
+      <aside className="w-12 flex-shrink-0 border-r border-gray-200 py-3 flex flex-col items-center gap-2 bg-white">
+        <button
+          className="p-1.5 text-gray-500 rounded-lg hover:bg-gray-100"
+          onClick={onToggleCollapsed}
+          title="展开会话列表"
+        >
+          <ChevronsRight size={16} />
+        </button>
+        <button
+          className="p-1.5 bg-blue-500 text-white rounded-lg disabled:opacity-60 hover:bg-blue-600"
+          onClick={onCreate}
+          title={isConfigured ? "新建会话" : "尚未配置模型，先去配置"}
+        >
+          <Plus size={14} />
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside className="w-72 flex-shrink-0 border-r border-gray-200 p-4 space-y-3 flex flex-col overflow-hidden bg-white">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">会话列表</div>
+        <div className="flex items-center gap-1">
+          <button
+            className="p-1 text-gray-500 rounded hover:bg-gray-100"
+            onClick={onToggleCollapsed}
+            title="收起会话列表"
+          >
+            <ChevronsLeft size={14} />
+          </button>
+          <div className="text-sm font-semibold">会话列表</div>
+        </div>
         <div className="flex items-center gap-1">
           <button
             className="px-2 py-1 text-xs border border-gray-200 text-gray-600 rounded-lg flex items-center gap-1 hover:bg-gray-50"
