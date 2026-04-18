@@ -356,7 +356,7 @@ export function ChatInput({
             }
           }
         }}
-        placeholder="输入消息，Enter 发送 / Shift+Enter 换行 / 输入 / 查看命令 / 粘贴图片自动附加"
+        placeholder="输入消息，Enter 发送, Shift+Enter 换行, 输入/查看命令, 输入@选择文件, 粘贴图片自动附加"
         disabled={disabled}
       />
       {showSlashMenu && (
