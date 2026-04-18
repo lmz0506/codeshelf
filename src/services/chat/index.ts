@@ -140,3 +140,49 @@ export async function createChatTask(params: {
 }): Promise<ChatTask> {
   return invoke("create_chat_task", params);
 }
+
+// ========== Memory ==========
+
+export async function getGlobalMemory(): Promise<string> {
+  return invoke("get_global_memory");
+}
+
+export async function saveGlobalMemory(content: string): Promise<void> {
+  return invoke("save_global_memory", { content });
+}
+
+// ========== Skills ==========
+
+export interface Skill {
+  name: string;
+  description: string;
+  argsHint?: string;
+  body: string;
+}
+
+export async function listSkills(): Promise<Skill[]> {
+  return invoke("list_skills");
+}
+
+export async function saveSkill(skill: Skill): Promise<void> {
+  return invoke("save_skill", { skill });
+}
+
+export async function deleteSkill(name: string): Promise<void> {
+  return invoke("delete_skill", { name });
+}
+
+// ========== @ mention ==========
+
+export interface MentionFileEntry {
+  path: string;
+  isDir: boolean;
+}
+
+export async function listDirEntries(root: string, max?: number): Promise<MentionFileEntry[]> {
+  return invoke("list_dir_entries", { root, max });
+}
+
+export async function readMentionFile(root: string, relPath: string): Promise<string> {
+  return invoke("read_mention_file", { root, relPath });
+}

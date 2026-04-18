@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Settings, FolderCog, ListChecks } from "lucide-react";
+import { Settings, ListChecks, Brain } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
@@ -14,8 +14,9 @@ import {
   renameChatSession,
   saveChatSession,
 } from "@/services/chat";
+import { getGlobalMemory, saveGlobalMemory, readMentionFile } from "@/services/chat";
 import type { ChatStreamMessage, ToolSchema } from "@/services/chat";
-import type { AiModelConfig, AiProviderConfig, ChatMessage, ChatSession, ChatSessionSummary, ToolCall } from "@/types";
+import type { AiModelConfig, AiProviderConfig, ChatAttachment, ChatMessage, ChatSession, ChatSessionSummary, ToolCall } from "@/types";
 
 import { SessionSidebar } from "./components/SessionSidebar";
 import { MessageList } from "./components/MessageList";
@@ -24,9 +25,12 @@ import { RenameDialog } from "./components/RenameDialog";
 import { SessionConfigPanel, type SessionConfigValues } from "./components/SessionConfigPanel";
 import { ToolApprovalDialog, type PendingApproval } from "./components/ToolApprovalDialog";
 import { TaskPanel } from "./components/TaskPanel";
+import { SkillsPicker } from "./components/SkillsPicker";
+import { AtMentionPicker } from "./components/AtMentionPicker";
 import { useChatStream } from "./hooks/useChatStream";
 import { exportSessionAsJson, exportSessionAsMarkdown, importSessionFromJson } from "./utils/exportSession";
 import { sessionTokens } from "./utils/tokens";
+import { compactMessages } from "./utils/compact";
 import { type SlashCommandId } from "./utils/slashCommands";
 
 interface ModelOption {
@@ -98,7 +102,7 @@ function summarizeTitle(messages: ChatMessage[]): string | null {
 }
 
 export function ChatPage() {
-  const { aiProviders, setCurrentPage, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+  const { aiProviders, setCurrentPage, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed, projects } = useAppStore();
 
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -116,10 +120,17 @@ export function ChatPage() {
   const [toolSchemas, setToolSchemas] = useState<ToolSchema[]>([]);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [taskPanelOpen, setTaskPanelOpen] = useState(false);
+  const [globalMemory, setGlobalMemory] = useState<string>("");
+  const [memoryEditorOpen, setMemoryEditorOpen] = useState(false);
+  const [memoryDraft, setMemoryDraft] = useState("");
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
   const approvalResolverRef = useRef<((d: "once" | "always" | "reject") => void) | null>(null);
 
   useEffect(() => {
     listTools().then(setToolSchemas).catch(() => {});
+    getGlobalMemory().then(setGlobalMemory).catch(() => {});
   }, []);
 
   const activeSessionRef = useRef<ChatSession | null>(null);
@@ -333,12 +344,16 @@ export function ChatPage() {
     fn?.(decision);
   }
 
+  const mentionContextRef = useRef<string>("");
+
   /** 将 ChatSession.messages 转为 OpenAI 协议消息（含 tool_calls / tool 结果） */
   function toStreamMessages(session: ChatSession): ChatStreamMessage[] {
     const out: ChatStreamMessage[] = [];
-    if (session.systemPrompt?.trim()) {
-      out.push({ role: "system", content: session.systemPrompt.trim() });
-    }
+    const sysParts: string[] = [];
+    if (globalMemory.trim()) sysParts.push(`[全局记忆 MEMORY.md]\n${globalMemory.trim()}`);
+    if (session.systemPrompt?.trim()) sysParts.push(session.systemPrompt.trim());
+    if (mentionContextRef.current.trim()) sysParts.push(mentionContextRef.current.trim());
+    if (sysParts.length) out.push({ role: "system", content: sysParts.join("\n\n---\n\n") });
     for (const m of session.messages) {
       if (m.role === "assistant") {
         const hasToolCalls = (m.toolCalls?.length ?? 0) > 0;
@@ -361,6 +376,16 @@ export function ChatPage() {
           toolCallId: m.toolCallId,
           name: m.toolName,
         });
+      } else if (m.role === "user" && m.attachments?.some((a) => a.kind === "image")) {
+        const parts: Array<
+          | { type: "text"; text: string }
+          | { type: "image_url"; image_url: { url: string } }
+        > = [];
+        if (m.content.trim()) parts.push({ type: "text", text: m.content });
+        for (const a of m.attachments) {
+          if (a.kind === "image") parts.push({ type: "image_url", image_url: { url: a.dataUrl } });
+        }
+        out.push({ role: "user", content: parts });
       } else {
         out.push({ role: m.role, content: m.content });
       }
@@ -534,10 +559,34 @@ export function ChatPage() {
     await runChatRequest(session, round + 1);
   }
 
+  async function resolveMentions(text: string, root: string | undefined): Promise<string> {
+    if (!root) return "";
+    const re = /@([A-Za-z0-9_\-./]+)/g;
+    const paths = new Set<string>();
+    for (const m of text.matchAll(re)) {
+      paths.add(m[1]);
+    }
+    if (paths.size === 0) return "";
+    const parts: string[] = ["[引用文件]"];
+    for (const p of paths) {
+      try {
+        const content = await readMentionFile(root, p);
+        parts.push(`\n### ${p}\n\`\`\`\n${content}\n\`\`\``);
+      } catch {
+        /* 跳过无法读取的 */
+      }
+    }
+    return parts.length > 1 ? parts.join("\n") : "";
+  }
+
   async function handleSend() {
-    if (!activeSession || !selected || !input.trim() || streaming) return;
+    if (!activeSession || !selected || streaming) return;
+    if (!input.trim() && pendingAttachments.length === 0) return;
     const content = input.trim();
-    const userMessage = makeMessage("user", content);
+    mentionContextRef.current = await resolveMentions(content, activeSession.allowedCwd);
+    const userMessage = makeMessage("user", content, {
+      attachments: pendingAttachments.length ? pendingAttachments : undefined,
+    });
     const nextSession: ChatSession = {
       ...activeSession,
       providerId: selected.providerId,
@@ -545,6 +594,7 @@ export function ChatPage() {
       messages: [...activeSession.messages, userMessage],
     };
     setInput("");
+    setPendingAttachments([]);
     setLoading(true);
     try {
       const saved = await persistSession(nextSession);
@@ -630,6 +680,31 @@ export function ChatPage() {
     showToast("success", "已清空当前会话");
   }
 
+  async function handleCompact() {
+    if (!activeSession || !selected || streaming) return;
+    if (activeSession.messages.length < 6) {
+      showToast("warning", "消息太少，无需压缩");
+      return;
+    }
+    setLoading(true);
+    try {
+      const newMessages = await compactMessages({
+        session: activeSession,
+        providerId: selected.providerId,
+        model: selected.model.model,
+        baseUrl: selected.baseUrl,
+        apiKey: selected.apiKey,
+      });
+      const next: ChatSession = { ...activeSession, messages: newMessages };
+      await persistSession(next);
+      showToast("success", "已压缩");
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "压缩失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleSaveConfig(values: SessionConfigValues) {
     if (!activeSession) return;
     const nextSession: ChatSession = {
@@ -699,6 +774,12 @@ export function ChatPage() {
         await handleRegenerateAssistant(last);
         break;
       }
+      case "compact":
+        await handleCompact();
+        break;
+      case "skills":
+        setSkillsOpen(true);
+        break;
       case "help":
         showToast(
           "info",
@@ -750,14 +831,74 @@ export function ChatPage() {
                 />
                 🛠 工具 {toolsEnabled ? "已启用" : "未启用"}
               </label>
+              <select
+                className="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white text-gray-700 max-w-[220px]"
+                value={
+                  activeSession.allowedCwd &&
+                  projects.find((p) => p.path === activeSession.allowedCwd)
+                    ? `project:${activeSession.allowedCwd}`
+                    : activeSession.allowedCwd
+                      ? "custom"
+                      : ""
+                }
+                onChange={async (e) => {
+                  const v = e.target.value;
+                  if (v === "") return;
+                  if (v === "custom") {
+                    await handlePickAllowedCwd();
+                    return;
+                  }
+                  if (v.startsWith("project:")) {
+                    const path = v.slice("project:".length);
+                    const next: ChatSession = { ...activeSession, allowedCwd: path };
+                    await persistSession(next);
+                    showToast("success", "已绑定项目目录");
+                  }
+                }}
+                disabled={streaming}
+                title="选择项目目录或自定义目录"
+              >
+                <option value="">未选目录</option>
+                {projects.length > 0 && (
+                  <optgroup label="📚 书架项目">
+                    {projects.map((p) => (
+                      <option key={p.id} value={`project:${p.path}`}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <option value="custom">📁 自定义目录…</option>
+              </select>
               <button
                 className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
-                onClick={handlePickAllowedCwd}
-                title="选择允许工具操作的根目录"
-                disabled={streaming}
+                onClick={() => {
+                  setMemoryDraft(globalMemory);
+                  setMemoryEditorOpen(true);
+                }}
+                title="全局记忆 MEMORY.md"
               >
-                <FolderCog size={12} />
-                {activeSession.allowedCwd ? activeSession.allowedCwd.split("/").slice(-2).join("/") : "未选目录"}
+                <Brain size={12} /> 记忆
+              </button>
+              <button
+                className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
+                onClick={() => {
+                  if (!activeSession?.allowedCwd) {
+                    showToast("warning", "请先选择会话根目录");
+                    return;
+                  }
+                  setMentionOpen(true);
+                }}
+                title="引用文件（@ 注入内容）"
+              >
+                @ 文件
+              </button>
+              <button
+                className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
+                onClick={() => setSkillsOpen(true)}
+                title="Skills"
+              >
+                📚 Skills
               </button>
               <button
                 className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
@@ -844,6 +985,30 @@ export function ChatPage() {
                 streaming={streaming}
                 disabled={loading}
                 userHistory={userHistory}
+                onImagePaste={(dataUrl) =>
+                  setPendingAttachments((prev) => [...prev, { kind: "image", dataUrl }])
+                }
+                attachmentsSlot={
+                  pendingAttachments.length > 0 ? (
+                    <div className="flex gap-2 mb-2 flex-wrap">
+                      {pendingAttachments.map((a, idx) =>
+                        a.kind === "image" ? (
+                          <div key={idx} className="relative w-20 h-20 border border-gray-200 rounded overflow-hidden group">
+                            <img src={a.dataUrl} alt="" className="w-full h-full object-cover" />
+                            <button
+                              className="absolute top-0 right-0 bg-black/60 text-white text-[10px] px-1 opacity-0 group-hover:opacity-100"
+                              onClick={() =>
+                                setPendingAttachments((prev) => prev.filter((_, i) => i !== idx))
+                              }
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ) : null,
+                      )}
+                    </div>
+                  ) : null
+                }
               />
             </div>
           )}
@@ -869,6 +1034,62 @@ export function ChatPage() {
 
       {activeSession && (
         <TaskPanel sessionId={activeSession.id} open={taskPanelOpen} onClose={() => setTaskPanelOpen(false)} />
+      )}
+
+      <SkillsPicker
+        open={skillsOpen}
+        onClose={() => setSkillsOpen(false)}
+        onSelect={(rendered) => setInput((prev) => (prev.trim() ? `${prev}\n\n${rendered}` : rendered))}
+      />
+
+      <AtMentionPicker
+        open={mentionOpen}
+        root={activeSession?.allowedCwd ?? null}
+        onClose={() => setMentionOpen(false)}
+        onPick={(paths) => {
+          const snippet = paths.map((p) => `@${p}`).join(" ");
+          setInput((prev) => (prev.trim() ? `${prev} ${snippet}` : snippet));
+        }}
+      />
+
+      {memoryEditorOpen && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-[600px] max-w-[90vw] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold flex items-center gap-2">
+                <Brain size={14} /> 全局记忆（MEMORY.md）
+              </div>
+              <span className="text-[11px] text-gray-400">每次对话将作为 system 消息最前置</span>
+            </div>
+            <textarea
+              className="w-full border border-gray-200 rounded-lg p-2 text-sm font-mono"
+              rows={14}
+              placeholder="例：我是 Go + React 背景，偏好简洁；代码用 2 空格缩进…"
+              value={memoryDraft}
+              onChange={(e) => setMemoryDraft(e.target.value)}
+            />
+            <div className="flex justify-end gap-2">
+              <button className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg" onClick={() => setMemoryEditorOpen(false)}>
+                取消
+              </button>
+              <button
+                className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg"
+                onClick={async () => {
+                  try {
+                    await saveGlobalMemory(memoryDraft);
+                    setGlobalMemory(memoryDraft);
+                    setMemoryEditorOpen(false);
+                    showToast("success", "已保存");
+                  } catch {
+                    showToast("error", "保存失败");
+                  }
+                }}
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

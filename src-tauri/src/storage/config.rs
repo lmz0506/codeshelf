@@ -133,7 +133,15 @@ impl StorageConfig {
     pub fn conversations_dir(&self) -> PathBuf {
         self.data_dir.join("conversations")
       }
-  
+
+    pub fn memory_file(&self) -> PathBuf {
+        self.data_dir.join("MEMORY.md")
+    }
+
+    pub fn skills_dir(&self) -> PathBuf {
+        self.data_dir.join("skills")
+    }
+
     pub fn clipboard_history_file(&self) -> PathBuf {
         self.data_dir.join("clipboard_history.json")
     }

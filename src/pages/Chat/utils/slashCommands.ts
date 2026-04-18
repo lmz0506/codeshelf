@@ -8,6 +8,8 @@ export type SlashCommandId =
   | "config"
   | "model"
   | "regenerate"
+  | "compact"
+  | "skills"
   | "help";
 
 export interface SlashCommand {
@@ -27,6 +29,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { id: "config", name: "/config", description: "调整温度、max tokens 等采样参数" },
   { id: "model", name: "/model", description: "切换模型（聚焦顶部选择器）" },
   { id: "regenerate", name: "/regenerate", description: "对最后一条 assistant 消息重新生成", aliases: ["/regen"] },
+  { id: "compact", name: "/compact", description: "压缩早期对话为摘要，保留最近 4 条" },
+  { id: "skills", name: "/skills", description: "打开 Skills / Prompt 库选择器" },
   { id: "help", name: "/help", description: "列出全部可用命令" },
 ];
 

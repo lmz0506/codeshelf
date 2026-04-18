@@ -8,6 +8,7 @@ import { DashboardPage } from "@/pages/Dashboard";
 import { SettingsPage } from "@/pages/Settings";
 import { ToolboxPage } from "@/pages/Toolbox";
 import { AiProvidersPage } from "@/pages/AiProviders";
+import { ChatPage } from "@/pages/Chat";
 import { ToastContainer, UpdateNotification, ShortcutQuickLookup, ClipboardQuickAccess } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
@@ -172,6 +173,8 @@ function AppContent() {
                 return <SettingsPage />;
               case "aiProviders":
                 return <AiProvidersPage />;
+              case "chat":
+                return <ChatPage />;
               default:
                 return <ShelfPage />;
             }

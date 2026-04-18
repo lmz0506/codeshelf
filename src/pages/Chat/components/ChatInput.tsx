@@ -13,6 +13,10 @@ interface ChatInputProps {
   disabled: boolean;
   /** 用户历史消息（content），由父组件根据会话计算，最新在前 */
   userHistory: string[];
+  /** 粘贴的图片 dataUrl 列表（来自 clipboard 图片） */
+  onImagePaste?: (dataUrl: string) => void;
+  /** 渲染在输入框上方的附件 strip */
+  attachmentsSlot?: React.ReactNode;
 }
 
 export function ChatInput({
@@ -24,6 +28,8 @@ export function ChatInput({
   streaming,
   disabled,
   userHistory,
+  onImagePaste,
+  attachmentsSlot,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
@@ -128,6 +134,7 @@ export function ChatInput({
 
   return (
     <div className="border-t border-gray-200 pt-3 relative">
+      {attachmentsSlot}
       <textarea
         ref={textareaRef}
         className="w-full border border-gray-200 rounded-lg p-3 text-sm resize-none leading-[22px]"
@@ -135,7 +142,25 @@ export function ChatInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="输入消息，Enter 发送 / Shift+Enter 换行 / 输入 / 查看命令"
+        onPaste={(e) => {
+          if (!onImagePaste) return;
+          const items = e.clipboardData?.items;
+          if (!items) return;
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.kind === "file" && item.type.startsWith("image/")) {
+              const blob = item.getAsFile();
+              if (!blob) continue;
+              e.preventDefault();
+              const reader = new FileReader();
+              reader.onload = () => {
+                if (typeof reader.result === "string") onImagePaste(reader.result);
+              };
+              reader.readAsDataURL(blob);
+            }
+          }
+        }}
+        placeholder="输入消息，Enter 发送 / Shift+Enter 换行 / 输入 / 查看命令 / 粘贴图片自动附加"
         disabled={disabled}
       />
       {showSlashMenu && (

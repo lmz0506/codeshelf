@@ -2,7 +2,7 @@ mod commands;
 mod keyboard_hook;
 mod storage;
 
-use commands::{git, project, stats, system, toolbox, settings, chat, tools};
+use commands::{git, project, stats, system, toolbox, settings, chat, tools, extras};
 use tauri::{
     Emitter, Manager, RunEvent,
     tray::TrayIconBuilder,
@@ -393,6 +393,14 @@ pub fn run() {
             tools::create_chat_task,
             tools::update_chat_task,
             tools::delete_chat_task,
+            // Memory / Skills / Mention
+            extras::get_global_memory,
+            extras::save_global_memory,
+            extras::list_skills,
+            extras::save_skill,
+            extras::delete_skill,
+            extras::list_dir_entries,
+            extras::read_mention_file,
             // Toolbox - Clipboard commands
             toolbox::clipboard::get_clipboard_history,
             toolbox::clipboard::add_clipboard_entry,
