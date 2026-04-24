@@ -86,7 +86,15 @@ const tools = [
 ];
 
 export function ToolboxPage() {
-  const { sidebarCollapsed, setSidebarCollapsed, toolboxNavigateTarget, clearToolboxNavigateTarget } = useAppStore();
+  const {
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    toolboxDockerProjectName,
+    toolboxDockerProjectPath,
+    toolboxNavigateTarget,
+    clearToolboxDockerProject,
+    clearToolboxNavigateTarget,
+  } = useAppStore();
   const [activeTool, setActiveTool] = useState<ToolType | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -115,7 +123,14 @@ export function ToolboxPage() {
       case "server":
         return <LocalService onBack={() => setActiveTool(null)} />;
       case "docker":
-        return <DockerImageTool onBack={() => setActiveTool(null)} />;
+        return (
+          <DockerImageTool
+            onBack={() => setActiveTool(null)}
+            initialProjectPath={toolboxDockerProjectPath || undefined}
+            initialProjectName={toolboxDockerProjectName || undefined}
+            onInitialProjectConsumed={clearToolboxDockerProject}
+          />
+        );
       case "claude":
         return <ClaudeCodeManager onBack={() => setActiveTool(null)} />;
       case "netcat":
