@@ -2,6 +2,7 @@ import { Box, CheckCircle2, FolderOpen, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui";
 import { ToolPanelHeader } from "../index";
 import { BuildPanel } from "./BuildPanel";
+import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { ContainerConfigDialog } from "./ContainerConfigDialog";
 import { CommandResultPanel } from "./CommandResultPanel";
 import { DockerfilePanel } from "./DockerfilePanel";
@@ -85,6 +86,7 @@ export function DockerImageTool({
           </div>
           <RunPanel model={model} />
           <ContainerConfigDialog model={model} />
+          <ConfirmActionDialog model={model} />
         </div>
       </div>
     </div>

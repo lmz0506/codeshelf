@@ -28,6 +28,14 @@ interface UseDockerImageToolOptions {
   onInitialProjectConsumed?: () => void;
 }
 
+interface ConfirmRequest {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+  onConfirm: () => Promise<void>;
+}
+
 export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   const { aiProviders } = useAppStore();
   const [status, setStatus] = useState<DockerStatus | null>(null);
@@ -63,6 +71,7 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   const [containerConfigYaml, setContainerConfigYaml] = useState("");
   const [containerConfigName, setContainerConfigName] = useState("");
   const [containerConfigOpen, setContainerConfigOpen] = useState(false);
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
 
   const aiReady = useMemo(() => hasUsableAiProvider(aiProviders), [aiProviders]);
   const fullImageName = useMemo(() => {
@@ -181,12 +190,25 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
     await scanDockerfiles(projectPath);
   }
 
-  async function buildImage() {
+  function requestConfirm(request: ConfirmRequest) {
+    setConfirmRequest(request);
+  }
+
+  function buildImage() {
     if (!projectPath || !dockerfilePath.trim() || !imageName.trim()) {
       alert("请填写项目目录、Dockerfile 和镜像名");
       return;
     }
-    if (!confirm(`确定构建镜像 ${fullImageName || imageName.trim()} 吗？`)) return;
+    const target = fullImageName || imageName.trim();
+    requestConfirm({
+      title: "构建镜像",
+      message: `确定构建镜像 ${target} 吗？`,
+      confirmLabel: "确认构建",
+      onConfirm: async () => executeBuildImage(),
+    });
+  }
+
+  async function executeBuildImage() {
     setBusy(true);
     try {
       await saveDockerfile();
@@ -205,16 +227,25 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
     }
   }
 
-  async function runSelectedImage(image = runImage || fullImageName) {
+  function runSelectedImage(image = runImage || fullImageName) {
     if (!image.trim()) {
       alert("请填写要运行的镜像");
       return;
     }
-    if (!confirm(`确定运行镜像 ${image.trim()} 吗？`)) return;
+    const target = image.trim();
+    requestConfirm({
+      title: "运行镜像",
+      message: `确定运行镜像 ${target} 吗？`,
+      confirmLabel: "确认运行",
+      onConfirm: async () => executeRunImage(target),
+    });
+  }
+
+  async function executeRunImage(image: string) {
     setBusy(true);
     try {
       const result = await dockerRunImage({
-        image: image.trim(),
+        image,
         containerName: containerName.trim() || undefined,
         ports: splitListText(portsText),
         env: splitListText(envText),
@@ -230,6 +261,7 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       });
       setLastResult(result);
       await refreshDockerLists();
+      setRunDialogOpen(false);
     } finally {
       setBusy(false);
     }
@@ -240,31 +272,58 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
     setRunDialogOpen(true);
   }
 
-  async function removeImage(image: string) {
-    if (!confirm(`确定删除镜像 ${image} 吗？`)) return;
-    const result = await dockerRemoveImage(image, true);
-    setLastResult(result);
-    await refreshDockerLists();
+  function removeImage(image: string) {
+    requestConfirm({
+      title: "删除镜像",
+      message: `确定删除镜像 ${image} 吗？`,
+      confirmLabel: "确认删除",
+      danger: true,
+      onConfirm: async () => {
+        const result = await dockerRemoveImage(image, true);
+        setLastResult(result);
+        await refreshDockerLists();
+      },
+    });
   }
 
-  async function pushImage(image: string) {
-    if (!confirm(`确定推送镜像 ${image} 吗？`)) return;
-    const result = await dockerPushImage(image);
-    setLastResult(result);
+  function pushImage(image: string) {
+    requestConfirm({
+      title: "推送镜像",
+      message: `确定推送镜像 ${image} 吗？`,
+      confirmLabel: "确认推送",
+      onConfirm: async () => {
+        const result = await dockerPushImage(image);
+        setLastResult(result);
+      },
+    });
   }
 
-  async function stopContainer(id: string) {
-    if (!confirm(`确定停止容器 ${id} 吗？`)) return;
-    const result = await dockerStopContainer(id);
-    setLastResult(result);
-    await refreshDockerLists();
+  function stopContainer(id: string) {
+    requestConfirm({
+      title: "停止容器",
+      message: `确定停止容器 ${id} 吗？`,
+      confirmLabel: "确认停止",
+      danger: true,
+      onConfirm: async () => {
+        const result = await dockerStopContainer(id);
+        setLastResult(result);
+        await refreshDockerLists();
+      },
+    });
   }
 
-  async function removeContainer(id: string) {
-    if (!confirm(`确定删除容器 ${id} 吗？`)) return;
-    const result = await dockerRemoveContainer(id, true);
-    setLastResult(result);
-    await refreshDockerLists();
+  function removeContainer(id: string) {
+    requestConfirm({
+      title: "删除容器",
+      message: `确定删除容器 ${id} 吗？`,
+      confirmLabel: "确认删除",
+      danger: true,
+      onConfirm: async () => {
+        const result = await dockerRemoveContainer(id, true);
+        setLastResult(result);
+        await refreshDockerLists();
+      },
+    });
   }
 
   async function inspectContainerConfig(container: string, name?: string) {
@@ -327,6 +386,7 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       containerConfigYaml,
       containerConfigName,
       containerConfigOpen,
+      confirmRequest,
     },
     setters: {
       setContainerName,
@@ -351,6 +411,7 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       setVolumesText,
       setWorkdir,
       setCommand,
+      setConfirmRequest,
     },
     actions: {
       buildImage,

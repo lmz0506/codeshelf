@@ -124,10 +124,7 @@ export function RunPanel({ model }: RunPanelProps) {
             取消
           </Button>
           <Button
-            onClick={async () => {
-              await actions.runSelectedImage();
-              setters.setRunDialogOpen(false);
-            }}
+            onClick={() => actions.runSelectedImage()}
             disabled={state.busy || !state.status?.available}
             variant="primary"
             size="sm"
