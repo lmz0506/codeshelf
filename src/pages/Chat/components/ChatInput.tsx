@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Send, Square, CornerDownLeft } from "lucide-react";
+import { Send, Square, CornerDownLeft, FileText, Folder } from "lucide-react";
 import { filterSlashCommands, matchSlashCommand, type SlashCommand, type SlashCommandId } from "../utils/slashCommands";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 import { listDirEntries, type MentionFileEntry } from "@/services/chat";
@@ -36,6 +36,14 @@ const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
 const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_FILES = 20;
 const MAX_DEPTH = 2;
+const MENTION_SCAN_LIMIT = 5000;
+
+function formatMentionPath(path: string): string {
+  if (/\s|"/.test(path)) {
+    return `@"${path.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+  return `@${path}`;
+}
 
 async function readBlobAsText(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -129,7 +137,7 @@ export function ChatInput({
     const el = textareaRef.current;
     const caret = el ? el.selectionStart ?? value.length : value.length;
     const before = value.slice(0, caret);
-    const m = before.match(/(?:^|[\s(])@([A-Za-z0-9_\-./]*)$/);
+    const m = before.match(/(?:^|[\s(（[{])@([^\s@]*)$/);
     return m ? m[1] : null;
   }, [value, mentionRoot]);
 
@@ -138,8 +146,8 @@ export function ChatInput({
   useEffect(() => {
     if (!mentionRoot || mentionLoaded === mentionRoot) return;
     let cancelled = false;
-    listDirEntries(mentionRoot, 800)
-      .then((list) => { if (!cancelled) { setMentionEntries(list.filter((e) => !e.isDir)); setMentionLoaded(mentionRoot); } })
+    listDirEntries(mentionRoot, MENTION_SCAN_LIMIT)
+      .then((list) => { if (!cancelled) { setMentionEntries(list); setMentionLoaded(mentionRoot); } })
       .catch(() => { if (!cancelled) setMentionEntries([]); });
     return () => { cancelled = true; };
   }, [mentionRoot, mentionLoaded]);
@@ -151,7 +159,10 @@ export function ChatInput({
     const scored = q
       ? pool.filter((e) => e.path.toLowerCase().includes(q))
       : pool;
-    return scored.slice(0, 8);
+    return scored
+      .slice()
+      .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.path.localeCompare(b.path))
+      .slice(0, 80);
   }, [mentionEntries, mentionQuery]);
 
   useEffect(() => { setMentionHighlight(0); }, [mentionQuery]);
@@ -161,7 +172,7 @@ export function ChatInput({
     const caret = el ? el.selectionStart ?? value.length : value.length;
     const before = value.slice(0, caret);
     const after = value.slice(caret);
-    const replaced = before.replace(/@([A-Za-z0-9_\-./]*)$/, `@${path} `);
+    const replaced = before.replace(/@([^\s@]*)$/, `${formatMentionPath(path)} `);
     const next = replaced + after;
     onChange(next);
     requestAnimationFrame(() => {
@@ -368,7 +379,7 @@ export function ChatInput({
         />
       )}
       {showMentionMenu && mentionCandidates.length > 0 && (
-        <div className="absolute left-0 right-0 bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-[220px] overflow-auto">
+        <div className="absolute left-0 right-0 bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-[320px] overflow-auto">
           <div className="px-2 py-1 text-[10px] text-gray-400 border-b border-gray-100">
             @ 引用文件 · ↑↓ 选择 · Enter/Tab 确认 · Esc 关闭
           </div>
@@ -379,7 +390,11 @@ export function ChatInput({
               onMouseEnter={() => setMentionHighlight(i)}
               onMouseDown={(ev) => { ev.preventDefault(); applyMention(e.path); }}
             >
-              <span>📄</span>
+              {e.isDir ? (
+                <Folder size={12} className="flex-shrink-0 text-amber-500" />
+              ) : (
+                <FileText size={12} className="flex-shrink-0 text-gray-400" />
+              )}
               <span className="truncate">{e.path}</span>
             </div>
           ))}

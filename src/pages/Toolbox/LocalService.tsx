@@ -15,6 +15,8 @@ import {
   Copy,
   Check,
   AlertTriangle,
+  FileCode,
+  Download,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";

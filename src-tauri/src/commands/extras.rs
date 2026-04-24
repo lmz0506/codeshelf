@@ -1,6 +1,7 @@
 //! Memory / Skills / Mention 相关后端命令
 
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -217,7 +218,7 @@ pub struct MentionFileEntry {
 
 #[tauri::command]
 pub async fn list_dir_entries(root: String, max: Option<u32>) -> Result<Vec<MentionFileEntry>, String> {
-    let cap = max.unwrap_or(500) as usize;
+    let cap = max.unwrap_or(5000) as usize;
     let mut out: Vec<MentionFileEntry> = Vec::new();
     let root_path = Path::new(&root);
     if !root_path.exists() {
@@ -235,14 +236,17 @@ fn walk_for_mention(
     cap: usize,
     depth: u32,
 ) -> Result<(), String> {
-    if out.len() >= cap || depth > 8 {
+    if out.len() >= cap || depth > 32 {
         return Ok(());
     }
-    let entries = match fs::read_dir(dir) {
+    let mut entries: Vec<_> = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return Ok(()),
-    };
-    for entry in entries.flatten() {
+    }
+    .flatten()
+    .collect();
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_lowercase());
+    for entry in entries {
         if out.len() >= cap {
             return Ok(());
         }
@@ -271,6 +275,8 @@ fn walk_for_mention(
 
 #[tauri::command]
 pub async fn read_mention_file(root: String, rel_path: String) -> Result<String, String> {
+    const MAX_MENTION_FILE_BYTES: u64 = 1_000_000;
+
     let root_canon = fs::canonicalize(&root).map_err(|e| format!("根目录无效: {}", e))?;
     let full = root_canon.join(&rel_path);
     let canon = fs::canonicalize(&full).map_err(|e| format!("路径无效: {}", e))?;
@@ -278,8 +284,27 @@ pub async fn read_mention_file(root: String, rel_path: String) -> Result<String,
         return Err("路径越界".into());
     }
     let meta = fs::metadata(&canon).map_err(|e| format!("读取元信息失败: {}", e))?;
-    if meta.len() > 200_000 {
-        return Err(format!("文件过大（{} 字节），拒绝注入", meta.len()));
+    if meta.is_dir() {
+        return Err("不能引用目录".into());
     }
-    fs::read_to_string(&canon).map_err(|e| format!("读取失败: {}", e))
+    let file = fs::File::open(&canon).map_err(|e| format!("打开失败: {}", e))?;
+    let mut buf = Vec::new();
+    file.take(MAX_MENTION_FILE_BYTES + 1)
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("读取失败: {}", e))?;
+    let truncated = buf.len() as u64 > MAX_MENTION_FILE_BYTES;
+    if truncated {
+        buf.truncate(MAX_MENTION_FILE_BYTES as usize);
+    }
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    if truncated {
+        Ok(format!(
+            "{}\n\n[文件过大（{} 字节），仅加载前 {} KB]",
+            text,
+            meta.len(),
+            MAX_MENTION_FILE_BYTES / 1024
+        ))
+    } else {
+        Ok(text)
+    }
 }

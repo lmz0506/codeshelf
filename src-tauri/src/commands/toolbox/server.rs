@@ -1,6 +1,6 @@
 // 静态服务模块 - 本地 Web 服务器，支持 CORS、gzip、API 代理
 
-use super::{current_time, generate_id, ServerConfig, ServerConfigInput};
+use super::{current_time, generate_id, NginxConfigOptions, ServerConfig, ServerConfigInput};
 use crate::storage;
 use axum::{
     body::Body,

@@ -351,3 +351,18 @@ export interface ClipboardSettings {
   maxItems: number;
   monitorIntervalMs: number;
 }
+
+// ============== Nginx 配置生成 ==============
+
+export interface NginxConfigOptions {
+  serviceName: string;
+  listenPort: number;
+  rootDir: string;
+  indexPage?: string;
+  cors?: boolean;
+  gzip?: boolean;
+  urlPrefix?: string;
+  proxies?: Array<{ prefix: string; target: string }>;
+  accessLog?: boolean;
+  errorLog?: boolean;
+}

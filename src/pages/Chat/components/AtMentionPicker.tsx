@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { X, FileText, Folder, Search } from "lucide-react";
 import { listDirEntries, type MentionFileEntry } from "@/services/chat";
 
+const MENTION_SCAN_LIMIT = 5000;
+
 interface AtMentionPickerProps {
   open: boolean;
   root: string | null;
@@ -21,7 +23,7 @@ export function AtMentionPicker({ open, root, onClose, onPick }: AtMentionPicker
     setLoading(true);
     setSelected(new Set());
     setQuery("");
-    listDirEntries(root, 800)
+    listDirEntries(root, MENTION_SCAN_LIMIT)
       .then((list) => setEntries(list.filter((e) => !e.isDir)))
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
@@ -29,8 +31,8 @@ export function AtMentionPicker({ open, root, onClose, onPick }: AtMentionPicker
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return entries.slice(0, 200);
-    return entries.filter((e) => e.path.toLowerCase().includes(q)).slice(0, 200);
+    if (!q) return entries.slice(0, 1000);
+    return entries.filter((e) => e.path.toLowerCase().includes(q)).slice(0, 1000);
   }, [entries, query]);
 
   if (!open) return null;
