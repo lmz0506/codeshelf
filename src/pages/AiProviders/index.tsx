@@ -367,10 +367,14 @@ export function AiProvidersPage() {
         }
       }
       if (newFiles.length > 0) {
-        setAttachedFiles((prev) => [...prev, ...newFiles]);
+        setAttachedFiles((prev) => {
+          const next = [...prev, ...newFiles];
+          showToast("success", `已附加 ${next.length} 个文件`);
+          return next;
+        });
       }
     } catch {
-      showToast("error", "选择文件失败");
+      showToast("error", "读取文件失败");
     }
   }
 
