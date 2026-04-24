@@ -186,6 +186,7 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       alert("请填写项目目录、Dockerfile 和镜像名");
       return;
     }
+    if (!confirm(`确定构建镜像 ${fullImageName || imageName.trim()} 吗？`)) return;
     setBusy(true);
     try {
       await saveDockerfile();
@@ -209,6 +210,7 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       alert("请填写要运行的镜像");
       return;
     }
+    if (!confirm(`确定运行镜像 ${image.trim()} 吗？`)) return;
     setBusy(true);
     try {
       const result = await dockerRunImage({
@@ -246,17 +248,20 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   }
 
   async function pushImage(image: string) {
+    if (!confirm(`确定推送镜像 ${image} 吗？`)) return;
     const result = await dockerPushImage(image);
     setLastResult(result);
   }
 
   async function stopContainer(id: string) {
+    if (!confirm(`确定停止容器 ${id} 吗？`)) return;
     const result = await dockerStopContainer(id);
     setLastResult(result);
     await refreshDockerLists();
   }
 
   async function removeContainer(id: string) {
+    if (!confirm(`确定删除容器 ${id} 吗？`)) return;
     const result = await dockerRemoveContainer(id, true);
     setLastResult(result);
     await refreshDockerLists();
