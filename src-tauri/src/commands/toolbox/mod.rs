@@ -9,6 +9,7 @@ pub mod claude_code;
 pub mod netcat;
 pub mod shortcuts;
 pub mod clipboard;
+pub mod docker;
 
 use serde::{Deserialize, Serialize};
 

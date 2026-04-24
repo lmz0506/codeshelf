@@ -9,6 +9,7 @@ import {
   Radio,
   Keyboard,
   ClipboardList,
+  Box,
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
@@ -22,6 +23,7 @@ import { ClaudeCodeManager } from "./ClaudeCodeManager";
 import NetcatTool from "./NetcatTool";
 import { ShortcutsMemo } from "./ShortcutsMemo";
 import { ClipboardManager } from "./ClipboardManager";
+import { DockerImageTool } from "./DockerImageTool";
 
 const tools = [
   {
@@ -44,6 +46,13 @@ const tools = [
     description: "统一管理 Web 静态服务和端口转发，支持 CORS、gzip 和多代理规则",
     icon: Server,
     color: "bg-orange-500",
+  },
+  {
+    id: "docker" as ToolType,
+    name: "Docker 镜像",
+    description: "发现和编辑 Dockerfile，生成模板，构建、运行、推送和删除镜像",
+    icon: Box,
+    color: "bg-sky-500",
   },
   {
     id: "claude" as ToolType,
@@ -105,6 +114,8 @@ export function ToolboxPage() {
         return <FileDownloader onBack={() => setActiveTool(null)} />;
       case "server":
         return <LocalService onBack={() => setActiveTool(null)} />;
+      case "docker":
+        return <DockerImageTool onBack={() => setActiveTool(null)} />;
       case "claude":
         return <ClaudeCodeManager onBack={() => setActiveTool(null)} />;
       case "netcat":

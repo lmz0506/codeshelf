@@ -168,6 +168,66 @@ export interface ServerConfigInput {
   proxies?: ProxyConfig[];
 }
 
+// ============== Docker 镜像 ==============
+
+export interface DockerStatus {
+  available: boolean;
+  version?: string;
+  error?: string;
+}
+
+export interface DockerCommandResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  command: string;
+}
+
+export interface DockerImageInfo {
+  id: string;
+  repository: string;
+  tag: string;
+  size: string;
+  createdSince: string;
+}
+
+export interface DockerContainerInfo {
+  id: string;
+  image: string;
+  names: string;
+  status: string;
+  ports: string;
+}
+
+export interface DockerBuildInput {
+  projectPath: string;
+  dockerfilePath: string;
+  imageName: string;
+  tag?: string;
+  noCache?: boolean;
+}
+
+export interface DockerRunInput {
+  image: string;
+  containerName?: string;
+  ports?: string[];
+  env?: string[];
+}
+
+export interface DockerAiGenerateInput {
+  projectPath: string;
+  dockerfilePath?: string;
+  imageName?: string;
+  providerId?: string;
+  modelId?: string;
+}
+
+export interface DockerAiGenerateOutput {
+  content: string;
+  providerName: string;
+  modelName: string;
+}
+
 // ============== Claude Code 配置 ==============
 
 export type EnvType = "host" | "wsl";
@@ -211,7 +271,7 @@ export interface ConfigProfile {
 
 // ============== 工具箱页面状态 ==============
 
-export type ToolType = "monitor" | "downloader" | "server" | "claude" | "netcat" | "shortcuts" | "clipboard" | "resume";
+export type ToolType = "monitor" | "downloader" | "server" | "docker" | "claude" | "netcat" | "shortcuts" | "clipboard" | "resume";
 
 export interface ToolInfo {
   id: ToolType;

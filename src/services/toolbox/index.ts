@@ -15,6 +15,14 @@ import type {
   ForwardStats,
   ServerConfig,
   ServerConfigInput,
+  DockerStatus,
+  DockerCommandResult,
+  DockerImageInfo,
+  DockerContainerInfo,
+  DockerBuildInput,
+  DockerRunInput,
+  DockerAiGenerateInput,
+  DockerAiGenerateOutput,
 } from "@/types/toolbox";
 
 // ============== 端口扫描服务 ==============
@@ -194,6 +202,73 @@ export async function updateServer(
 
 export async function generateNginxConfig(serverId: string): Promise<string> {
   return invoke("generate_nginx_config", { serverId });
+}
+
+// ============== Docker 镜像服务 ==============
+
+export async function dockerCheckAvailable(): Promise<DockerStatus> {
+  return invoke("docker_check_available");
+}
+
+export async function dockerFindDockerfiles(projectPath: string): Promise<string[]> {
+  return invoke("docker_find_dockerfiles", { projectPath });
+}
+
+export async function dockerReadDockerfile(projectPath: string, dockerfilePath: string): Promise<string> {
+  return invoke("docker_read_dockerfile", { projectPath, dockerfilePath });
+}
+
+export async function dockerWriteDockerfile(
+  projectPath: string,
+  dockerfilePath: string,
+  content: string,
+): Promise<void> {
+  return invoke("docker_write_dockerfile", { projectPath, dockerfilePath, content });
+}
+
+export async function dockerGenerateDockerfileTemplate(
+  projectPath: string,
+  template?: string,
+): Promise<string> {
+  return invoke("docker_generate_dockerfile_template", { projectPath, template });
+}
+
+export async function dockerGenerateDockerfileAi(
+  input: DockerAiGenerateInput,
+): Promise<DockerAiGenerateOutput> {
+  return invoke("docker_generate_dockerfile_ai", { input });
+}
+
+export async function dockerBuildImage(input: DockerBuildInput): Promise<DockerCommandResult> {
+  return invoke("docker_build_image", { input });
+}
+
+export async function dockerListImages(): Promise<DockerImageInfo[]> {
+  return invoke("docker_list_images");
+}
+
+export async function dockerRemoveImage(image: string, force?: boolean): Promise<DockerCommandResult> {
+  return invoke("docker_remove_image", { image, force });
+}
+
+export async function dockerRunImage(input: DockerRunInput): Promise<DockerCommandResult> {
+  return invoke("docker_run_image", { input });
+}
+
+export async function dockerListContainers(): Promise<DockerContainerInfo[]> {
+  return invoke("docker_list_containers");
+}
+
+export async function dockerStopContainer(container: string): Promise<DockerCommandResult> {
+  return invoke("docker_stop_container", { container });
+}
+
+export async function dockerRemoveContainer(container: string, force?: boolean): Promise<DockerCommandResult> {
+  return invoke("docker_remove_container", { container, force });
+}
+
+export async function dockerPushImage(image: string): Promise<DockerCommandResult> {
+  return invoke("docker_push_image", { image });
 }
 
 // ============== Claude Code 配置服务 ==============
