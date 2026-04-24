@@ -192,6 +192,10 @@ export async function updateServer(
   return invoke("update_server", { serverId, input });
 }
 
+export async function generateNginxConfig(serverId: string): Promise<string> {
+  return invoke("generate_nginx_config", { serverId });
+}
+
 // ============== Claude Code 配置服务 ==============
 
 import type { ClaudeCodeInfo, EnvType, QuickConfigOption, ConfigProfile, ConfigFileInfo } from "@/types/toolbox";

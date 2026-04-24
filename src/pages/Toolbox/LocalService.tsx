@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Globe,
   ArrowLeftRight,
@@ -18,8 +18,9 @@ import {
   FileCode,
   Download,
 } from "lucide-react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { ToolPanelHeader } from "./index";
 import { Input, Button } from "@/components/ui";
 import {
@@ -36,6 +37,7 @@ import {
   getForwardRules,
   updateForwardRule,
   formatBytes,
+  generateNginxConfig,
 } from "@/services/toolbox";
 import type { ServerConfig, ServerConfigInput, ProxyConfig, ForwardRule, ForwardRuleInput } from "@/types/toolbox";
 
@@ -46,7 +48,124 @@ interface LocalServiceProps {
 type ServiceType = "web" | "forward";
 type TabType = "all" | "web" | "forward";
 
+const NGINX_SNIPPETS = [
+  {
+    title: "基础 Server",
+    description: "端口、域名、字符集",
+    code: `server {
+    listen 80;
+    server_name example.com;
+    charset utf-8;
+}`,
+  },
+  {
+    title: "静态目录",
+    description: "root + try_files",
+    code: `root /var/www/html;
+index index.html index.htm;
+
+location / {
+    try_files $uri $uri/ =404;
+}`,
+  },
+  {
+    title: "SPA 回退",
+    description: "前端路由刷新不 404",
+    code: `location / {
+    try_files $uri $uri/ /index.html;
+}`,
+  },
+  {
+    title: "路径前缀",
+    description: "alias 挂载子路径",
+    code: `location /app/ {
+    alias /var/www/app/;
+    index index.html;
+    try_files $uri $uri/ /app/index.html;
+}`,
+  },
+  {
+    title: "API 代理",
+    description: "反向代理到后端",
+    code: `location /api/ {
+    proxy_pass http://127.0.0.1:3000/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}`,
+  },
+  {
+    title: "WebSocket",
+    description: "升级连接头",
+    code: `location /ws/ {
+    proxy_pass http://127.0.0.1:3000/ws/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+}`,
+  },
+  {
+    title: "CORS",
+    description: "跨域与预检",
+    code: `add_header Access-Control-Allow-Origin * always;
+add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
+add_header Access-Control-Allow-Headers "Origin, X-Requested-With, Content-Type, Accept, Authorization" always;
+
+if ($request_method = OPTIONS) {
+    return 204;
+}`,
+  },
+  {
+    title: "Gzip",
+    description: "文本资源压缩",
+    code: `gzip on;
+gzip_vary on;
+gzip_min_length 1024;
+gzip_types
+    text/plain
+    text/css
+    application/json
+    application/javascript
+    text/xml
+    application/xml
+    image/svg+xml;`,
+  },
+  {
+    title: "缓存策略",
+    description: "静态资源长缓存",
+    code: `location ~* \\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$ {
+    expires 30d;
+    add_header Cache-Control "public, immutable";
+}`,
+  },
+  {
+    title: "上传大小",
+    description: "放开请求体限制",
+    code: `client_max_body_size 50m;`,
+  },
+  {
+    title: "日志",
+    description: "访问和错误日志",
+    code: `access_log /var/log/nginx/app_access.log;
+error_log /var/log/nginx/app_error.log warn;`,
+  },
+  {
+    title: "HTTPS",
+    description: "证书配置骨架",
+    code: `listen 443 ssl http2;
+server_name example.com;
+
+ssl_certificate /etc/nginx/certs/example.com.pem;
+ssl_certificate_key /etc/nginx/certs/example.com.key;
+ssl_protocols TLSv1.2 TLSv1.3;`,
+  },
+];
+
 export function LocalService({ onBack }: LocalServiceProps) {
+  const nginxEditorRef = useRef<HTMLTextAreaElement>(null);
   const [activeTab, setActiveTab] = useState<TabType>("all");
   const [servers, setServers] = useState<ServerConfig[]>([]);
   const [forwardRules, setForwardRules] = useState<ForwardRule[]>([]);
@@ -81,6 +200,10 @@ export function LocalService({ onBack }: LocalServiceProps) {
 
   // 复制 URL 状态
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [nginxPreview, setNginxPreview] = useState<{
+    server: ServerConfig;
+    content: string;
+  } | null>(null);
 
   // 加载数据
   useEffect(() => {
@@ -426,6 +549,79 @@ export function LocalService({ onBack }: LocalServiceProps) {
     }
   }
 
+  function nginxFileName(server: ServerConfig): string {
+    const safeName = server.name.trim().replace(/[^\w\u4e00-\u9fa5.-]+/g, "-") || "service";
+    return `${safeName}-nginx.conf`;
+  }
+
+  async function handleGenerateNginx(server: ServerConfig) {
+    try {
+      const content = await generateNginxConfig(server.id);
+      setNginxPreview({ server, content });
+    } catch (error) {
+      console.error("生成 Nginx 配置失败:", error);
+      alert(`生成 Nginx 配置失败: ${error}`);
+    }
+  }
+
+  async function handleCopyNginxConfig() {
+    if (!nginxPreview) return;
+    try {
+      await navigator.clipboard.writeText(nginxPreview.content);
+      setCopiedId(`nginx-${nginxPreview.server.id}`);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (error) {
+      console.error("复制 Nginx 配置失败:", error);
+    }
+  }
+
+  async function handleCopyNginxSnippet(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedId(`nginx-snippet-${code}`);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (error) {
+      console.error("复制 Nginx 片段失败:", error);
+    }
+  }
+
+  function handleInsertNginxSnippet(code: string) {
+    if (!nginxPreview) return;
+    const editor = nginxEditorRef.current;
+    const snippet = `\n\n${code}\n`;
+    if (!editor) {
+      setNginxPreview({ ...nginxPreview, content: `${nginxPreview.content}${snippet}` });
+      return;
+    }
+
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    const nextContent = `${nginxPreview.content.slice(0, start)}${snippet}${nginxPreview.content.slice(end)}`;
+    setNginxPreview({ ...nginxPreview, content: nextContent });
+
+    requestAnimationFrame(() => {
+      editor.focus();
+      const pos = start + snippet.length;
+      editor.setSelectionRange(pos, pos);
+    });
+  }
+
+  async function handleSaveNginxConfig() {
+    if (!nginxPreview) return;
+    try {
+      const path = await save({
+        title: "保存 Nginx 配置",
+        defaultPath: nginxFileName(nginxPreview.server),
+        filters: [{ name: "Nginx Config", extensions: ["conf"] }],
+      });
+      if (!path) return;
+      await writeTextFile(path, nginxPreview.content);
+    } catch (error) {
+      console.error("保存 Nginx 配置失败:", error);
+      alert(`保存 Nginx 配置失败: ${error}`);
+    }
+  }
+
   // 过滤显示的服务
   const filteredServers = activeTab === "forward" ? [] : servers;
   const filteredRules = activeTab === "web" ? [] : forwardRules;
@@ -613,6 +809,13 @@ export function LocalService({ onBack }: LocalServiceProps) {
 
                     {/* 操作按钮 */}
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleGenerateNginx(server)}
+                        className="p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors text-indigo-500"
+                        title="生成 Nginx 配置"
+                      >
+                        <FileCode size={16} />
+                      </button>
                       {server.status === "running" ? (
                         <>
                           <button
@@ -1048,6 +1251,110 @@ export function LocalService({ onBack }: LocalServiceProps) {
               <Button onClick={handleSubmit} variant="primary">
                 {editingServer || editingRule ? "保存" : "创建"}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nginx 配置预览 */}
+      {nginxPreview && (
+        <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-6xl mx-4 p-6 h-[88vh] flex flex-col">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Nginx 配置
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {nginxPreview.server.name} · :{nginxPreview.server.port} · {nginxPreview.server.urlPrefix}
+                </p>
+              </div>
+              <button
+                onClick={() => setNginxPreview(null)}
+                className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="关闭"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 grid grid-cols-[280px_minmax(0,1fr)] gap-4">
+              <div className="min-h-0 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden flex flex-col">
+                <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
+                  <div className="text-sm font-medium text-gray-800 dark:text-gray-100">基础配置手册</div>
+                  <div className="text-xs text-gray-400 mt-0.5">选择片段插入或复制</div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                  {NGINX_SNIPPETS.map((snippet) => (
+                    <div
+                      key={snippet.title}
+                      className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-800/60"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {snippet.title}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            {snippet.description}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            onClick={() => handleInsertNginxSnippet(snippet.code)}
+                            className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
+                            title="插入到配置"
+                          >
+                            <Plus size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleCopyNginxSnippet(snippet.code)}
+                            className="p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                            title="复制片段"
+                          >
+                            {copiedId === `nginx-snippet-${snippet.code}` ? (
+                              <Check size={14} className="text-green-500" />
+                            ) : (
+                              <Copy size={14} />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      <pre className="mt-2 max-h-24 overflow-hidden rounded bg-white dark:bg-gray-950 px-2 py-1.5 text-[10px] leading-4 text-gray-500 dark:text-gray-400 font-mono whitespace-pre-wrap">
+                        {snippet.code}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <textarea
+                ref={nginxEditorRef}
+                value={nginxPreview.content}
+                onChange={(e) => setNginxPreview({ ...nginxPreview, content: e.target.value })}
+                spellCheck={false}
+                className="min-h-0 w-full resize-none overflow-auto bg-gray-950 text-gray-100 rounded-lg p-4 text-xs leading-5 font-mono outline-none border border-gray-900 focus:border-blue-500 whitespace-pre"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 mt-4">
+              <div className="text-xs text-gray-400">
+                可直接编辑配置；保存后可放入 nginx 的 conf.d 目录。
+              </div>
+              <div className="flex items-center gap-2">
+                <Button onClick={handleCopyNginxConfig} variant="secondary">
+                  {copiedId === `nginx-${nginxPreview.server.id}` ? (
+                    <Check size={14} className="mr-2 text-green-500" />
+                  ) : (
+                    <Copy size={14} className="mr-2" />
+                  )}
+                  复制
+                </Button>
+                <Button onClick={handleSaveNginxConfig} variant="primary">
+                  <Download size={14} className="mr-2" />
+                  保存 .conf
+                </Button>
+              </div>
             </div>
           </div>
         </div>

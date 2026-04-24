@@ -339,6 +339,7 @@ pub fn run() {
             toolbox::server::get_servers,
             toolbox::server::get_server,
             toolbox::server::update_server,
+            toolbox::server::generate_nginx_config,
             // Toolbox - Claude Code commands
             toolbox::claude_code::check_all_claude_installations,
             toolbox::claude_code::check_claude_by_path,
