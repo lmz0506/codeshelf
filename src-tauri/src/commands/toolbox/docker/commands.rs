@@ -11,6 +11,41 @@ use super::utils::{
 use serde_json::Value;
 use std::fs;
 
+fn label<'a>(labels: &'a Value, key: &str) -> Option<&'a str> {
+    labels.get(key).and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+}
+
+fn compose_meta(container_id: &str) -> (Option<String>, Option<String>, Option<String>, Vec<String>) {
+    let inspect = run_docker(&["inspect", container_id], None);
+    if !inspect.success {
+        return (None, None, None, Vec::new());
+    }
+    let Ok(value) = serde_json::from_str::<Value>(&inspect.stdout) else {
+        return (None, None, None, Vec::new());
+    };
+    let labels = value
+        .as_array()
+        .and_then(|items| items.first())
+        .and_then(|item| item.pointer("/Config/Labels"))
+        .unwrap_or(&Value::Null);
+
+    let project = label(labels, "com.docker.compose.project").map(str::to_string);
+    let service = label(labels, "com.docker.compose.service").map(str::to_string);
+    let working_dir = label(labels, "com.docker.compose.project.working_dir").map(str::to_string);
+    let config_files = label(labels, "com.docker.compose.project.config_files")
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    (project, service, working_dir, config_files)
+}
+
 #[tauri::command]
 pub async fn docker_check_available() -> Result<DockerStatus, String> {
     let result = run_docker(&["--version"], None);
@@ -219,12 +254,19 @@ pub async fn docker_list_containers() -> Result<Vec<DockerContainerInfo>, String
     let mut out = Vec::new();
     for line in result.stdout.lines() {
         if let Ok(v) = serde_json::from_str::<Value>(line) {
+            let id = v["ID"].as_str().unwrap_or_default().to_string();
+            let (compose_project, compose_service, compose_working_dir, compose_config_files) =
+                compose_meta(&id);
             out.push(DockerContainerInfo {
-                id: v["ID"].as_str().unwrap_or_default().to_string(),
+                id,
                 image: v["Image"].as_str().unwrap_or_default().to_string(),
                 names: v["Names"].as_str().unwrap_or_default().to_string(),
                 status: v["Status"].as_str().unwrap_or_default().to_string(),
                 ports: v["Ports"].as_str().unwrap_or_default().to_string(),
+                compose_project,
+                compose_service,
+                compose_working_dir,
+                compose_config_files,
             });
         }
     }

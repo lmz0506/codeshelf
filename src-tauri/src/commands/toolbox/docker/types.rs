@@ -35,6 +35,10 @@ pub struct DockerContainerInfo {
     pub names: String,
     pub status: String,
     pub ports: String,
+    pub compose_project: Option<String>,
+    pub compose_service: Option<String>,
+    pub compose_working_dir: Option<String>,
+    pub compose_config_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

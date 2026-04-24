@@ -197,6 +197,10 @@ export interface DockerContainerInfo {
   names: string;
   status: string;
   ports: string;
+  composeProject?: string;
+  composeService?: string;
+  composeWorkingDir?: string;
+  composeConfigFiles: string[];
 }
 
 export interface DockerBuildInput {

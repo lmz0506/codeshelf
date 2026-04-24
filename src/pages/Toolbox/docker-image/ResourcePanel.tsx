@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { FileText, Play, Send, Square, Trash2 } from "lucide-react";
+import { FileText, FolderOpen, Play, Send, Square, Trash2 } from "lucide-react";
+import { openInEditor, openInExplorer } from "@/services/db";
 import type { DockerImageToolModel } from "./useDockerImageTool";
 import { imageRef } from "./utils";
 
@@ -75,11 +76,39 @@ export function ResourcePanel({ model }: ResourcePanelProps) {
           <>
             {state.containers.map((container) => (
               <div key={container.id} className="rounded-lg border border-gray-200 bg-white p-2.5 text-xs hover:border-blue-200">
-                <div className="truncate font-medium text-gray-900" title={container.names || container.id}>{container.names || container.id}</div>
+                <div className="flex items-center gap-2">
+                  <div className="truncate font-medium text-gray-900" title={container.names || container.id}>{container.names || container.id}</div>
+                  {container.composeProject && (
+                    <span className="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">compose</span>
+                  )}
+                </div>
                 <div className="truncate font-mono text-gray-500" title={container.image}>{container.image}</div>
+                {container.composeProject && (
+                  <div className="mt-1 space-y-0.5 rounded-md bg-gray-50 px-2 py-1.5 text-[11px] text-gray-500">
+                    <div className="truncate" title={`${container.composeProject}${container.composeService ? ` / ${container.composeService}` : ""}`}>
+                      项目：{container.composeProject}{container.composeService ? ` / ${container.composeService}` : ""}
+                    </div>
+                    {container.composeWorkingDir && (
+                      <div className="truncate font-mono" title={container.composeWorkingDir}>目录：{container.composeWorkingDir}</div>
+                    )}
+                    {container.composeConfigFiles.length > 0 && (
+                      <div className="truncate font-mono" title={container.composeConfigFiles.join(", ")}>文件：{container.composeConfigFiles.join(", ")}</div>
+                    )}
+                  </div>
+                )}
                 <div className="mt-1 text-gray-400">{container.status}</div>
                 {container.ports && <div className="truncate text-gray-400" title={container.ports}>{container.ports}</div>}
-                <div className="mt-2 flex gap-1">
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {container.composeWorkingDir && (
+                    <button onClick={() => openInExplorer(container.composeWorkingDir!)} className="inline-flex h-7 w-8 items-center justify-center rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200" title="打开 compose 目录">
+                      <FolderOpen size={12} />
+                    </button>
+                  )}
+                  {container.composeConfigFiles[0] && (
+                    <button onClick={() => openInEditor(container.composeConfigFiles[0])} className="inline-flex h-7 w-8 items-center justify-center rounded-md bg-purple-50 text-purple-600 hover:bg-purple-100" title="打开 compose YAML">
+                      <FileText size={12} />
+                    </button>
+                  )}
                   <button onClick={() => actions.inspectContainerConfig(container.id, container.names || container.id)} className="inline-flex h-7 w-8 items-center justify-center rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100" title="查看配置 YAML">
                     <FileText size={12} />
                   </button>
