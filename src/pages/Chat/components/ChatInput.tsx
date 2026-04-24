@@ -33,7 +33,7 @@ export interface DroppedFile {
 
 const TEXT_FILE_RE = /\.(txt|md|markdown|json|ya?ml|toml|xml|html?|css|scss|less|js|jsx|ts|tsx|mjs|cjs|py|rs|go|java|kt|swift|c|h|cc|cpp|hpp|cs|rb|php|sh|bash|zsh|fish|ps1|sql|conf|ini|env|gitignore|editorconfig|vue|svelte|astro|lua|dart|ex|exs|erl|hs|ml|mli|scala|clj|cljs|r|jl|pl|pm|tex)$/i;
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
-const MAX_FILE_BYTES = 200 * 1024;
+const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_FILES = 20;
 const MAX_DEPTH = 2;
 
@@ -63,7 +63,7 @@ async function convertFile(file: File, relName: string): Promise<DroppedFile | n
   if (!TEXT_FILE_RE.test(file.name) && !file.type.startsWith("text/")) return null;
   if (file.size > MAX_FILE_BYTES) {
     const blob = file.slice(0, MAX_FILE_BYTES);
-    const content = (await readBlobAsText(blob)) + "\n…（已截断）";
+    const content = (await readBlobAsText(blob)) + `\n\n[文件过大，已截断至 ${MAX_FILE_BYTES / 1024 / 1024}MB]`;
     return { name: relName, kind: "text", content };
   }
   const content = await readBlobAsText(file);
