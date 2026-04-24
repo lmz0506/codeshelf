@@ -45,6 +45,12 @@ function formatMentionPath(path: string): string {
   return `@${path}`;
 }
 
+function splitMentionPath(path: string): { name: string; parent: string } {
+  const parts = path.split("/").filter(Boolean);
+  const name = parts.pop() ?? path;
+  return { name, parent: parts.join("/") };
+}
+
 async function readBlobAsText(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -383,21 +389,28 @@ export function ChatInput({
           <div className="px-2 py-1 text-[10px] text-gray-400 border-b border-gray-100">
             @ 引用文件 · ↑↓ 选择 · Enter/Tab 确认 · Esc 关闭
           </div>
-          {mentionCandidates.map((e, i) => (
-            <div
-              key={e.path}
-              className={`px-3 py-1 text-xs font-mono cursor-pointer flex items-center gap-2 ${i === mentionHighlight ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-50"}`}
-              onMouseEnter={() => setMentionHighlight(i)}
-              onMouseDown={(ev) => { ev.preventDefault(); applyMention(e.path); }}
-            >
-              {e.isDir ? (
-                <Folder size={12} className="flex-shrink-0 text-amber-500" />
-              ) : (
-                <FileText size={12} className="flex-shrink-0 text-gray-400" />
-              )}
-              <span className="truncate">{e.path}</span>
-            </div>
-          ))}
+          {mentionCandidates.map((e, i) => {
+            const { name, parent } = splitMentionPath(e.path);
+            return (
+              <div
+                key={e.path}
+                title={e.path}
+                className={`px-3 py-1.5 text-xs font-mono cursor-pointer flex items-center gap-2 min-w-0 ${i === mentionHighlight ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-50"}`}
+                onMouseEnter={() => setMentionHighlight(i)}
+                onMouseDown={(ev) => { ev.preventDefault(); applyMention(e.path); }}
+              >
+                {e.isDir ? (
+                  <Folder size={12} className="flex-shrink-0 text-amber-500" />
+                ) : (
+                  <FileText size={12} className="flex-shrink-0 text-gray-400" />
+                )}
+                <span className="min-w-0 flex-1 flex items-baseline gap-2">
+                  <span className="font-semibold truncate">{name}</span>
+                  {parent && <span className="text-[10px] text-gray-400 truncate">{parent}/</span>}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
       <div className="flex items-center justify-between mt-2">

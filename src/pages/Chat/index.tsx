@@ -695,7 +695,11 @@ export function ChatPage() {
     for (const p of paths) {
       try {
         const content = await readMentionFile(root, p);
-        parts.push(`\n### ${p}\n\`\`\`\n${content}\n\`\`\``);
+        if (content.startsWith("[引用目录]")) {
+          parts.push(`\n### ${p}\n${content}`);
+        } else {
+          parts.push(`\n### ${p}\n\`\`\`\`\n${content}\n\`\`\`\``);
+        }
       } catch {
         /* 跳过无法读取的 */
       }
