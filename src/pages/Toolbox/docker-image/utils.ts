@@ -21,6 +21,16 @@ export function hasUsableAiProvider(providers: AiProviderConfig[]): boolean {
   return providers.some((provider) => provider.enabled && provider.models.some((model) => model.enabled));
 }
 
+export function dockerImageNameFromProject(name?: string): string {
+  const normalized = (name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._/-]+/g, "-")
+    .replace(/^[^a-z0-9]+/, "")
+    .replace(/[^a-z0-9]+$/, "");
+  return normalized || "codeshelf-app";
+}
+
 export function buildAiPrompt(input: {
   projectPath: string;
   imageName: string;

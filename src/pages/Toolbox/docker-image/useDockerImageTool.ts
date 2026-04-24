@@ -19,7 +19,7 @@ import {
   getCurrentPlatform,
 } from "@/services/toolbox";
 import type { DockerCommandResult, DockerContainerInfo, DockerImageInfo, DockerStatus } from "@/types/toolbox";
-import { buildAiPrompt, hasUsableAiProvider, splitListText } from "./utils";
+import { buildAiPrompt, dockerImageNameFromProject, hasUsableAiProvider, splitListText } from "./utils";
 
 interface UseDockerImageToolOptions {
   initialProjectPath?: string;
@@ -36,7 +36,7 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   const [dockerfilePath, setDockerfilePath] = useState("Dockerfile");
   const [dockerfileContent, setDockerfileContent] = useState("");
   const [template, setTemplate] = useState("auto");
-  const [imageName, setImageName] = useState(options.initialProjectName || "codeshelf-app");
+  const [imageName, setImageName] = useState(dockerImageNameFromProject(options.initialProjectName));
   const [imageTag, setImageTag] = useState("latest");
   const [noCache, setNoCache] = useState(false);
   const [runImage, setRunImage] = useState("");
@@ -64,7 +64,7 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   useEffect(() => {
     if (!options.initialProjectPath) return;
     setProjectPath(options.initialProjectPath);
-    setImageName(options.initialProjectName || "codeshelf-app");
+    setImageName(dockerImageNameFromProject(options.initialProjectName));
     scanDockerfiles(options.initialProjectPath);
     options.onInitialProjectConsumed?.();
   }, [options.initialProjectPath]);
