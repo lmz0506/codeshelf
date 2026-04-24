@@ -212,6 +212,15 @@ export interface DockerRunInput {
   containerName?: string;
   ports?: string[];
   env?: string[];
+  volumes?: string[];
+  network?: string;
+  restart?: string;
+  user?: string;
+  workdir?: string;
+  command?: string;
+  privileged?: boolean;
+  readOnly?: boolean;
+  extraArgs?: string[];
 }
 
 export interface DockerAiGenerateInput {

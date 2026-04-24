@@ -7,6 +7,7 @@ import {
   dockerFindDockerfiles,
   dockerGenerateDockerfileAi,
   dockerGenerateDockerfileTemplate,
+  dockerInspectContainerYaml,
   dockerListContainers,
   dockerListImages,
   dockerPushImage,
@@ -40,15 +41,28 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   const [imageTag, setImageTag] = useState("latest");
   const [noCache, setNoCache] = useState(false);
   const [runImage, setRunImage] = useState("");
+  const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [containerName, setContainerName] = useState("");
   const [portsText, setPortsText] = useState("8080:80");
   const [envText, setEnvText] = useState("");
+  const [volumesText, setVolumesText] = useState("");
+  const [network, setNetwork] = useState("");
+  const [restart, setRestart] = useState("");
+  const [user, setUser] = useState("");
+  const [workdir, setWorkdir] = useState("");
+  const [command, setCommand] = useState("");
+  const [extraArgsText, setExtraArgsText] = useState("");
+  const [privileged, setPrivileged] = useState(false);
+  const [readOnly, setReadOnly] = useState(false);
   const [images, setImages] = useState<DockerImageInfo[]>([]);
   const [containers, setContainers] = useState<DockerContainerInfo[]>([]);
   const [busy, setBusy] = useState(false);
   const [lastResult, setLastResult] = useState<DockerCommandResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState("");
+  const [containerConfigYaml, setContainerConfigYaml] = useState("");
+  const [containerConfigName, setContainerConfigName] = useState("");
+  const [containerConfigOpen, setContainerConfigOpen] = useState(false);
 
   const aiReady = useMemo(() => hasUsableAiProvider(aiProviders), [aiProviders]);
   const fullImageName = useMemo(() => {
@@ -202,12 +216,26 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
         containerName: containerName.trim() || undefined,
         ports: splitListText(portsText),
         env: splitListText(envText),
+        volumes: splitListText(volumesText),
+        network: network.trim() || undefined,
+        restart: restart.trim() || undefined,
+        user: user.trim() || undefined,
+        workdir: workdir.trim() || undefined,
+        command: command.trim() || undefined,
+        privileged,
+        readOnly,
+        extraArgs: splitListText(extraArgsText),
       });
       setLastResult(result);
       await refreshDockerLists();
     } finally {
       setBusy(false);
     }
+  }
+
+  function openRunDialog(image = runImage || fullImageName) {
+    setRunImage(image);
+    setRunDialogOpen(true);
   }
 
   async function removeImage(image: string) {
@@ -234,6 +262,18 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
     await refreshDockerLists();
   }
 
+  async function inspectContainerConfig(container: string, name?: string) {
+    setContainerConfigName(name || container);
+    setContainerConfigOpen(true);
+    setContainerConfigYaml("加载中...");
+    try {
+      const yaml = await dockerInspectContainerYaml(container);
+      setContainerConfigYaml(yaml);
+    } catch (error) {
+      setContainerConfigYaml(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   async function copyAiPrompt() {
     await navigator.clipboard.writeText(buildAiPrompt({
       projectPath,
@@ -256,39 +296,65 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       dockerfilePath,
       dockerfiles,
       envText,
+      extraArgsText,
       fullImageName,
       imageName,
       imageTag,
       images,
       lastResult,
+      network,
       noCache,
       notice,
       platform,
       portsText,
       projectPath,
+      privileged,
+      readOnly,
+      restart,
       runImage,
+      runDialogOpen,
       status,
       template,
+      user,
+      volumesText,
+      workdir,
+      command,
+      containerConfigYaml,
+      containerConfigName,
+      containerConfigOpen,
     },
     setters: {
       setContainerName,
+      setContainerConfigOpen,
       setDockerfileContent,
       setDockerfilePath,
       setEnvText,
+      setExtraArgsText,
       setImageName,
       setImageTag,
+      setNetwork,
       setNoCache,
       setPortsText,
+      setPrivileged,
       setProjectPath,
+      setReadOnly,
+      setRestart,
       setRunImage,
+      setRunDialogOpen,
       setTemplate,
+      setUser,
+      setVolumesText,
+      setWorkdir,
+      setCommand,
     },
     actions: {
       buildImage,
       copyAiPrompt,
       generateTemplate,
       generateWithAi,
+      inspectContainerConfig,
       loadDockerfile,
+      openRunDialog,
       pushImage,
       refreshDocker,
       refreshDockerLists,

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Play, Send, Square, Trash2 } from "lucide-react";
+import { FileText, Play, Send, Square, Trash2 } from "lucide-react";
 import type { DockerImageToolModel } from "./useDockerImageTool";
 import { imageRef } from "./utils";
 
@@ -10,7 +10,7 @@ interface ResourcePanelProps {
 }
 
 export function ResourcePanel({ model }: ResourcePanelProps) {
-  const { state, setters, actions } = model;
+  const { state, actions } = model;
   const [tab, setTab] = useState<ResourceTab>("images");
 
   return (
@@ -56,7 +56,7 @@ export function ResourcePanel({ model }: ResourcePanelProps) {
                   <div className="truncate font-mono text-gray-900" title={ref}>{ref}</div>
                   <div className="mt-1 truncate text-gray-400">{image.id} · {image.size} · {image.createdSince}</div>
                   <div className="mt-2 flex gap-1">
-                    <button onClick={() => setters.setRunImage(ref)} className="inline-flex h-7 w-8 items-center justify-center rounded-md bg-green-50 text-green-600 hover:bg-green-100" title="填入运行">
+                    <button onClick={() => actions.openRunDialog(ref)} className="inline-flex h-7 w-8 items-center justify-center rounded-md bg-green-50 text-green-600 hover:bg-green-100" title="配置并运行">
                       <Play size={12} />
                     </button>
                     <button onClick={() => actions.pushImage(ref)} className="inline-flex h-7 w-8 items-center justify-center rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100" title="推送">
@@ -80,6 +80,9 @@ export function ResourcePanel({ model }: ResourcePanelProps) {
                 <div className="mt-1 text-gray-400">{container.status}</div>
                 {container.ports && <div className="truncate text-gray-400" title={container.ports}>{container.ports}</div>}
                 <div className="mt-2 flex gap-1">
+                  <button onClick={() => actions.inspectContainerConfig(container.id, container.names || container.id)} className="inline-flex h-7 w-8 items-center justify-center rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100" title="查看配置 YAML">
+                    <FileText size={12} />
+                  </button>
                   <button onClick={() => actions.stopContainer(container.id)} className="inline-flex h-7 w-8 items-center justify-center rounded-md bg-orange-50 text-orange-600 hover:bg-orange-100" title="停止">
                     <Square size={12} />
                   </button>

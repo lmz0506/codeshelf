@@ -54,6 +54,15 @@ pub struct DockerRunInput {
     pub container_name: Option<String>,
     pub ports: Option<Vec<String>>,
     pub env: Option<Vec<String>>,
+    pub volumes: Option<Vec<String>>,
+    pub network: Option<String>,
+    pub restart: Option<String>,
+    pub user: Option<String>,
+    pub workdir: Option<String>,
+    pub command: Option<String>,
+    pub privileged: Option<bool>,
+    pub read_only: Option<bool>,
+    pub extra_args: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

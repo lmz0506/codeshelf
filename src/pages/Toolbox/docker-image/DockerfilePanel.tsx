@@ -16,54 +16,25 @@ export function DockerfilePanel({ model }: DockerfilePanelProps) {
         <div className="min-w-0">
           <div className="text-sm font-semibold text-gray-900">Dockerfile</div>
           <div className="mt-0.5 truncate text-xs text-gray-400">
-            {state.dockerfiles.length > 0 ? `发现 ${state.dockerfiles.length} 个 Dockerfile` : "编辑、生成并保存项目内 Dockerfile"}
+            {state.aiReady ? "让 AI 根据项目结构生成，也可以手动微调" : "未配置 AI，可先用模板生成基础 Dockerfile"}
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          <select
-            value={state.template}
-            onChange={(e) => setters.setTemplate(e.target.value)}
-            className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-700 outline-none hover:border-gray-300 focus:border-blue-400"
-          >
-            {DOCKERFILE_TEMPLATES.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.name}
-              </option>
-            ))}
-          </select>
-          <Button onClick={actions.generateTemplate} variant="secondary" size="sm">
+          <Button onClick={actions.generateWithAi} disabled={state.busy || !state.aiReady} variant="primary" size="sm">
             <Wand2 size={14} className="mr-1.5" />
-            模板
+            {state.busy ? "生成中" : state.aiReady ? "AI 生成 Dockerfile" : "AI 未配置"}
           </Button>
-          <Button onClick={actions.generateWithAi} disabled={state.busy || !state.aiReady} variant="secondary" size="sm">
-            <Wand2 size={14} className="mr-1.5" />
-            {state.busy ? "生成中" : state.aiReady ? "AI 生成" : "AI 未配置"}
-          </Button>
-          <Button onClick={actions.copyAiPrompt} variant="secondary" size="sm">
-            {state.copied ? <Check size={14} className="mr-1.5 text-green-500" /> : <Copy size={14} className="mr-1.5" />}
-            AI 提示
-          </Button>
-          <Button onClick={actions.saveDockerfile} variant="secondary" size="sm">
-            <Save size={14} className="mr-1.5" />
-            保存
-          </Button>
+          {!state.aiReady && (
+            <Button onClick={actions.copyAiPrompt} variant="secondary" size="sm">
+              {state.copied ? <Check size={14} className="mr-1.5 text-green-500" /> : <Copy size={14} className="mr-1.5" />}
+              复制提示词
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="space-y-2.5 px-4 py-3">
-        <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
-          <Input
-            value={state.projectPath}
-            onChange={(e) => setters.setProjectPath(e.target.value)}
-            placeholder="项目目录"
-            className="h-9 py-1.5 text-sm"
-          />
-          <Button onClick={() => actions.scanDockerfiles()} variant="secondary" size="sm" className="h-9">
-            扫描
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_220px_84px_96px]">
           <Input
             value={state.dockerfilePath}
             onChange={(e) => setters.setDockerfilePath(e.target.value)}
@@ -87,7 +58,34 @@ export function DockerfilePanel({ model }: DockerfilePanelProps) {
               ))}
             </select>
           )}
+          <Button onClick={() => actions.scanDockerfiles()} variant="secondary" size="sm" className="h-9">
+            扫描
+          </Button>
+          <Button onClick={actions.saveDockerfile} variant="secondary" size="sm" className="h-9">
+            <Save size={14} className="mr-1.5" />
+            保存
+          </Button>
         </div>
+
+        {!state.aiReady && (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+            <span className="text-xs text-amber-700">AI 未配置时可先生成模板：</span>
+            <select
+              value={state.template}
+              onChange={(e) => setters.setTemplate(e.target.value)}
+              className="h-7 rounded-md border border-amber-200 bg-white px-2 text-xs text-gray-700 outline-none"
+            >
+              {DOCKERFILE_TEMPLATES.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
+                </option>
+              ))}
+            </select>
+            <Button onClick={actions.generateTemplate} variant="secondary" size="sm" className="h-7 px-2 text-xs">
+              模板生成
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 border-t border-gray-100 bg-[#fbfcfe]">

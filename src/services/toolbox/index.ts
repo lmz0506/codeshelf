@@ -259,6 +259,10 @@ export async function dockerListContainers(): Promise<DockerContainerInfo[]> {
   return invoke("docker_list_containers");
 }
 
+export async function dockerInspectContainerYaml(container: string): Promise<string> {
+  return invoke("docker_inspect_container_yaml", { container });
+}
+
 export async function dockerStopContainer(container: string): Promise<DockerCommandResult> {
   return invoke("docker_stop_container", { container });
 }

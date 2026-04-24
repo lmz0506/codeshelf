@@ -161,7 +161,52 @@ pub async fn docker_run_image(input: DockerRunInput) -> Result<DockerCommandResu
             args.push(item);
         }
     }
+    let volumes = input.volumes.unwrap_or_default();
+    for volume in &volumes {
+        if !volume.trim().is_empty() {
+            args.push("-v");
+            args.push(volume);
+        }
+    }
+    if let Some(network) = input.network.as_deref().filter(|s| !s.trim().is_empty()) {
+        args.push("--network");
+        args.push(network);
+    }
+    if let Some(restart) = input.restart.as_deref().filter(|s| !s.trim().is_empty()) {
+        args.push("--restart");
+        args.push(restart);
+    }
+    if let Some(user) = input.user.as_deref().filter(|s| !s.trim().is_empty()) {
+        args.push("-u");
+        args.push(user);
+    }
+    if let Some(workdir) = input.workdir.as_deref().filter(|s| !s.trim().is_empty()) {
+        args.push("-w");
+        args.push(workdir);
+    }
+    if input.privileged.unwrap_or(false) {
+        args.push("--privileged");
+    }
+    if input.read_only.unwrap_or(false) {
+        args.push("--read-only");
+    }
+    let extra_args = input.extra_args.unwrap_or_default();
+    for item in &extra_args {
+        if !item.trim().is_empty() {
+            args.push(item);
+        }
+    }
     args.push(input.image.as_str());
+    let command_parts = input
+        .command
+        .as_deref()
+        .unwrap_or("")
+        .split_whitespace()
+        .filter(|s| !s.trim().is_empty())
+        .collect::<Vec<_>>();
+    for part in command_parts {
+        args.push(part);
+    }
     Ok(run_docker(&args, None))
 }
 
@@ -207,4 +252,73 @@ pub async fn docker_remove_container(
 #[tauri::command]
 pub async fn docker_push_image(image: String) -> Result<DockerCommandResult, String> {
     Ok(run_docker(&["push", image.as_str()], None))
+}
+
+fn json_to_yaml(value: &Value, indent: usize) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(v) => v.to_string(),
+        Value::Number(v) => v.to_string(),
+        Value::String(v) => {
+            if v.is_empty()
+                || v.contains(':')
+                || v.contains('#')
+                || v.contains('\n')
+                || v.contains('"')
+                || v.contains('\'')
+            {
+                format!("{:?}", v)
+            } else {
+                v.to_string()
+            }
+        }
+        Value::Array(items) => {
+            if items.is_empty() {
+                return "[]".to_string();
+            }
+            items
+                .iter()
+                .map(|item| {
+                    let rendered = json_to_yaml(item, indent + 2);
+                    if rendered.contains('\n') {
+                        format!("{}- {}", " ".repeat(indent), rendered.trim_start())
+                    } else {
+                        format!("{}- {}", " ".repeat(indent), rendered)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        Value::Object(map) => {
+            if map.is_empty() {
+                return "{}".to_string();
+            }
+            map.iter()
+                .map(|(key, item)| {
+                    let rendered = json_to_yaml(item, indent + 2);
+                    if matches!(item, Value::Array(_) | Value::Object(_)) && rendered != "[]" && rendered != "{}" {
+                        format!("{}{}:\n{}", " ".repeat(indent), key, rendered)
+                    } else {
+                        format!("{}{}: {}", " ".repeat(indent), key, rendered)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn docker_inspect_container_yaml(container: String) -> Result<String, String> {
+    let result = run_docker(&["inspect", container.as_str()], None);
+    if !result.success {
+        return Err(result.stderr);
+    }
+    let value: Value = serde_json::from_str(&result.stdout)
+        .map_err(|e| format!("解析 docker inspect 失败: {}", e))?;
+    let first = value
+        .as_array()
+        .and_then(|items| items.first())
+        .unwrap_or(&value);
+    Ok(json_to_yaml(first, 0))
 }

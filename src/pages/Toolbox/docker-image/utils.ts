@@ -1,5 +1,5 @@
 import type { AiProviderConfig } from "@/types";
-import type { DockerCommandResult, DockerImageInfo } from "@/types/toolbox";
+import type { DockerCommandResult, DockerImageInfo, DockerRunInput } from "@/types/toolbox";
 
 export function imageRef(image: DockerImageInfo): string {
   return image.tag && image.tag !== "<none>" ? `${image.repository}:${image.tag}` : image.id;
@@ -29,6 +29,62 @@ export function dockerImageNameFromProject(name?: string): string {
     .replace(/^[^a-z0-9]+/, "")
     .replace(/[^a-z0-9]+$/, "");
   return normalized || "codeshelf-app";
+}
+
+function quote(value: string): string {
+  if (!value || /[\s"'$\\]/.test(value)) {
+    return `"${value.replace(/(["\\$`])/g, "\\$1")}"`;
+  }
+  return value;
+}
+
+function yamlQuote(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function addYamlList(lines: string[], key: string, values?: string[]) {
+  const clean = values?.map((item) => item.trim()).filter(Boolean) || [];
+  if (clean.length === 0) return;
+  lines.push(`    ${key}:`);
+  clean.forEach((item) => lines.push(`      - ${yamlQuote(item)}`));
+}
+
+export function buildDockerRunCommand(input: DockerRunInput): string {
+  const parts = ["docker", "run", "-d"];
+  if (input.containerName) parts.push("--name", quote(input.containerName));
+  input.ports?.forEach((port) => parts.push("-p", quote(port)));
+  input.env?.forEach((env) => parts.push("-e", quote(env)));
+  input.volumes?.forEach((volume) => parts.push("-v", quote(volume)));
+  if (input.network) parts.push("--network", quote(input.network));
+  if (input.restart) parts.push("--restart", quote(input.restart));
+  if (input.user) parts.push("-u", quote(input.user));
+  if (input.workdir) parts.push("-w", quote(input.workdir));
+  if (input.privileged) parts.push("--privileged");
+  if (input.readOnly) parts.push("--read-only");
+  input.extraArgs?.forEach((arg) => parts.push(arg));
+  parts.push(quote(input.image));
+  if (input.command) parts.push(input.command);
+  return parts.join(" ");
+}
+
+export function buildComposeYaml(input: DockerRunInput): string {
+  const serviceName = (input.containerName || input.image.split(":")[0] || "app")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "app";
+  const lines = ["services:", `  ${serviceName}:`, `    image: ${yamlQuote(input.image)}`];
+  if (input.containerName) lines.push(`    container_name: ${yamlQuote(input.containerName)}`);
+  addYamlList(lines, "ports", input.ports);
+  addYamlList(lines, "environment", input.env);
+  addYamlList(lines, "volumes", input.volumes);
+  if (input.network) lines.push(`    network_mode: ${yamlQuote(input.network)}`);
+  if (input.restart) lines.push(`    restart: ${yamlQuote(input.restart)}`);
+  if (input.user) lines.push(`    user: ${yamlQuote(input.user)}`);
+  if (input.workdir) lines.push(`    working_dir: ${yamlQuote(input.workdir)}`);
+  if (input.privileged) lines.push("    privileged: true");
+  if (input.readOnly) lines.push("    read_only: true");
+  if (input.command) lines.push(`    command: ${yamlQuote(input.command)}`);
+  return `${lines.join("\n")}\n`;
 }
 
 export function buildAiPrompt(input: {

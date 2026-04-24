@@ -352,6 +352,7 @@ pub fn run() {
             toolbox::docker::docker_remove_image,
             toolbox::docker::docker_run_image,
             toolbox::docker::docker_list_containers,
+            toolbox::docker::docker_inspect_container_yaml,
             toolbox::docker::docker_stop_container,
             toolbox::docker::docker_remove_container,
             toolbox::docker::docker_push_image,
