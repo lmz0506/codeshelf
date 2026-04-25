@@ -2,6 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { X, FileText, Folder, Search } from "lucide-react";
 import { listDirEntries, type MentionFileEntry } from "@/services/chat";
 
+const MENTION_SCAN_LIMIT = 5000;
+
+function splitMentionPath(path: string): { name: string; parent: string } {
+  const parts = path.split("/").filter(Boolean);
+  const name = parts.pop() ?? path;
+  return { name, parent: parts.join("/") };
+}
+
 interface AtMentionPickerProps {
   open: boolean;
   root: string | null;
@@ -21,16 +29,19 @@ export function AtMentionPicker({ open, root, onClose, onPick }: AtMentionPicker
     setLoading(true);
     setSelected(new Set());
     setQuery("");
-    listDirEntries(root, 800)
-      .then((list) => setEntries(list.filter((e) => !e.isDir)))
+    listDirEntries(root, MENTION_SCAN_LIMIT)
+      .then((list) => setEntries(list))
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
   }, [open, root]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return entries.slice(0, 200);
-    return entries.filter((e) => e.path.toLowerCase().includes(q)).slice(0, 200);
+    const pool = q ? entries.filter((e) => e.path.toLowerCase().includes(q)) : entries;
+    return pool
+      .slice()
+      .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.path.localeCompare(b.path))
+      .slice(0, 1000);
   }, [entries, query]);
 
   if (!open) return null;
@@ -78,13 +89,27 @@ export function AtMentionPicker({ open, root, onClose, onPick }: AtMentionPicker
             </div>
             <div className="flex-1 overflow-auto">
               {loading && <div className="p-3 text-xs text-gray-400">加载中...</div>}
-              {!loading && filtered.map((e) => (
-                <label key={e.path} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 cursor-pointer">
-                  <input type="checkbox" checked={selected.has(e.path)} onChange={() => toggle(e.path)} />
-                  <FileText size={11} className="text-gray-400" />
-                  <span className="font-mono text-gray-700 truncate">{e.path}</span>
-                </label>
-              ))}
+              {!loading && filtered.map((e) => {
+                const { name, parent } = splitMentionPath(e.path);
+                return (
+                  <label
+                    key={e.path}
+                    title={e.path}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 cursor-pointer min-w-0"
+                  >
+                    <input type="checkbox" checked={selected.has(e.path)} onChange={() => toggle(e.path)} />
+                    {e.isDir ? (
+                      <Folder size={11} className="text-amber-500 flex-shrink-0" />
+                    ) : (
+                      <FileText size={11} className="text-gray-400 flex-shrink-0" />
+                    )}
+                    <span className="font-mono text-gray-700 min-w-0 flex-1 flex items-baseline gap-2">
+                      <span className="font-semibold truncate">{name}</span>
+                      {parent && <span className="text-[10px] text-gray-400 truncate">{parent}/</span>}
+                    </span>
+                  </label>
+                );
+              })}
               {!loading && filtered.length === 0 && <div className="p-3 text-xs text-gray-400">无匹配</div>}
             </div>
             <div className="border-t border-gray-200 px-3 py-2 flex items-center justify-between">

@@ -1,6 +1,7 @@
 //! Memory / Skills / Mention 相关后端命令
 
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -217,7 +218,7 @@ pub struct MentionFileEntry {
 
 #[tauri::command]
 pub async fn list_dir_entries(root: String, max: Option<u32>) -> Result<Vec<MentionFileEntry>, String> {
-    let cap = max.unwrap_or(500) as usize;
+    let cap = max.unwrap_or(5000) as usize;
     let mut out: Vec<MentionFileEntry> = Vec::new();
     let root_path = Path::new(&root);
     if !root_path.exists() {
@@ -228,6 +229,14 @@ pub async fn list_dir_entries(root: String, max: Option<u32>) -> Result<Vec<Ment
     Ok(out)
 }
 
+fn should_skip_mention_name(fname: &str) -> bool {
+    fname.starts_with('.')
+        || matches!(
+            fname,
+            "node_modules" | "target" | "dist" | "build" | ".next" | ".cache"
+        )
+}
+
 fn walk_for_mention(
     base: &Path,
     dir: &Path,
@@ -235,25 +244,23 @@ fn walk_for_mention(
     cap: usize,
     depth: u32,
 ) -> Result<(), String> {
-    if out.len() >= cap || depth > 8 {
+    if out.len() >= cap || depth > 32 {
         return Ok(());
     }
-    let entries = match fs::read_dir(dir) {
+    let mut entries: Vec<_> = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return Ok(()),
-    };
-    for entry in entries.flatten() {
+    }
+    .flatten()
+    .collect();
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_lowercase());
+    for entry in entries {
         if out.len() >= cap {
             return Ok(());
         }
         let path = entry.path();
         let fname = entry.file_name().to_string_lossy().to_string();
-        if fname.starts_with('.')
-            || matches!(
-                fname.as_str(),
-                "node_modules" | "target" | "dist" | "build" | ".next" | ".cache"
-            )
-        {
+        if should_skip_mention_name(&fname) {
             continue;
         }
         let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
@@ -269,8 +276,111 @@ fn walk_for_mention(
     Ok(())
 }
 
+struct MentionDirReadState {
+    files_read: usize,
+    total_bytes: u64,
+    truncated: bool,
+}
+
+fn looks_like_text(buf: &[u8]) -> bool {
+    !buf.iter().take(4096).any(|b| *b == 0)
+}
+
+fn read_mention_file_bytes(path: &Path, max_bytes: u64) -> Result<(String, bool, u64), String> {
+    let meta = fs::metadata(path).map_err(|e| format!("读取元信息失败: {}", e))?;
+    let file = fs::File::open(path).map_err(|e| format!("打开失败: {}", e))?;
+    let mut buf = Vec::new();
+    file.take(max_bytes + 1)
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("读取失败: {}", e))?;
+    let truncated = buf.len() as u64 > max_bytes;
+    if truncated {
+        buf.truncate(max_bytes as usize);
+    }
+    if !looks_like_text(&buf) {
+        return Err("跳过二进制文件".into());
+    }
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    Ok((text, truncated, meta.len()))
+}
+
+fn read_mention_dir(
+    base: &Path,
+    dir: &Path,
+    out: &mut Vec<String>,
+    state: &mut MentionDirReadState,
+    max_files: usize,
+    max_total_bytes: u64,
+    depth: u32,
+) -> Result<(), String> {
+    if state.files_read >= max_files || state.total_bytes >= max_total_bytes || depth > 32 {
+        state.truncated = true;
+        return Ok(());
+    }
+
+    let mut entries: Vec<_> = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return Ok(()),
+    }
+    .flatten()
+    .collect();
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_lowercase());
+
+    for entry in entries {
+        if state.files_read >= max_files || state.total_bytes >= max_total_bytes {
+            state.truncated = true;
+            return Ok(());
+        }
+
+        let path = entry.path();
+        let fname = entry.file_name().to_string_lossy().to_string();
+        if should_skip_mention_name(&fname) {
+            continue;
+        }
+
+        if path.is_dir() {
+            read_mention_dir(base, &path, out, state, max_files, max_total_bytes, depth + 1)?;
+            continue;
+        }
+
+        if !path.is_file() {
+            continue;
+        }
+
+        let remaining = max_total_bytes.saturating_sub(state.total_bytes);
+        if remaining == 0 {
+            state.truncated = true;
+            return Ok(());
+        }
+
+        let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+        match read_mention_file_bytes(&path, remaining.min(200_000)) {
+            Ok((text, file_truncated, original_len)) => {
+                state.files_read += 1;
+                state.total_bytes += text.len() as u64;
+                out.push(format!("\n### {}\n```\n{}\n```", rel, text));
+                if file_truncated || original_len > 200_000 {
+                    out.push(format!(
+                        "\n[{} 已截断，原始大小 {} 字节]",
+                        rel, original_len
+                    ));
+                }
+            }
+            Err(_) => {
+                continue;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn read_mention_file(root: String, rel_path: String) -> Result<String, String> {
+    const MAX_MENTION_FILE_BYTES: u64 = 1_000_000;
+    const MAX_MENTION_DIR_BYTES: u64 = 1_000_000;
+    const MAX_MENTION_DIR_FILES: usize = 80;
+
     let root_canon = fs::canonicalize(&root).map_err(|e| format!("根目录无效: {}", e))?;
     let full = root_canon.join(&rel_path);
     let canon = fs::canonicalize(&full).map_err(|e| format!("路径无效: {}", e))?;
@@ -278,8 +388,43 @@ pub async fn read_mention_file(root: String, rel_path: String) -> Result<String,
         return Err("路径越界".into());
     }
     let meta = fs::metadata(&canon).map_err(|e| format!("读取元信息失败: {}", e))?;
-    if meta.len() > 200_000 {
-        return Err(format!("文件过大（{} 字节），拒绝注入", meta.len()));
+    if meta.is_dir() {
+        let mut sections = vec![format!("[引用目录] {}", rel_path)];
+        let mut state = MentionDirReadState {
+            files_read: 0,
+            total_bytes: 0,
+            truncated: false,
+        };
+        read_mention_dir(
+            &canon,
+            &canon,
+            &mut sections,
+            &mut state,
+            MAX_MENTION_DIR_FILES,
+            MAX_MENTION_DIR_BYTES,
+            0,
+        )?;
+        if state.files_read == 0 {
+            return Err("目录下没有可读取的文本文件".into());
+        }
+        if state.truncated {
+            sections.push(format!(
+                "\n[目录内容已截断，仅加载前 {} 个文件 / {} KB]",
+                state.files_read,
+                MAX_MENTION_DIR_BYTES / 1024
+            ));
+        }
+        return Ok(sections.join("\n"));
     }
-    fs::read_to_string(&canon).map_err(|e| format!("读取失败: {}", e))
+    let (text, truncated, original_len) = read_mention_file_bytes(&canon, MAX_MENTION_FILE_BYTES)?;
+    if truncated {
+        Ok(format!(
+            "{}\n\n[文件过大（{} 字节），仅加载前 {} KB]",
+            text,
+            original_len,
+            MAX_MENTION_FILE_BYTES / 1024
+        ))
+    } else {
+        Ok(text)
+    }
 }

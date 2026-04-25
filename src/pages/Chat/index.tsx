@@ -95,6 +95,21 @@ function makeMessage(role: ChatMessage["role"], content: string, extra?: Partial
   };
 }
 
+function formatMentionPath(path: string): string {
+  if (/\s|"/.test(path)) {
+    return `@"${path.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+  return `@${path}`;
+}
+
+function unescapeMentionPath(path: string): string {
+  return path.replace(/\\(["\\])/g, "$1");
+}
+
+function trimMentionPunctuation(path: string): string {
+  return path.replace(/[,.!?;:，。！？；：、)）\]】}]+$/u, "");
+}
+
 function summarizeTitle(messages: ChatMessage[]): string | null {
   const firstUser = messages.find((m) => m.role === "user" && m.content.trim());
   if (!firstUser) return null;
@@ -669,17 +684,22 @@ export function ChatPage() {
 
   async function resolveMentions(text: string, root: string | undefined): Promise<string> {
     if (!root) return "";
-    const re = /@([A-Za-z0-9_\-./]+)/g;
+    const re = /(?:^|[\s(（[{])@(?:"((?:\\.|[^"\\])*)"|([^\s@]+))/gu;
     const paths = new Set<string>();
     for (const m of text.matchAll(re)) {
-      paths.add(m[1]);
+      const raw = m[1] ? unescapeMentionPath(m[1]) : trimMentionPunctuation(m[2] ?? "");
+      if (raw) paths.add(raw);
     }
     if (paths.size === 0) return "";
     const parts: string[] = ["[引用文件]"];
     for (const p of paths) {
       try {
         const content = await readMentionFile(root, p);
-        parts.push(`\n### ${p}\n\`\`\`\n${content}\n\`\`\``);
+        if (content.startsWith("[引用目录]")) {
+          parts.push(`\n### ${p}\n${content}`);
+        } else {
+          parts.push(`\n### ${p}\n\`\`\`\`\n${content}\n\`\`\`\``);
+        }
       } catch {
         /* 跳过无法读取的 */
       }
@@ -1287,7 +1307,7 @@ export function ChatPage() {
         root={activeSession?.allowedCwd ?? null}
         onClose={() => setMentionOpen(false)}
         onPick={(paths) => {
-          const snippet = paths.map((p) => `@${p}`).join(" ");
+          const snippet = paths.map(formatMentionPath).join(" ");
           setInput((prev) => (prev.trim() ? `${prev} ${snippet}` : snippet));
         }}
       />

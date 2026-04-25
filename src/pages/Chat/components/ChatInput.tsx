@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Send, Square, CornerDownLeft } from "lucide-react";
+import { Send, Square, CornerDownLeft, FileText, Folder } from "lucide-react";
 import { filterSlashCommands, matchSlashCommand, type SlashCommand, type SlashCommandId } from "../utils/slashCommands";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 import { listDirEntries, type MentionFileEntry } from "@/services/chat";
@@ -33,9 +33,23 @@ export interface DroppedFile {
 
 const TEXT_FILE_RE = /\.(txt|md|markdown|json|ya?ml|toml|xml|html?|css|scss|less|js|jsx|ts|tsx|mjs|cjs|py|rs|go|java|kt|swift|c|h|cc|cpp|hpp|cs|rb|php|sh|bash|zsh|fish|ps1|sql|conf|ini|env|gitignore|editorconfig|vue|svelte|astro|lua|dart|ex|exs|erl|hs|ml|mli|scala|clj|cljs|r|jl|pl|pm|tex)$/i;
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
-const MAX_FILE_BYTES = 200 * 1024;
+const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_FILES = 20;
 const MAX_DEPTH = 2;
+const MENTION_SCAN_LIMIT = 5000;
+
+function formatMentionPath(path: string): string {
+  if (/\s|"/.test(path)) {
+    return `@"${path.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+  return `@${path}`;
+}
+
+function splitMentionPath(path: string): { name: string; parent: string } {
+  const parts = path.split("/").filter(Boolean);
+  const name = parts.pop() ?? path;
+  return { name, parent: parts.join("/") };
+}
 
 async function readBlobAsText(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -63,7 +77,7 @@ async function convertFile(file: File, relName: string): Promise<DroppedFile | n
   if (!TEXT_FILE_RE.test(file.name) && !file.type.startsWith("text/")) return null;
   if (file.size > MAX_FILE_BYTES) {
     const blob = file.slice(0, MAX_FILE_BYTES);
-    const content = (await readBlobAsText(blob)) + "\n…（已截断）";
+    const content = (await readBlobAsText(blob)) + `\n\n[文件过大，已截断至 ${MAX_FILE_BYTES / 1024 / 1024}MB]`;
     return { name: relName, kind: "text", content };
   }
   const content = await readBlobAsText(file);
@@ -129,7 +143,7 @@ export function ChatInput({
     const el = textareaRef.current;
     const caret = el ? el.selectionStart ?? value.length : value.length;
     const before = value.slice(0, caret);
-    const m = before.match(/(?:^|[\s(])@([A-Za-z0-9_\-./]*)$/);
+    const m = before.match(/(?:^|[\s(（[{])@([^\s@]*)$/);
     return m ? m[1] : null;
   }, [value, mentionRoot]);
 
@@ -138,8 +152,8 @@ export function ChatInput({
   useEffect(() => {
     if (!mentionRoot || mentionLoaded === mentionRoot) return;
     let cancelled = false;
-    listDirEntries(mentionRoot, 800)
-      .then((list) => { if (!cancelled) { setMentionEntries(list.filter((e) => !e.isDir)); setMentionLoaded(mentionRoot); } })
+    listDirEntries(mentionRoot, MENTION_SCAN_LIMIT)
+      .then((list) => { if (!cancelled) { setMentionEntries(list); setMentionLoaded(mentionRoot); } })
       .catch(() => { if (!cancelled) setMentionEntries([]); });
     return () => { cancelled = true; };
   }, [mentionRoot, mentionLoaded]);
@@ -151,7 +165,10 @@ export function ChatInput({
     const scored = q
       ? pool.filter((e) => e.path.toLowerCase().includes(q))
       : pool;
-    return scored.slice(0, 8);
+    return scored
+      .slice()
+      .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.path.localeCompare(b.path))
+      .slice(0, 80);
   }, [mentionEntries, mentionQuery]);
 
   useEffect(() => { setMentionHighlight(0); }, [mentionQuery]);
@@ -161,7 +178,7 @@ export function ChatInput({
     const caret = el ? el.selectionStart ?? value.length : value.length;
     const before = value.slice(0, caret);
     const after = value.slice(caret);
-    const replaced = before.replace(/@([A-Za-z0-9_\-./]*)$/, `@${path} `);
+    const replaced = before.replace(/@([^\s@]*)$/, `${formatMentionPath(path)} `);
     const next = replaced + after;
     onChange(next);
     requestAnimationFrame(() => {
@@ -368,21 +385,32 @@ export function ChatInput({
         />
       )}
       {showMentionMenu && mentionCandidates.length > 0 && (
-        <div className="absolute left-0 right-0 bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-[220px] overflow-auto">
+        <div className="absolute left-0 right-0 bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-[320px] overflow-auto">
           <div className="px-2 py-1 text-[10px] text-gray-400 border-b border-gray-100">
             @ 引用文件 · ↑↓ 选择 · Enter/Tab 确认 · Esc 关闭
           </div>
-          {mentionCandidates.map((e, i) => (
-            <div
-              key={e.path}
-              className={`px-3 py-1 text-xs font-mono cursor-pointer flex items-center gap-2 ${i === mentionHighlight ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-50"}`}
-              onMouseEnter={() => setMentionHighlight(i)}
-              onMouseDown={(ev) => { ev.preventDefault(); applyMention(e.path); }}
-            >
-              <span>📄</span>
-              <span className="truncate">{e.path}</span>
-            </div>
-          ))}
+          {mentionCandidates.map((e, i) => {
+            const { name, parent } = splitMentionPath(e.path);
+            return (
+              <div
+                key={e.path}
+                title={e.path}
+                className={`px-3 py-1.5 text-xs font-mono cursor-pointer flex items-center gap-2 min-w-0 ${i === mentionHighlight ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-50"}`}
+                onMouseEnter={() => setMentionHighlight(i)}
+                onMouseDown={(ev) => { ev.preventDefault(); applyMention(e.path); }}
+              >
+                {e.isDir ? (
+                  <Folder size={12} className="flex-shrink-0 text-amber-500" />
+                ) : (
+                  <FileText size={12} className="flex-shrink-0 text-gray-400" />
+                )}
+                <span className="min-w-0 flex-1 flex items-baseline gap-2">
+                  <span className="font-semibold truncate">{name}</span>
+                  {parent && <span className="text-[10px] text-gray-400 truncate">{parent}/</span>}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
       <div className="flex items-center justify-between mt-2">

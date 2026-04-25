@@ -149,8 +149,12 @@ interface AppState {
 
   // Toolbox Navigation Target (从外部快捷键导航到工具箱子工具)
   toolboxNavigateTarget: ToolType | null;
+  toolboxDockerProjectPath: string | null;
+  toolboxDockerProjectName: string | null;
   navigateToTool: (tool: ToolType) => void;
+  navigateToDockerTool: (projectPath?: string, projectName?: string) => void;
   clearToolboxNavigateTarget: () => void;
+  clearToolboxDockerProject: () => void;
 
   // Resume Generator State (简历生成器状态 - 持久化)
   resumeGeneratorState: {
@@ -535,8 +539,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // Toolbox Navigation Target
   toolboxNavigateTarget: null,
+  toolboxDockerProjectPath: null,
+  toolboxDockerProjectName: null,
   navigateToTool: (tool) => set({ currentPage: "toolbox", toolboxNavigateTarget: tool }),
+  navigateToDockerTool: (projectPath, projectName) => set({
+    currentPage: "toolbox",
+    toolboxNavigateTarget: "docker",
+    toolboxDockerProjectPath: projectPath || null,
+    toolboxDockerProjectName: projectName || null,
+  }),
   clearToolboxNavigateTarget: () => set({ toolboxNavigateTarget: null }),
+  clearToolboxDockerProject: () => set({ toolboxDockerProjectPath: null, toolboxDockerProjectName: null }),
 
   // Resume Generator State
   resumeGeneratorState: {

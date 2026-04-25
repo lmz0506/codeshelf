@@ -351,18 +351,7 @@ export function AiProvidersPage() {
       const selected = await dialogOpen({
         multiple: true,
         title: "选择要附加的文件",
-        filters: [
-          {
-            name: "文本文件",
-            extensions: [
-              "txt", "md", "json", "js", "ts", "tsx", "jsx", "py", "java",
-              "c", "cpp", "h", "hpp", "rs", "go", "rb", "php", "html", "css",
-              "scss", "less", "xml", "yaml", "yml", "toml", "ini", "cfg",
-              "sh", "bash", "zsh", "sql", "vue", "svelte", "swift", "kt",
-              "csv", "log", "env", "conf", "gitignore", "dockerfile",
-            ],
-          },
-        ],
+        filters: [],
       });
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];
@@ -378,10 +367,14 @@ export function AiProvidersPage() {
         }
       }
       if (newFiles.length > 0) {
-        setAttachedFiles((prev) => [...prev, ...newFiles]);
+        setAttachedFiles((prev) => {
+          const next = [...prev, ...newFiles];
+          showToast("success", `已附加 ${next.length} 个文件`);
+          return next;
+        });
       }
     } catch {
-      showToast("error", "选择文件失败");
+      showToast("error", "读取文件失败");
     }
   }
 
@@ -607,20 +600,29 @@ export function AiProvidersPage() {
       if (files.length > 50) {
         showToast("warning", `匹配到 ${files.length} 个文件，最多附加 50 个`);
       }
+      // 限制每个文件 5MB，避免内存问题
       const filesToRead = files.slice(0, 50);
       const newFiles: Array<{ name: string; content: string; path: string; enabled: boolean }> = [];
+      const largeFileCount = [];
       for (const p of filesToRead) {
         try {
           const content = await readTextFile(p);
           const name = p.split("/").pop() ?? p.split("\\").pop() ?? p;
           newFiles.push({ name, content, path: p, enabled: true });
+          if (content.length > 5 * 1024 * 1024) {
+            largeFileCount.push(name);
+          }
         } catch {
           // skip unreadable files
         }
       }
       if (newFiles.length > 0) {
         setAttachedFiles((prev) => [...prev, ...newFiles]);
-        showToast("success", `已附加 ${newFiles.length} 个文件`);
+        const msgs = [`已附加 ${newFiles.length} 个文件`];
+        if (largeFileCount.length > 0) {
+          msgs.push(`${largeFileCount.length} 个大文件需要较长时间加载`);
+        }
+        showToast("success", msgs.join("\n"));
       }
     } catch {
       showToast("error", "读取文件夹失败");

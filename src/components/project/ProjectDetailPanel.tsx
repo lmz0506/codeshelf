@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, GitBranch, History, Terminal, RefreshCw, CloudUpload, FolderOpen, User, Clock, Edit2, FileText, Database, Loader2, GitCommit, Plus, Trash2, Check, Copy, Minus, Maximize2, Minimize2, ChevronDown, ChevronRight, ExternalLink, Files, Mail, ArrowRightLeft } from "lucide-react";
+import { X, GitBranch, History, Terminal, RefreshCw, CloudUpload, FolderOpen, User, Clock, Edit2, FileText, Database, Loader2, GitCommit, Plus, Trash2, Check, Copy, Minus, Maximize2, Minimize2, ChevronDown, ChevronRight, ExternalLink, Files, Mail, ArrowRightLeft, Box } from "lucide-react";
 import { CategorySelector } from "./CategorySelector";
 import { LabelSelector } from "./LabelSelector";
 import { SyncRemoteModal } from "./SyncRemoteModal";
@@ -46,7 +46,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
   // 用于显示的本地项目数据（编辑后立即更新）
   const [localProject, setLocalProject] = useState<Project>(project);
-  const { editors, terminalConfig, markProjectDirty, projects, recentDetailProjectIds, addRecentDetailProject } = useAppStore();
+  const { editors, terminalConfig, markProjectDirty, projects, recentDetailProjectIds, addRecentDetailProject, navigateToDockerTool } = useAppStore();
   // 从 store 读取最新项目数据（编辑器/Claude 环境切换后立即刷新）
   const storeProject = projects.find((p) => p.id === project.id) || project;
 
@@ -744,6 +744,14 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
               >
                 <Terminal size={14} />
                 <span>终端</span>
+              </button>
+              <button
+                onClick={() => navigateToDockerTool(project.path, project.name)}
+                className="quick-action-btn-compact"
+                title="Docker 镜像"
+              >
+                <Box size={14} />
+                <span>Docker</span>
               </button>
             </div>
           </div>

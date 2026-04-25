@@ -168,6 +168,79 @@ export interface ServerConfigInput {
   proxies?: ProxyConfig[];
 }
 
+// ============== Docker 镜像 ==============
+
+export interface DockerStatus {
+  available: boolean;
+  version?: string;
+  error?: string;
+}
+
+export interface DockerCommandResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  command: string;
+}
+
+export interface DockerImageInfo {
+  id: string;
+  repository: string;
+  tag: string;
+  size: string;
+  createdSince: string;
+}
+
+export interface DockerContainerInfo {
+  id: string;
+  image: string;
+  names: string;
+  status: string;
+  ports: string;
+  composeProject?: string;
+  composeService?: string;
+  composeWorkingDir?: string;
+  composeConfigFiles: string[];
+}
+
+export interface DockerBuildInput {
+  projectPath: string;
+  dockerfilePath: string;
+  imageName: string;
+  tag?: string;
+  noCache?: boolean;
+}
+
+export interface DockerRunInput {
+  image: string;
+  containerName?: string;
+  ports?: string[];
+  env?: string[];
+  volumes?: string[];
+  network?: string;
+  restart?: string;
+  user?: string;
+  workdir?: string;
+  command?: string;
+  privileged?: boolean;
+  readOnly?: boolean;
+  extraArgs?: string[];
+}
+
+export interface DockerAiGenerateInput {
+  projectPath: string;
+  dockerfilePath?: string;
+  imageName?: string;
+  providerId?: string;
+  modelId?: string;
+}
+
+export interface DockerAiGenerateOutput {
+  content: string;
+  providerName: string;
+  modelName: string;
+}
+
 // ============== Claude Code 配置 ==============
 
 export type EnvType = "host" | "wsl";
@@ -211,7 +284,7 @@ export interface ConfigProfile {
 
 // ============== 工具箱页面状态 ==============
 
-export type ToolType = "monitor" | "downloader" | "server" | "claude" | "netcat" | "shortcuts" | "clipboard" | "resume";
+export type ToolType = "monitor" | "downloader" | "server" | "docker" | "claude" | "netcat" | "shortcuts" | "clipboard" | "resume";
 
 export interface ToolInfo {
   id: ToolType;
@@ -350,4 +423,19 @@ export interface ClipboardSettings {
   enabled: boolean;
   maxItems: number;
   monitorIntervalMs: number;
+}
+
+// ============== Nginx 配置生成 ==============
+
+export interface NginxConfigOptions {
+  serviceName: string;
+  listenPort: number;
+  rootDir: string;
+  indexPage?: string;
+  cors?: boolean;
+  gzip?: boolean;
+  urlPrefix?: string;
+  proxies?: Array<{ prefix: string; target: string }>;
+  accessLog?: boolean;
+  errorLog?: boolean;
 }

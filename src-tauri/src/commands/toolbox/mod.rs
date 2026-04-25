@@ -9,6 +9,7 @@ pub mod claude_code;
 pub mod netcat;
 pub mod shortcuts;
 pub mod clipboard;
+pub mod docker;
 
 use serde::{Deserialize, Serialize};
 
@@ -318,6 +319,23 @@ pub fn port_service_name(port: u16) -> Option<&'static str> {
         27017 => Some("MongoDB"),
         _ => None,
     }
+}
+
+// ============== Nginx 配置生成 ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NginxConfigOptions {
+    pub service_name: String,
+    pub listen_port: u16,
+    pub root_dir: String,
+    pub index_page: Option<String>,
+    pub cors: Option<bool>,
+    pub gzip: Option<bool>,
+    pub url_prefix: Option<String>,
+    pub proxies: Option<Vec<ProxyConfig>>,
+    pub access_log: Option<bool>,
+    pub error_log: Option<bool>,
 }
 
 // ============== 工具函数 ==============
