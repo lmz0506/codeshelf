@@ -50,6 +50,9 @@ export default function SessionToolbar({
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               {session.protocol.toUpperCase()} · {session.host}:{session.port}
+              {session.localAddr && (
+                <span className="text-green-500"> ← 本地 {session.localAddr}</span>
+              )}
             </div>
           </div>
         </div>

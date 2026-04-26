@@ -60,6 +60,7 @@ impl NetcatState {
                 bytes_received: 0,
                 message_count: 0,
                 error_message: None,
+                local_addr: None,
                 client_count: 0,
                 auto_send: cfg.auto_send,
             };
@@ -161,6 +162,7 @@ pub async fn netcat_create_session(
         bytes_received: 0,
         message_count: 0,
         error_message: None,
+        local_addr: None,
         client_count: 0,
         auto_send: AutoSendConfig::default(),
     };

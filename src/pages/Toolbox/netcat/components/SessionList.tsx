@@ -78,6 +78,9 @@ export default function SessionList({
                       </div>
                       <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                         {session.host}:{session.port}
+                        {session.localAddr && (
+                          <span className="text-green-500/70"> ← {session.localAddr}</span>
+                        )}
                       </div>
                     </div>
                   </div>

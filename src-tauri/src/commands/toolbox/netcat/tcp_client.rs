@@ -44,7 +44,12 @@ pub async fn start_tcp_client(
         }
     };
 
-    // 连接成功
+    // 连接成功，获取本地地址
+    let local_addr = stream.local_addr()
+        .map(|a| a.to_string())
+        .ok();
+    log::info!("Netcat Client 连接成功, 本地地址: {:?}", local_addr);
+
     let now = current_timestamp();
     {
         let mut state = session_state.write().await;
@@ -52,6 +57,7 @@ pub async fn start_tcp_client(
         state.session.connected_at = Some(now);
         state.session.last_activity = Some(now);
         state.session.error_message = None;
+        state.session.local_addr = local_addr;
     }
 
     emit_status_changed(&app, &session_id, SessionStatus::Connected, None);

@@ -67,11 +67,18 @@ pub async fn start_udp_session(
         SessionMode::Server => SessionStatus::Listening,
     };
 
+    // 获取本地绑定地址
+    let local_addr = socket.local_addr()
+        .map(|a| a.to_string())
+        .ok();
+    log::info!("Netcat UDP 会话启动, 本地地址: {:?}", local_addr);
+
     {
         let mut state = session_state.write().await;
         state.session.status = status;
         state.session.connected_at = Some(now);
         state.session.last_activity = Some(now);
+        state.session.local_addr = local_addr;
     }
 
     emit_status_changed(&app, &session_id, status, None);

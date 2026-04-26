@@ -173,6 +173,8 @@ pub struct NetcatSession {
     pub bytes_received: u64,
     pub message_count: u64,
     pub error_message: Option<String>,
+    /// 本地地址（客户端模式连接后分配的本地 IP:PORT）
+    pub local_addr: Option<String>,
     /// 连接的客户端数量（仅服务器模式）
     pub client_count: u32,
     /// 自动发送配置

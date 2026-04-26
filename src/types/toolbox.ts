@@ -347,6 +347,8 @@ export interface NetcatSession {
   bytesReceived: number;
   messageCount: number;
   errorMessage?: string;
+  /** 本地地址（客户端模式连接后的 IP:PORT） */
+  localAddr?: string;
   clientCount: number;
   /** 自动发送配置 */
   autoSend: AutoSendConfig;
