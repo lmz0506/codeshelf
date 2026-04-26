@@ -12,8 +12,9 @@ export interface UpdateInfo {
   isPortable?: boolean;
 }
 
-// 缓存已检查的更新对象
+// 缓存已检查的更新对象，以及已完成下载、可安装的更新对象
 let cachedUpdate: Update | null = null;
+let downloadedUpdate: Update | null = null;
 let isPortableVersion: boolean | null = null;
 
 // 检查是否为便携版
@@ -50,6 +51,9 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
   try {
     const update = await check();
     cachedUpdate = update;
+    if (!update || downloadedUpdate?.version !== update.version) {
+      downloadedUpdate = null;
+    }
 
     if (update) {
       return {
@@ -91,12 +95,14 @@ export async function downloadUpdate(
       throw new Error("No update available");
     }
     cachedUpdate = update;
+    downloadedUpdate = null;
   }
 
+  const update = cachedUpdate;
   let downloaded = 0;
   let contentLength = 0;
 
-  await cachedUpdate.download((event) => {
+  await update.download((event) => {
     switch (event.event) {
       case "Started":
         contentLength = event.data.contentLength || 0;
@@ -114,14 +120,16 @@ export async function downloadUpdate(
         break;
     }
   });
+  downloadedUpdate = update;
 }
 
 // 安装已下载的更新并重启
 export async function installUpdate(): Promise<void> {
-  if (!cachedUpdate) {
+  if (!downloadedUpdate) {
     throw new Error("No update downloaded");
   }
-  await cachedUpdate.install();
+  await downloadedUpdate.install();
+  downloadedUpdate = null;
   await relaunch();
 }
 
@@ -129,6 +137,36 @@ export async function installUpdate(): Promise<void> {
 export async function downloadAndInstallUpdate(
   onProgress?: (progress: number, total: number) => void
 ): Promise<void> {
-  await downloadUpdate(onProgress);
-  await installUpdate();
+  let update = cachedUpdate;
+  if (!update) {
+    update = await check();
+    if (!update) {
+      throw new Error("No update available");
+    }
+    cachedUpdate = update;
+  }
+
+  let downloaded = 0;
+  let contentLength = 0;
+
+  await update.downloadAndInstall((event) => {
+    switch (event.event) {
+      case "Started":
+        contentLength = event.data.contentLength || 0;
+        console.log(`Started downloading ${contentLength} bytes`);
+        break;
+      case "Progress":
+        downloaded += event.data.chunkLength;
+        if (onProgress && contentLength > 0) {
+          onProgress(downloaded, contentLength);
+        }
+        console.log(`Downloaded ${downloaded} of ${contentLength}`);
+        break;
+      case "Finished":
+        console.log("Download finished");
+        break;
+    }
+  });
+  downloadedUpdate = null;
+  await relaunch();
 }
