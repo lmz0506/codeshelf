@@ -20,7 +20,7 @@ import { FileDownloader } from "./FileDownloader";
 import { LocalService } from "./LocalService";
 import { SystemMonitor } from "./SystemMonitor";
 import { ClaudeCodeManager } from "./ClaudeCodeManager";
-import NetcatTool from "./NetcatTool";
+import NetcatTool from "./netcat";
 import { ShortcutsMemo } from "./ShortcutsMemo";
 import { ClipboardManager } from "./ClipboardManager";
 import { DockerImageTool } from "./DockerImageTool";
