@@ -270,6 +270,8 @@ async fn handle_received_data(
             state.session.message_count += 1;
             state.session.last_activity = Some(now);
 
+            let server_addr = format!("{}:{}", state.session.host, state.session.port);
+
             let message = NetcatMessage {
                 id: message_id.clone(),
                 session_id: state.session.id.clone(),
@@ -279,7 +281,7 @@ async fn handle_received_data(
                 size: data.len(),
                 timestamp: now,
                 client_id: client_id.clone(),
-                client_addr: None,
+                client_addr: Some(server_addr),
             };
 
             state.messages.push(message.clone());
