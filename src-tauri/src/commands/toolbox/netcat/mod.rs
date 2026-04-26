@@ -462,6 +462,14 @@ pub async fn netcat_send_message(
         }
     }
 
+    // 尝试获取 client_addr（如果指定了目标客户端）
+    let client_addr = if let Some(ref cid) = input.target_client {
+        let s = session_state.read().await;
+        s.clients.get(cid).map(|c| c.addr.clone())
+    } else {
+        None
+    };
+
     // 创建消息记录
     let now = current_timestamp();
     let message_id = generate_id();
@@ -475,7 +483,7 @@ pub async fn netcat_send_message(
         size: data.len(),
         timestamp: now,
         client_id: input.target_client,
-        client_addr: None,
+        client_addr,
     };
 
     // 保存到会话
