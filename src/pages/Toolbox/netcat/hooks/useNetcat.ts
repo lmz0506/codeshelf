@@ -128,7 +128,7 @@ export function useNetcat() {
   const [showAutoSendPanel, setShowAutoSendPanel] = useState(false);
   const [autoSendCount, setAutoSendCount] = useState<Record<string, number>>({});
   const csvIndexesRef = useRef<Record<string, number>>({});
-  const autoSendTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const autoSendTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
   // ==================== 自动滚动 ====================
   const [autoScroll, setAutoScroll] = useState(true);
