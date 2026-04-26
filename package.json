@@ -24,7 +24,7 @@
   },
   "homepage": "https://github.com/en-o/codeshelf#readme",
   "dependencies": {
-    "@tanstack/react-query": "^5.90.20",
+    "@tanstack/react-query": "^5.100.5",
     "@tauri-apps/api": "^2.9.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-fs": "^2.4.5",
