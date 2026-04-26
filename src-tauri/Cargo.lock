@@ -686,7 +686,7 @@ dependencies = [
 
 [[package]]
 name = "codeshelf"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "arboard",
  "axum",
