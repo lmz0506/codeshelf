@@ -2,11 +2,14 @@ import { ChangeEvent, useMemo } from "react";
 import { History, RefreshCw, Search } from "lucide-react";
 import type { CommitInfo, RemoteInfo } from "@/types";
 import { CommitCard } from "./CommitCard";
+import { GitStatusSummary } from "./GitStatusSummary";
+import type { GitStatus } from "@/types";
 
 interface CommitHistoryPanelProps {
   projectPath: string;
   commits: CommitInfo[];
   remotes: RemoteInfo[];
+  gitStatus: GitStatus | null;
   currentRemote: string | null;
   loading: boolean;
   expandedCommit: string | null;
@@ -24,6 +27,7 @@ export function CommitHistoryPanel({
   projectPath,
   commits,
   remotes,
+  gitStatus,
   currentRemote,
   loading,
   expandedCommit,
@@ -63,6 +67,8 @@ export function CommitHistoryPanel({
       </div>
 
       <div className="commits-list">
+        <GitStatusSummary gitStatus={gitStatus} currentRemote={currentRemote} />
+
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="loading-spinner"></div>

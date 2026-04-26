@@ -151,8 +151,11 @@ interface AppState {
   toolboxNavigateTarget: ToolType | null;
   toolboxDockerProjectPath: string | null;
   toolboxDockerProjectName: string | null;
+  chatNavigateSessionId: string | null;
   navigateToTool: (tool: ToolType) => void;
   navigateToDockerTool: (projectPath?: string, projectName?: string) => void;
+  navigateToChatSession: (sessionId: string) => void;
+  clearChatNavigateSession: () => void;
   clearToolboxNavigateTarget: () => void;
   clearToolboxDockerProject: () => void;
 
@@ -541,6 +544,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   toolboxNavigateTarget: null,
   toolboxDockerProjectPath: null,
   toolboxDockerProjectName: null,
+  chatNavigateSessionId: null,
   navigateToTool: (tool) => set({ currentPage: "toolbox", toolboxNavigateTarget: tool }),
   navigateToDockerTool: (projectPath, projectName) => set({
     currentPage: "toolbox",
@@ -548,6 +552,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     toolboxDockerProjectPath: projectPath || null,
     toolboxDockerProjectName: projectName || null,
   }),
+  navigateToChatSession: (sessionId) => set({ currentPage: "chat", chatNavigateSessionId: sessionId }),
+  clearChatNavigateSession: () => set({ chatNavigateSessionId: null }),
   clearToolboxNavigateTarget: () => set({ toolboxNavigateTarget: null }),
   clearToolboxDockerProject: () => set({ toolboxDockerProjectPath: null, toolboxDockerProjectName: null }),
 

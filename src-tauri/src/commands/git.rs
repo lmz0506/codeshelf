@@ -1018,6 +1018,36 @@ pub async fn git_unstage(path: String, files: Vec<String>) -> Result<String, Str
 }
 
 #[tauri::command]
+pub async fn git_discard_files(path: String, files: Vec<String>, include_untracked: bool) -> Result<String, String> {
+    if files.is_empty() {
+        return Err("请选择要丢弃的文件".to_string());
+    }
+
+    if include_untracked {
+        let mut args = vec!["clean", "-f", "--"];
+        args.extend(files.iter().map(|s| s.as_str()));
+        run_git_command(&path, &args)
+    } else {
+        let mut args = vec!["restore", "--staged", "--worktree", "--"];
+        args.extend(files.iter().map(|s| s.as_str()));
+        run_git_command(&path, &args)
+    }
+}
+
+#[tauri::command]
+pub async fn git_stash_push(path: String, message: Option<String>) -> Result<String, String> {
+    let label = message
+        .filter(|m| !m.trim().is_empty())
+        .unwrap_or_else(|| "CodeShelf stash".to_string());
+    run_git_command(&path, &["stash", "push", "-u", "-m", &label])
+}
+
+#[tauri::command]
+pub async fn git_stash_pop(path: String) -> Result<String, String> {
+    run_git_command(&path, &["stash", "pop"])
+}
+
+#[tauri::command]
 pub async fn git_commit(path: String, message: String) -> Result<String, String> {
     if message.trim().is_empty() {
         return Err("提交信息不能为空".to_string());

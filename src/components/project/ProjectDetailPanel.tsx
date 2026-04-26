@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, GitBranch, Terminal, RefreshCw, CloudUpload, FolderOpen, Edit2, FileText, Loader2, GitCommit, Copy, Minus, Maximize2, Minimize2, ArrowRightLeft, Box } from "lucide-react";
+import { X, GitBranch, Terminal, RefreshCw, CloudUpload, FolderOpen, Edit2, FileText, Loader2, GitCommit, Copy, Minus, Maximize2, Minimize2, ArrowRightLeft, Box, MessageSquare } from "lucide-react";
 import { CategorySelector } from "./CategorySelector";
 import { LabelSelector } from "./LabelSelector";
 import { SyncRemoteModal } from "./SyncRemoteModal";
@@ -13,12 +13,27 @@ import { CommitHistoryPanel } from "./git/CommitHistoryPanel";
 import { GitSidebar } from "./git/GitSidebar";
 import { showToast } from "@/components/ui";
 import type { Project, GitStatus, CommitInfo, RemoteInfo } from "@/types";
-import { getGitStatus, getCommitHistory, getRemotes, gitPull, gitPush, removeRemote, searchCommits } from "@/services/git";
+import {
+  getGitStatus,
+  getCommitHistory,
+  getRemotes,
+  gitPull,
+  gitPush,
+  removeRemote,
+  searchCommits,
+  gitAdd,
+  gitUnstage,
+  gitDiscardFiles,
+  gitStashPush,
+  gitStashPop,
+  gitFetch,
+} from "@/services/git";
 import { openInEditor, openInExplorer, openInTerminal, updateProject } from "@/services/db";
 import { getEditorForProject, getEditorConfigForProject, getEditorIcon } from "@/utils/editor";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { createChatSession, saveChatSession } from "@/services/chat";
 
 interface ProjectDetailPanelProps {
   project: Project;
@@ -48,7 +63,19 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
   // 用于显示的本地项目数据（编辑后立即更新）
   const [localProject, setLocalProject] = useState<Project>(project);
-  const { editors, terminalConfig, markProjectDirty, projects, recentDetailProjectIds, addRecentDetailProject, navigateToDockerTool } = useAppStore();
+  const {
+    editors,
+    terminalConfig,
+    markProjectDirty,
+    projects,
+    recentDetailProjectIds,
+    addRecentDetailProject,
+    navigateToDockerTool,
+    navigateToChatSession,
+    aiProviders,
+    ensureAiDefaultProvider,
+    setCurrentPage,
+  } = useAppStore();
   // 从 store 读取最新项目数据（编辑器/Claude 环境切换后立即刷新）
   const storeProject = projects.find((p) => p.id === project.id) || project;
 
@@ -244,6 +271,111 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
       showToast("error", "推送失败", String(error));
     } finally {
       setPushing(false);
+    }
+  }
+
+  async function refreshGitState() {
+    await loadProjectDetails();
+    markProjectDirty(project.path);
+  }
+
+  async function handleStageFiles(files: string[]) {
+    try {
+      await gitAdd(project.path, files);
+      await refreshGitState();
+      showToast("success", "已暂存", files.length === 1 ? files[0] : `已暂存 ${files.length} 个文件`);
+    } catch (error) {
+      console.error("Failed to stage files:", error);
+      showToast("error", "暂存失败", String(error));
+    }
+  }
+
+  async function handleUnstageFiles(files: string[]) {
+    try {
+      await gitUnstage(project.path, files);
+      await refreshGitState();
+      showToast("success", "已取消暂存", files.length === 1 ? files[0] : `已取消暂存 ${files.length} 个文件`);
+    } catch (error) {
+      console.error("Failed to unstage files:", error);
+      showToast("error", "取消暂存失败", String(error));
+    }
+  }
+
+  async function handleDiscardFiles(files: string[], includeUntracked: boolean) {
+    const label = files.length === 1 ? files[0] : `${files.length} 个文件`;
+    if (!confirm(`确定要丢弃 ${label} 的本地变更吗？此操作不可撤销。`)) return;
+
+    try {
+      await gitDiscardFiles(project.path, files, includeUntracked);
+      await refreshGitState();
+      showToast("success", "已丢弃变更", label);
+    } catch (error) {
+      console.error("Failed to discard files:", error);
+      showToast("error", "丢弃失败", String(error));
+    }
+  }
+
+  async function handleStashPush() {
+    try {
+      await gitStashPush(project.path, `CodeShelf: ${project.name}`);
+      await refreshGitState();
+      showToast("success", "已储藏变更", "当前工作区变更已保存到 stash");
+    } catch (error) {
+      console.error("Failed to stash changes:", error);
+      showToast("error", "储藏失败", String(error));
+    }
+  }
+
+  async function handleStashPop() {
+    if (!confirm("确定要恢复最近一次 stash 吗？如果发生冲突，需要手动处理。")) return;
+
+    try {
+      await gitStashPop(project.path);
+      await refreshGitState();
+      showToast("success", "已恢复储藏", "最近一次 stash 已应用到工作区");
+    } catch (error) {
+      console.error("Failed to pop stash:", error);
+      showToast("error", "恢复储藏失败", String(error));
+    }
+  }
+
+  async function handleFetchRemote() {
+    try {
+      await gitFetch(project.path, currentRemote || undefined);
+      await refreshGitState();
+      showToast("success", "获取成功", currentRemote ? `已获取 ${currentRemote}` : "已获取所有远程仓库");
+    } catch (error) {
+      console.error("Failed to fetch remote:", error);
+      showToast("error", "获取失败", String(error));
+    }
+  }
+
+  async function handleOpenProjectChat() {
+    const providers = ensureAiDefaultProvider(aiProviders);
+    const provider = providers.find((item) => item.enabled && item.isDefaultProvider) || providers.find((item) => item.enabled);
+    const model = provider?.models.find((item) => item.enabled && item.isDefault) || provider?.models.find((item) => item.enabled);
+
+    if (!provider || !model) {
+      showToast("warning", "请先配置 AI 模型", "需要可用的供应商与模型后才能创建项目会话");
+      setCurrentPage("aiProviders");
+      return;
+    }
+
+    try {
+      const session = await createChatSession({
+        title: `${project.name} 对话`,
+        providerId: provider.id,
+        modelId: model.id,
+      });
+      const saved = await saveChatSession({
+        ...session,
+        allowedCwd: project.path,
+      });
+      navigateToChatSession(saved.id);
+      showToast("success", "已创建项目会话", `目录已设置为 ${project.name}`);
+    } catch (error) {
+      console.error("Failed to create project chat:", error);
+      showToast("error", "创建项目会话失败", String(error));
     }
   }
 
@@ -490,6 +622,12 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
               showToast("success", "切换成功", `已切换到远程仓库 ${remoteName}`);
             }}
             onRemoveRemote={handleRemoveRemote}
+            onFetchRemote={handleFetchRemote}
+            onStageFiles={handleStageFiles}
+            onUnstageFiles={handleUnstageFiles}
+            onDiscardFiles={handleDiscardFiles}
+            onStashPush={handleStashPush}
+            onStashPop={handleStashPop}
           />
 
           {/* 快捷操作 - 固定在侧边栏底部 */}
@@ -574,6 +712,14 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
                 <Box size={14} />
                 <span>Docker</span>
               </button>
+              <button
+                onClick={handleOpenProjectChat}
+                className="quick-action-btn-compact"
+                title="新建项目 AI 对话"
+              >
+                <MessageSquare size={14} />
+                <span>对话</span>
+              </button>
             </div>
           </div>
         </aside>
@@ -582,6 +728,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
           projectPath={project.path}
           commits={commits}
           remotes={remotes}
+          gitStatus={gitStatus}
           currentRemote={currentRemote}
           loading={loading}
           expandedCommit={expandedCommit}

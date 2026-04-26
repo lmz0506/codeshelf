@@ -1,4 +1,4 @@
-import { Check, Database, GitBranch, Plus, Trash2 } from "lucide-react";
+import { Archive, Check, CircleDot, Database, DownloadCloud, FilePlus2, GitBranch, Minus, Plus, RotateCcw, Trash2, Undo2 } from "lucide-react";
 import type { GitStatus, RemoteInfo } from "@/types";
 import { getRemoteType } from "./gitUtils";
 
@@ -11,6 +11,12 @@ interface GitSidebarProps {
   onOpenSyncModal: () => void;
   onSelectRemote: (remoteName: string) => void;
   onRemoveRemote: (remoteName: string) => void;
+  onFetchRemote: () => void;
+  onStageFiles: (files: string[]) => void;
+  onUnstageFiles: (files: string[]) => void;
+  onDiscardFiles: (files: string[], includeUntracked: boolean) => void;
+  onStashPush: () => void;
+  onStashPop: () => void;
 }
 
 export function GitSidebar({
@@ -22,6 +28,12 @@ export function GitSidebar({
   onOpenSyncModal,
   onSelectRemote,
   onRemoveRemote,
+  onFetchRemote,
+  onStageFiles,
+  onUnstageFiles,
+  onDiscardFiles,
+  onStashPush,
+  onStashPop,
 }: GitSidebarProps) {
   const changeCount = (gitStatus?.staged.length || 0) + (gitStatus?.unstaged.length || 0) + (gitStatus?.untracked.length || 0);
   const branchState = gitStatus?.ahead || gitStatus?.behind
@@ -62,6 +74,55 @@ export function GitSidebar({
           <Plus size={13} />
           <span>切换或创建分支</span>
         </button>
+
+        <div className="git-advanced-actions">
+          <button onClick={onStashPush} disabled={!gitStatus || changeCount === 0} title="储藏当前工作区变更">
+            <Archive size={13} />
+            <span>储藏</span>
+          </button>
+          <button onClick={onStashPop} title="恢复最近一次储藏">
+            <Undo2 size={13} />
+            <span>恢复储藏</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="sidebar-section">
+        <div className="section-header">
+          <span className="section-title">工作区变更</span>
+          <span className="commits-count">{changeCount}</span>
+        </div>
+
+        {gitStatus && changeCount > 0 ? (
+          <div className="git-change-groups">
+            <ChangeGroup
+              title="已暂存"
+              files={gitStatus.staged}
+              tone="staged"
+              onPrimary={onUnstageFiles}
+              onDiscard={(files) => onDiscardFiles(files, false)}
+            />
+            <ChangeGroup
+              title="未暂存"
+              files={gitStatus.unstaged}
+              tone="modified"
+              onPrimary={onStageFiles}
+              onDiscard={(files) => onDiscardFiles(files, false)}
+            />
+            <ChangeGroup
+              title="未跟踪"
+              files={gitStatus.untracked}
+              tone="untracked"
+              onPrimary={onStageFiles}
+              onDiscard={(files) => onDiscardFiles(files, true)}
+            />
+          </div>
+        ) : (
+          <div className="git-clean-state">
+            <Check size={15} />
+            <span>没有待提交变更</span>
+          </div>
+        )}
       </div>
 
       <div className="sidebar-section sidebar-section-flex">
@@ -127,8 +188,12 @@ export function GitSidebar({
         )}
 
         {remotes.length > 0 && (
-          <div className="flex gap-sm mt-md">
-            <button onClick={onAddRemote} className="flex-1 flex items-center justify-center gap-sm px-md py-sm bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium border border-gray-200">
+          <div className="git-remote-actions">
+            <button onClick={onFetchRemote} className="git-remote-action-btn">
+              <DownloadCloud size={14} />
+              <span>获取</span>
+            </button>
+            <button onClick={onAddRemote} className="git-remote-action-btn">
               <Plus size={14} />
               <span>添加远程</span>
             </button>
@@ -138,6 +203,54 @@ export function GitSidebar({
             </button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+interface ChangeGroupProps {
+  title: string;
+  files: string[];
+  tone: "staged" | "modified" | "untracked";
+  onPrimary: (files: string[]) => void;
+  onDiscard: (files: string[]) => void;
+}
+
+function ChangeGroup({ title, files, tone, onPrimary, onDiscard }: ChangeGroupProps) {
+  if (files.length === 0) return null;
+  const primaryLabel = tone === "staged" ? "取消暂存" : "暂存";
+  const PrimaryIcon = tone === "staged" ? Minus : Plus;
+
+  return (
+    <div className="git-change-group">
+      <div className="git-change-group-title">
+        <span>{title}</span>
+        <div className="git-change-group-actions">
+          <button onClick={() => onPrimary(files)} title={`${primaryLabel}全部`}>
+            <PrimaryIcon size={11} />
+          </button>
+          <button onClick={() => onDiscard(files)} title="丢弃全部">
+            <RotateCcw size={11} />
+          </button>
+          <span>{files.length}</span>
+        </div>
+      </div>
+      <div className="git-change-list">
+        {files.slice(0, 8).map((file) => (
+          <div key={`${tone}-${file}`} className="git-change-row" title={file}>
+            {tone === "untracked" ? <FilePlus2 size={12} /> : <CircleDot size={12} />}
+            <span>{file}</span>
+            <div className="git-change-row-actions">
+              <button onClick={() => onPrimary([file])} title={primaryLabel}>
+                <PrimaryIcon size={11} />
+              </button>
+              <button onClick={() => onDiscard([file])} title="丢弃">
+                <RotateCcw size={11} />
+              </button>
+            </div>
+          </div>
+        ))}
+        {files.length > 8 && <div className="git-change-more">还有 {files.length - 8} 个文件</div>}
       </div>
     </div>
   );

@@ -118,7 +118,18 @@ function summarizeTitle(messages: ChatMessage[]): string | null {
 }
 
 export function ChatPage() {
-  const { aiProviders, setCurrentPage, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed, projects, saveAiProviders, editors } = useAppStore();
+  const {
+    aiProviders,
+    setCurrentPage,
+    ensureAiDefaultProvider,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    projects,
+    saveAiProviders,
+    editors,
+    chatNavigateSessionId,
+    clearChatNavigateSession,
+  } = useAppStore();
 
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -221,6 +232,13 @@ export function ChatPage() {
     }
     load();
   }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!chatNavigateSessionId) return;
+    setActiveSessionId(chatNavigateSessionId);
+    setInput("");
+    clearChatNavigateSession();
+  }, [chatNavigateSessionId, clearChatNavigateSession]);
 
   // 组件卸载时保存当前会话
   useEffect(() => {

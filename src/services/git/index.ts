@@ -140,6 +140,25 @@ export async function gitUnstage(
   return invoke("git_unstage", { path, files });
 }
 
+export async function gitDiscardFiles(
+  path: string,
+  files: string[],
+  includeUntracked: boolean = false
+): Promise<string> {
+  return invoke("git_discard_files", { path, files, includeUntracked });
+}
+
+export async function gitStashPush(
+  path: string,
+  message?: string
+): Promise<string> {
+  return invoke("git_stash_push", { path, message });
+}
+
+export async function gitStashPop(path: string): Promise<string> {
+  return invoke("git_stash_pop", { path });
+}
+
 export async function gitCommit(
   path: string,
   message: string
