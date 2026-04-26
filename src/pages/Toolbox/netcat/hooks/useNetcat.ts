@@ -42,9 +42,11 @@ export function useNetcat() {
   // ==================== Refs（避免闭包过期） ====================
   const selectedSessionIdRef = useRef<string | null>(null);
   const sessionsRef = useRef<NetcatSession[]>([]);
+  const clientsRef = useRef<ConnectedClient[]>([]);
 
   useEffect(() => { selectedSessionIdRef.current = selectedSessionId; }, [selectedSessionId]);
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+  useEffect(() => { clientsRef.current = clients; }, [clients]);
 
   // ==================== 创建会话表单状态 ====================
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -70,6 +72,34 @@ export function useNetcat() {
   useEffect(() => { targetClientRef.current = targetClient; }, [targetClient]);
   useEffect(() => { broadcastRef.current = broadcast; }, [broadcast]);
   useEffect(() => { sendDataRef.current = sendData; }, [sendData]);
+
+  useEffect(() => {
+    if (!targetClient) return;
+
+    const targetStillConnected = clients.some(
+      (client) => client.id === targetClient || client.addr === targetClient
+    );
+    if (!targetStillConnected) {
+      targetClientRef.current = "";
+      setTargetClient("");
+    }
+  }, [clients, targetClient]);
+
+  const handleTargetClientChange = useCallback((clientId: string) => {
+    targetClientRef.current = clientId;
+    broadcastRef.current = false;
+    setTargetClient(clientId);
+    setBroadcast(false);
+  }, []);
+
+  const handleBroadcastChange = useCallback((enabled: boolean) => {
+    broadcastRef.current = enabled;
+    setBroadcast(enabled);
+    if (enabled) {
+      targetClientRef.current = "";
+      setTargetClient("");
+    }
+  }, []);
 
   // ==================== 自动发送状态 ====================
   const [showAutoSendPanel, setShowAutoSendPanel] = useState(false);
@@ -147,7 +177,10 @@ export function useNetcat() {
       loadMessages(selectedSessionId);
       const session = sessions.find(s => s.id === selectedSessionId);
       if (session?.mode === "server") {
+        setClients([]);
         loadClients(selectedSessionId);
+      } else {
+        setClients([]);
       }
     } else if (!selectedSessionId) {
       prevSessionIdRef.current = null;
@@ -340,6 +373,13 @@ export function useNetcat() {
     let finalTargetClient = options?.forceTargetClient ?? targetClientRef.current;
     let finalBroadcast = options?.forceBroadcast ?? broadcastRef.current;
     const format = options?.forceFormat ?? sendFormatRef.current;
+
+    if (isServerMode && finalTargetClient) {
+      const matchedClient = clientsRef.current.find(
+        (client) => client.id === finalTargetClient || client.addr === finalTargetClient
+      );
+      finalTargetClient = matchedClient?.id ?? "";
+    }
 
     // 服务器模式下，如果没有指定目标且没有启用广播，默认启用广播
     if (isServerMode && !finalTargetClient && !finalBroadcast) {
@@ -663,8 +703,8 @@ export function useNetcat() {
     broadcast,
     setSendData,
     setSendFormat,
-    setTargetClient,
-    setBroadcast,
+    setTargetClient: handleTargetClientChange,
+    setBroadcast: handleBroadcastChange,
 
     // 自动发送
     showAutoSendPanel,

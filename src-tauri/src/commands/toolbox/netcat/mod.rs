@@ -437,6 +437,24 @@ pub async fn netcat_send_message(
 
     log::info!("Netcat 发送: protocol={:?}, mode={:?}", protocol, mode);
 
+    let resolved_tcp_target_client = if protocol == Protocol::Tcp
+        && mode == SessionMode::Server
+        && !input.broadcast.unwrap_or(false)
+    {
+        let target = input.target_client.as_deref().unwrap_or("").trim();
+        if target.is_empty() {
+            None
+        } else {
+            let s = session_state.read().await;
+            s.clients
+                .iter()
+                .find(|(id, client)| id.as_str() == target || client.addr == target)
+                .map(|(id, _)| id.clone())
+        }
+    } else {
+        None
+    };
+
     // 根据协议和模式发送
     match (protocol, mode) {
         (Protocol::Tcp, SessionMode::Client) => {
@@ -447,7 +465,7 @@ pub async fn netcat_send_message(
             if input.broadcast.unwrap_or(false) {
                 log::info!("Netcat TCP 服务器模式广播");
                 tcp_server::broadcast_to_clients(&input.session_id, data.clone()).await?;
-            } else if let Some(ref client_id) = input.target_client {
+            } else if let Some(ref client_id) = resolved_tcp_target_client {
                 log::info!("Netcat TCP 服务器模式发送到客户端: {}", client_id);
                 tcp_server::send_to_client(&input.session_id, client_id, data.clone()).await?;
             } else {
@@ -463,9 +481,19 @@ pub async fn netcat_send_message(
     }
 
     // 尝试获取 client_addr（如果指定了目标客户端）
-    let client_addr = if let Some(ref cid) = input.target_client {
+    let message_client_id = resolved_tcp_target_client.or_else(|| input.target_client.clone());
+
+    let client_addr = if let Some(ref cid) = message_client_id {
         let s = session_state.read().await;
-        s.clients.get(cid).map(|c| c.addr.clone())
+        s.clients
+            .get(cid)
+            .map(|c| c.addr.clone())
+            .or_else(|| {
+                s.clients
+                    .values()
+                    .find(|client| client.addr == *cid)
+                    .map(|client| client.addr.clone())
+            })
     } else {
         None
     };
@@ -482,7 +510,7 @@ pub async fn netcat_send_message(
         format: input.format,
         size: data.len(),
         timestamp: now,
-        client_id: input.target_client,
+        client_id: message_client_id,
         client_addr,
     };
 
