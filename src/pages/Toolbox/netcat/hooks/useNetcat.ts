@@ -43,6 +43,7 @@ export function useNetcat() {
   const selectedSessionIdRef = useRef<string | null>(null);
   const sessionsRef = useRef<NetcatSession[]>([]);
   const clientsRef = useRef<ConnectedClient[]>([]);
+  const clientsBySessionRef = useRef<Record<string, ConnectedClient[]>>({});
 
   useEffect(() => { selectedSessionIdRef.current = selectedSessionId; }, [selectedSessionId]);
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
@@ -67,6 +68,8 @@ export function useNetcat() {
   const targetClientRef = useRef(targetClient);
   const broadcastRef = useRef(broadcast);
   const sendDataRef = useRef(sendData);
+  const targetClientBySessionRef = useRef<Record<string, string>>({});
+  const broadcastBySessionRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => { sendFormatRef.current = sendFormat; }, [sendFormat]);
   useEffect(() => { targetClientRef.current = targetClient; }, [targetClient]);
@@ -75,17 +78,30 @@ export function useNetcat() {
 
   useEffect(() => {
     if (!targetClient) return;
+    if (clients.length === 0) return;
+
+    const sessionId = selectedSessionIdRef.current;
+    const session = sessionsRef.current.find((s) => s.id === sessionId);
+    if (session?.mode !== "server") return;
 
     const targetStillConnected = clients.some(
       (client) => client.id === targetClient || client.addr === targetClient
     );
     if (!targetStillConnected) {
       targetClientRef.current = "";
+      if (sessionId) {
+        targetClientBySessionRef.current[sessionId] = "";
+      }
       setTargetClient("");
     }
   }, [clients, targetClient]);
 
   const handleTargetClientChange = useCallback((clientId: string) => {
+    const sessionId = selectedSessionIdRef.current;
+    if (sessionId) {
+      targetClientBySessionRef.current[sessionId] = clientId;
+      broadcastBySessionRef.current[sessionId] = false;
+    }
     targetClientRef.current = clientId;
     broadcastRef.current = false;
     setTargetClient(clientId);
@@ -93,6 +109,13 @@ export function useNetcat() {
   }, []);
 
   const handleBroadcastChange = useCallback((enabled: boolean) => {
+    const sessionId = selectedSessionIdRef.current;
+    if (sessionId) {
+      broadcastBySessionRef.current[sessionId] = enabled;
+      if (enabled) {
+        targetClientBySessionRef.current[sessionId] = "";
+      }
+    }
     broadcastRef.current = enabled;
     setBroadcast(enabled);
     if (enabled) {
@@ -138,6 +161,7 @@ export function useNetcat() {
   const loadClients = useCallback(async (sessionId: string) => {
     try {
       const list = await netcatGetClients(sessionId);
+      clientsBySessionRef.current[sessionId] = list;
       setClients(list);
     } catch (err) {
       console.error("加载客户端失败:", err);
@@ -177,13 +201,27 @@ export function useNetcat() {
       loadMessages(selectedSessionId);
       const session = sessions.find(s => s.id === selectedSessionId);
       if (session?.mode === "server") {
+        const restoredTarget = targetClientBySessionRef.current[selectedSessionId] || "";
+        const restoredBroadcast = broadcastBySessionRef.current[selectedSessionId] || false;
+        targetClientRef.current = restoredTarget;
+        broadcastRef.current = restoredBroadcast;
+        setTargetClient(restoredTarget);
+        setBroadcast(restoredBroadcast);
         setClients([]);
         loadClients(selectedSessionId);
       } else {
+        targetClientRef.current = "";
+        broadcastRef.current = false;
+        setTargetClient("");
+        setBroadcast(false);
         setClients([]);
       }
     } else if (!selectedSessionId) {
       prevSessionIdRef.current = null;
+      targetClientRef.current = "";
+      broadcastRef.current = false;
+      setTargetClient("");
+      setBroadcast(false);
       setMessages([]);
       setClients([]);
     }
@@ -231,6 +269,10 @@ export function useNetcat() {
             break;
 
           case "clientConnected":
+            clientsBySessionRef.current[data.sessionId] = [
+              ...(clientsBySessionRef.current[data.sessionId] || []).filter((c) => c.id !== data.client.id),
+              data.client,
+            ];
             if (data.sessionId === currentSessionId) {
               setClients((prev) => [...prev, data.client]);
             }
@@ -242,6 +284,9 @@ export function useNetcat() {
             break;
 
           case "clientDisconnected":
+            clientsBySessionRef.current[data.sessionId] = (
+              clientsBySessionRef.current[data.sessionId] || []
+            ).filter((c) => c.id !== data.clientId);
             if (data.sessionId === currentSessionId) {
               setClients((prev) => prev.filter((c) => c.id !== data.clientId));
             }
@@ -375,10 +420,13 @@ export function useNetcat() {
     const format = options?.forceFormat ?? sendFormatRef.current;
 
     if (isServerMode && finalTargetClient) {
-      const matchedClient = clientsRef.current.find(
-        (client) => client.id === finalTargetClient || client.addr === finalTargetClient
-      );
-      finalTargetClient = matchedClient?.id ?? "";
+      const sessionClients = clientsBySessionRef.current[targetSessionId] || clientsRef.current;
+      if (sessionClients.length > 0) {
+        const matchedClient = sessionClients.find(
+          (client) => client.id === finalTargetClient || client.addr === finalTargetClient
+        );
+        finalTargetClient = matchedClient?.id ?? "";
+      }
     }
 
     // 服务器模式下，如果没有指定目标且没有启用广播，默认启用广播
@@ -436,9 +484,20 @@ export function useNetcat() {
 
       const data = await getNextAutoSendDataRef.current(sessionId, config);
       if (data) {
-        const success = await handleSendMessageRef.current(data, sessionId, {
-          forceBroadcast: session.mode === "server" ? true : undefined,
-        });
+        const isCurrentSession = selectedSessionIdRef.current === sessionId;
+        const savedTargetClient = targetClientBySessionRef.current[sessionId] || "";
+        const savedBroadcast = broadcastBySessionRef.current[sessionId] || false;
+        const serverSendOptions = session.mode === "server" && !isCurrentSession
+          ? {
+              forceTargetClient: savedBroadcast ? "" : savedTargetClient,
+              forceBroadcast: savedBroadcast || !savedTargetClient,
+            }
+          : undefined;
+        const success = await handleSendMessageRef.current(
+          data,
+          sessionId,
+          serverSendOptions
+        );
         if (success) {
           setAutoSendCount((prev) => ({
             ...prev,
