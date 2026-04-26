@@ -12,7 +12,7 @@ use crate::storage::get_storage_config;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 /// 全局会话管理器
 pub struct NetcatState {
@@ -409,7 +409,7 @@ pub async fn netcat_update_auto_send(
 /// 发送消息
 #[tauri::command]
 pub async fn netcat_send_message(
-    _app: AppHandle,
+    app: AppHandle,
     state: State<'_, NetcatState>,
     input: SendMessageInput,
 ) -> Result<NetcatMessage, String> {
@@ -480,6 +480,23 @@ pub async fn netcat_send_message(
         }
     }
 
+    if protocol == Protocol::Tcp && mode == SessionMode::Server {
+        let mirror_targets = if input.broadcast.unwrap_or(false) {
+            None
+        } else {
+            resolved_tcp_target_client
+                .as_ref()
+                .map(|client_id| vec![client_id.clone()])
+        };
+        mirror_tcp_server_send_to_local_clients(
+            &app,
+            state.inner(),
+            &input.session_id,
+            mirror_targets.as_deref(),
+            &data,
+        ).await;
+    }
+
     // 尝试获取 client_addr（如果指定了目标客户端）
     let message_client_id = resolved_tcp_target_client.or_else(|| input.target_client.clone());
 
@@ -528,6 +545,122 @@ pub async fn netcat_send_message(
 
     log::info!("Netcat 消息发送成功");
     Ok(message)
+}
+
+async fn mirror_tcp_server_send_to_local_clients(
+    app: &AppHandle,
+    state: &NetcatState,
+    server_session_id: &str,
+    target_client_ids: Option<&[String]>,
+    data: &[u8],
+) {
+    let data_preview = bytes_to_display_string(data);
+    let now = current_timestamp();
+
+    let (server_addr, target_addrs, local_sessions) = {
+        let sessions = state.sessions.read().await;
+        let server_state = match sessions.get(server_session_id) {
+            Some(session_state) => session_state.clone(),
+            None => return,
+        };
+
+        let server = server_state.read().await;
+        let server_host = server.session.host.clone();
+        let server_port = server.session.port;
+        let server_addr = format!("{}:{}", server_host, server_port);
+        let target_addrs: Vec<String> = match target_client_ids {
+            Some(client_ids) => client_ids
+                .iter()
+                .filter_map(|client_id| server.clients.get(client_id).map(|client| client.addr.clone()))
+                .collect(),
+            None => server.clients.values().map(|client| client.addr.clone()).collect(),
+        };
+        drop(server);
+
+        if target_addrs.is_empty() {
+            return;
+        }
+
+        let mut local_sessions = Vec::new();
+        for (session_id, session_state) in sessions.iter() {
+            if session_id == server_session_id {
+                continue;
+            }
+
+            let session = session_state.read().await;
+            let is_matching_tcp_client = session.session.protocol == Protocol::Tcp
+                && session.session.mode == SessionMode::Client
+                && session.session.host == server_host
+                && session.session.port == server_port
+                && session
+                    .session
+                    .local_addr
+                    .as_ref()
+                    .map(|addr| target_addrs.iter().any(|target| target == addr))
+                    .unwrap_or(false);
+
+            if is_matching_tcp_client {
+                local_sessions.push(session_state.clone());
+            }
+        }
+
+        (server_addr, target_addrs, local_sessions)
+    };
+
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+
+    for session_state in local_sessions {
+        let (session_id, message) = {
+            let mut session = session_state.write().await;
+            let already_received = session.messages.iter().rev().take(20).any(|message| {
+                message.direction == MessageDirection::Received
+                    && message.data == data_preview
+                    && message.size == data.len()
+                    && message.client_addr.as_deref() == Some(server_addr.as_str())
+                    && message.timestamp >= now.saturating_sub(1000)
+            });
+
+            if already_received {
+                log::debug!(
+                    "Netcat TCP 本地客户端会话已通过真实读取收到数据，跳过同步: session={}",
+                    session.session.id
+                );
+                continue;
+            }
+
+            let message = NetcatMessage {
+                id: generate_id(),
+                session_id: session.session.id.clone(),
+                direction: MessageDirection::Received,
+                data: data_preview.clone(),
+                format: DataFormat::Text,
+                size: data.len(),
+                timestamp: now,
+                client_id: None,
+                client_addr: Some(server_addr.clone()),
+            };
+
+            session.session.bytes_received += data.len() as u64;
+            session.session.message_count += 1;
+            session.session.last_activity = Some(now);
+            session.messages.push(message.clone());
+
+            if session.messages.len() > 1000 {
+                session.messages.remove(0);
+            }
+
+            (session.session.id.clone(), message)
+        };
+
+        let _ = app.emit("netcat-event", NetcatEvent::MessageReceived {
+            session_id,
+            message,
+        });
+    }
+
+    if !target_addrs.is_empty() {
+        log::info!("Netcat TCP 服务端发送已同步到本地客户端会话: targets={:?}", target_addrs);
+    }
 }
 
 /// 获取所有会话
@@ -836,6 +969,19 @@ fn parse_input_data(data: &str, format: DataFormat) -> Result<Vec<u8>, String> {
             general_purpose::STANDARD
                 .decode(data.trim())
                 .map_err(|e| format!("Base64 解码失败: {}", e))
+        }
+    }
+}
+
+/// 将字节转换为显示字符串
+fn bytes_to_display_string(data: &[u8]) -> String {
+    match String::from_utf8(data.to_vec()) {
+        Ok(s) => s,
+        Err(_) => {
+            data.iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join(" ")
         }
     }
 }
