@@ -24,9 +24,13 @@ import {
   gitAdd,
   gitUnstage,
   gitDiscardFiles,
-  gitStashPush,
-  gitStashPop,
   gitFetch,
+  gitRevertCommit,
+  gitCherryPick,
+  getConflictFileContent,
+  gitCheckoutConflictVersion,
+  gitMarkResolved,
+  type ConflictFileContent,
 } from "@/services/git";
 import { openInEditor, openInExplorer, openInTerminal, updateProject } from "@/services/db";
 import { getEditorForProject, getEditorConfigForProject, getEditorIcon } from "@/utils/editor";
@@ -56,6 +60,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [showAddRemoteModal, setShowAddRemoteModal] = useState(false);
+  const [conflictPreview, setConflictPreview] = useState<ConflictFileContent | null>(null);
   const [showEditorMenu, setShowEditorMenu] = useState<{ x: number; y: number } | null>(null);
   const [showTerminalMenu, setShowTerminalMenu] = useState<{ x: number; y: number } | null>(null);
   const [readmeContent, setReadmeContent] = useState("");
@@ -280,10 +285,12 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   }
 
   async function handleStageFiles(files: string[]) {
+    const label = files.length === 1 ? files[0] : `${files.length} 个文件`;
+    if (!confirm(`确认执行 git add 吗？\n\n目标：${label}\n\n说明：git add 会把文件加入暂存区，表示这些改动准备进入下一次 commit。不会创建提交，也不会推送到远程。`)) return;
     try {
       await gitAdd(project.path, files);
       await refreshGitState();
-      showToast("success", "已暂存", files.length === 1 ? files[0] : `已暂存 ${files.length} 个文件`);
+      showToast("success", "已暂存", label);
     } catch (error) {
       console.error("Failed to stage files:", error);
       showToast("error", "暂存失败", String(error));
@@ -291,10 +298,12 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   }
 
   async function handleUnstageFiles(files: string[]) {
+    const label = files.length === 1 ? files[0] : `${files.length} 个文件`;
+    if (!confirm(`确认执行 git restore --staged 吗？\n\n目标：${label}\n\n说明：这会把文件从暂存区移回工作区。文件内容不会丢，只是不再进入下一次 commit。`)) return;
     try {
       await gitUnstage(project.path, files);
       await refreshGitState();
-      showToast("success", "已取消暂存", files.length === 1 ? files[0] : `已取消暂存 ${files.length} 个文件`);
+      showToast("success", "已取消暂存", label);
     } catch (error) {
       console.error("Failed to unstage files:", error);
       showToast("error", "取消暂存失败", String(error));
@@ -303,7 +312,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
 
   async function handleDiscardFiles(files: string[], includeUntracked: boolean) {
     const label = files.length === 1 ? files[0] : `${files.length} 个文件`;
-    if (!confirm(`确定要丢弃 ${label} 的本地变更吗？此操作不可撤销。`)) return;
+    if (!confirm(`确认执行 git restore / git clean 吗？\n\n目标：${label}\n\n说明：这会丢弃本地未提交改动。已跟踪文件会恢复到 Git 记录中的版本；未跟踪文件会被删除。这个操作通常无法撤销。`)) return;
 
     try {
       await gitDiscardFiles(project.path, files, includeUntracked);
@@ -315,38 +324,76 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
     }
   }
 
-  async function handleStashPush() {
-    try {
-      await gitStashPush(project.path, `CodeShelf: ${project.name}`);
-      await refreshGitState();
-      showToast("success", "已储藏变更", "当前工作区变更已保存到 stash");
-    } catch (error) {
-      console.error("Failed to stash changes:", error);
-      showToast("error", "储藏失败", String(error));
-    }
-  }
-
-  async function handleStashPop() {
-    if (!confirm("确定要恢复最近一次 stash 吗？如果发生冲突，需要手动处理。")) return;
-
-    try {
-      await gitStashPop(project.path);
-      await refreshGitState();
-      showToast("success", "已恢复储藏", "最近一次 stash 已应用到工作区");
-    } catch (error) {
-      console.error("Failed to pop stash:", error);
-      showToast("error", "恢复储藏失败", String(error));
-    }
-  }
-
   async function handleFetchRemote() {
+    if (!confirm(`确认执行 git fetch 吗？\n\n说明：git fetch 只更新远程分支信息，不会修改当前工作区文件，也不会合并代码。`)) return;
     try {
       await gitFetch(project.path, currentRemote || undefined);
       await refreshGitState();
-      showToast("success", "获取成功", currentRemote ? `已获取 ${currentRemote}` : "已获取所有远程仓库");
+      showToast("success", "git fetch 完成", currentRemote ? `已 fetch ${currentRemote}` : "已 fetch 所有远程仓库");
     } catch (error) {
       console.error("Failed to fetch remote:", error);
-      showToast("error", "获取失败", String(error));
+      showToast("error", "git fetch 失败", String(error));
+    }
+  }
+
+  async function handleCopyCommitMessage(message: string) {
+    await navigator.clipboard.writeText(message);
+    showToast("success", "已复制", "提交说明已复制到剪贴板");
+  }
+
+  async function handleRevertCommit(commit: CommitInfo) {
+    if (!confirm(`确认执行 git revert 吗？\n\n提交：${commit.shortHash} ${commit.message}\n\n说明：git revert 会新增一个反向提交，用来撤销这个提交造成的改动。它不会删除历史；如果有冲突，需要手动解决。`)) return;
+    try {
+      await gitRevertCommit(project.path, commit.hash);
+      await refreshGitState();
+      showToast("success", "git revert 完成", commit.shortHash);
+    } catch (error) {
+      showToast("error", "git revert 失败", String(error));
+    }
+  }
+
+  async function handleCherryPickCommit(commit: CommitInfo) {
+    if (!confirm(`确认执行 git cherry-pick 吗？\n\n提交：${commit.shortHash} ${commit.message}\n\n说明：git cherry-pick 会把这个提交的改动复制到当前分支，并生成一个新提交。如果有冲突，需要手动解决。`)) return;
+    try {
+      await gitCherryPick(project.path, commit.hash);
+      await refreshGitState();
+      showToast("success", "git cherry-pick 完成", commit.shortHash);
+    } catch (error) {
+      showToast("error", "git cherry-pick 失败", String(error));
+    }
+  }
+
+  async function handlePreviewConflict(file: string) {
+    try {
+      const content = await getConflictFileContent(project.path, file);
+      setConflictPreview(content);
+    } catch (error) {
+      showToast("error", "读取冲突失败", String(error));
+    }
+  }
+
+  async function handleUseConflictVersion(file: string, version: "ours" | "theirs") {
+    const label = version === "ours" ? "当前分支版本" : "传入分支版本";
+    if (!confirm(`确认执行 git checkout --${version} 吗？\n\n文件：${file}\n采用：${label}\n\n说明：这个文件会直接使用${label}，另一边的改动会被丢弃。随后会执行 git add，把该文件标记为冲突已解决。`)) return;
+    try {
+      await gitCheckoutConflictVersion(project.path, file, version);
+      setConflictPreview(null);
+      await refreshGitState();
+      showToast("success", "冲突已处理", `已采用${label}`);
+    } catch (error) {
+      showToast("error", "处理冲突失败", String(error));
+    }
+  }
+
+  async function handleMarkResolved(file: string) {
+    if (!confirm(`确认执行 git add 标记冲突已解决吗？\n\n文件：${file}\n\n说明：只有当你已经手动编辑好冲突内容后才点这个。Git 会把当前文件内容加入暂存区，表示冲突已处理。`)) return;
+    try {
+      await gitMarkResolved(project.path, file);
+      setConflictPreview(null);
+      await refreshGitState();
+      showToast("success", "已标记解决", file);
+    } catch (error) {
+      showToast("error", "标记解决失败", String(error));
     }
   }
 
@@ -626,8 +673,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
             onStageFiles={handleStageFiles}
             onUnstageFiles={handleUnstageFiles}
             onDiscardFiles={handleDiscardFiles}
-            onStashPush={handleStashPush}
-            onStashPop={handleStashPop}
+            onPreviewConflict={handlePreviewConflict}
           />
 
           {/* 快捷操作 - 固定在侧边栏底部 */}
@@ -740,6 +786,9 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
           onLoadMore={() => setHistoryLimit((limit) => limit + 20)}
           onToggleCommit={(hash) => setExpandedCommit(expandedCommit === hash ? null : hash)}
           onCopyHash={copyHash}
+          onCopyMessage={handleCopyCommitMessage}
+          onRevertCommit={handleRevertCommit}
+          onCherryPickCommit={handleCherryPickCommit}
         />
       </div>
 
@@ -764,6 +813,44 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
             ))}
           </div>
         </footer>
+      )}
+
+      {conflictPreview && (
+        <div className="modal-overlay animate-fade-in">
+          <div className="modal-content animate-scale-in max-w-6xl">
+            <div className="modal-header">
+              <div>
+                <h3 className="modal-title">冲突对比</h3>
+                <p className="modal-subtitle">{conflictPreview.file}</p>
+              </div>
+              <button onClick={() => setConflictPreview(null)} className="modal-close-btn">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="conflict-compare-grid">
+                <ConflictColumn title="共同祖先" content={conflictPreview.base} />
+                <ConflictColumn title="当前分支版本" content={conflictPreview.current} />
+                <ConflictColumn title="传入分支版本" content={conflictPreview.incoming} />
+              </div>
+              <div className="conflict-worktree-panel">
+                <div className="commit-files-title">当前工作区文件</div>
+                <pre>{conflictPreview.worktree || "无法读取当前文件内容"}</pre>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="modal-btn modal-btn-secondary" onClick={() => handleUseConflictVersion(conflictPreview.file, "ours")}>
+                采用当前分支版本
+              </button>
+              <button className="modal-btn modal-btn-secondary" onClick={() => handleUseConflictVersion(conflictPreview.file, "theirs")}>
+                采用传入分支版本
+              </button>
+              <button className="modal-btn modal-btn-primary" onClick={() => handleMarkResolved(conflictPreview.file)}>
+                已手动解决，标记完成
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Category Modal */}
@@ -896,6 +983,15 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
           onClose={() => setShowTerminalMenu(null)}
         />
       )}
+    </div>
+  );
+}
+
+function ConflictColumn({ title, content }: { title: string; content?: string | null }) {
+  return (
+    <div className="conflict-column">
+      <div className="commit-files-title">{title}</div>
+      <pre>{content || "此版本不存在或无法读取"}</pre>
     </div>
   );
 }

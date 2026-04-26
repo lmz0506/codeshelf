@@ -9,6 +9,8 @@ import {
   FileText,
   Files,
   Mail,
+  GitPullRequestArrow,
+  RotateCcw,
   User,
 } from "lucide-react";
 import type { CommitFileChange, CommitInfo, RemoteInfo } from "@/types";
@@ -27,6 +29,9 @@ interface CommitCardProps {
   copiedHash: string | null;
   onToggle: () => void;
   onCopyHash: (hash: string) => void;
+  onCopyMessage: (message: string) => void;
+  onRevertCommit: (commit: CommitInfo) => void;
+  onCherryPickCommit: (commit: CommitInfo) => void;
 }
 
 export function CommitCard({
@@ -40,6 +45,9 @@ export function CommitCard({
   copiedHash,
   onToggle,
   onCopyHash,
+  onCopyMessage,
+  onRevertCommit,
+  onCherryPickCommit,
 }: CommitCardProps) {
   const [files, setFiles] = useState<CommitFileChange[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -192,6 +200,36 @@ export function CommitCard({
                     在远程查看
                   </button>
                 )}
+                <button
+                  className="commit-action-btn"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCopyMessage(commit.message);
+                  }}
+                >
+                  <Copy size={12} />
+                  复制提交说明
+                </button>
+                <button
+                  className="commit-action-btn"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRevertCommit(commit);
+                  }}
+                >
+                  <RotateCcw size={12} />
+                  revert
+                </button>
+                <button
+                  className="commit-action-btn"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCherryPickCommit(commit);
+                  }}
+                >
+                  <GitPullRequestArrow size={12} />
+                  cherry-pick
+                </button>
               </div>
             </div>
           )}

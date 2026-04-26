@@ -8,6 +8,14 @@ import type {
   GitRepo,
 } from "@/types";
 
+export interface ConflictFileContent {
+  file: string;
+  base?: string;
+  current?: string;
+  incoming?: string;
+  worktree?: string;
+}
+
 export async function scanDirectory(path: string, depth?: number): Promise<GitRepo[]> {
   return invoke("scan_directory", { path, depth });
 }
@@ -157,6 +165,34 @@ export async function gitStashPush(
 
 export async function gitStashPop(path: string): Promise<string> {
   return invoke("git_stash_pop", { path });
+}
+
+export async function gitStashApply(path: string): Promise<string> {
+  return invoke("git_stash_apply", { path });
+}
+
+export async function gitRevertCommit(path: string, commitHash: string): Promise<string> {
+  return invoke("git_revert_commit", { path, commitHash });
+}
+
+export async function gitCherryPick(path: string, commitHash: string): Promise<string> {
+  return invoke("git_cherry_pick", { path, commitHash });
+}
+
+export async function getConflictFileContent(path: string, file: string): Promise<ConflictFileContent> {
+  return invoke("get_conflict_file_content", { path, file });
+}
+
+export async function gitCheckoutConflictVersion(
+  path: string,
+  file: string,
+  version: "ours" | "theirs"
+): Promise<string> {
+  return invoke("git_checkout_conflict_version", { path, file, version });
+}
+
+export async function gitMarkResolved(path: string, file: string): Promise<string> {
+  return invoke("git_mark_resolved", { path, file });
 }
 
 export async function gitCommit(

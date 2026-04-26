@@ -10,7 +10,8 @@ export function GitStatusSummary({ gitStatus, currentRemote }: GitStatusSummaryP
   const staged = gitStatus?.staged.length || 0;
   const unstaged = gitStatus?.unstaged.length || 0;
   const untracked = gitStatus?.untracked.length || 0;
-  const changes = staged + unstaged + untracked;
+  const conflicted = gitStatus?.conflicted.length || 0;
+  const changes = staged + unstaged + untracked + conflicted;
 
   return (
     <div className="git-summary-strip">
@@ -25,7 +26,7 @@ export function GitStatusSummary({ gitStatus, currentRemote }: GitStatusSummaryP
         <Layers3 size={15} />
         <div>
           <span className="git-summary-label">工作区</span>
-          <strong>{changes > 0 ? `${changes} 个变更` : "干净"}</strong>
+          <strong>{conflicted > 0 ? `${conflicted} 个冲突` : changes > 0 ? `${changes} 个变更` : "干净"}</strong>
         </div>
       </div>
       <div className={`git-summary-item ${(gitStatus?.ahead || 0) > 0 ? "git-summary-info" : ""}`}>

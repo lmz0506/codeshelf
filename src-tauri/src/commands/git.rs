@@ -18,8 +18,18 @@ pub struct GitStatus {
     pub staged: Vec<String>,
     pub unstaged: Vec<String>,
     pub untracked: Vec<String>,
+    pub conflicted: Vec<String>,
     pub ahead: u32,
     pub behind: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConflictFileContent {
+    pub file: String,
+    pub base: Option<String>,
+    pub current: Option<String>,
+    pub incoming: Option<String>,
+    pub worktree: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,6 +262,7 @@ pub async fn get_git_status(path: String) -> Result<GitStatus, String> {
     let mut staged = Vec::new();
     let mut unstaged = Vec::new();
     let mut untracked = Vec::new();
+    let mut conflicted = Vec::new();
 
     for line in status_output.lines() {
         if line.len() < 3 {
@@ -263,6 +274,11 @@ pub async fn get_git_status(path: String) -> Result<GitStatus, String> {
         let file = unquote_git_path(file_part);
 
         if file.is_empty() {
+            continue;
+        }
+
+        if status.contains('U') || matches!(status, "AA" | "DD") {
+            conflicted.push(file);
             continue;
         }
 
@@ -286,10 +302,11 @@ pub async fn get_git_status(path: String) -> Result<GitStatus, String> {
 
     Ok(GitStatus {
         branch,
-        is_clean: staged.is_empty() && unstaged.is_empty() && untracked.is_empty(),
+        is_clean: staged.is_empty() && unstaged.is_empty() && untracked.is_empty() && conflicted.is_empty(),
         staged,
         unstaged,
         untracked,
+        conflicted,
         ahead,
         behind,
     })
@@ -1045,6 +1062,52 @@ pub async fn git_stash_push(path: String, message: Option<String>) -> Result<Str
 #[tauri::command]
 pub async fn git_stash_pop(path: String) -> Result<String, String> {
     run_git_command(&path, &["stash", "pop"])
+}
+
+#[tauri::command]
+pub async fn git_stash_apply(path: String) -> Result<String, String> {
+    run_git_command(&path, &["stash", "apply"])
+}
+
+#[tauri::command]
+pub async fn git_revert_commit(path: String, commit_hash: String) -> Result<String, String> {
+    run_git_command(&path, &["revert", "--no-edit", &commit_hash])
+}
+
+#[tauri::command]
+pub async fn git_cherry_pick(path: String, commit_hash: String) -> Result<String, String> {
+    run_git_command(&path, &["cherry-pick", &commit_hash])
+}
+
+fn git_show_stage(path: &str, stage: &str, file: &str) -> Option<String> {
+    run_git_command(path, &["show", &format!(":{}:{}", stage, file)]).ok()
+}
+
+#[tauri::command]
+pub async fn get_conflict_file_content(path: String, file: String) -> Result<ConflictFileContent, String> {
+    let worktree = std::fs::read_to_string(std::path::Path::new(&path).join(&file)).ok();
+    Ok(ConflictFileContent {
+        file: file.clone(),
+        base: git_show_stage(&path, "1", &file),
+        current: git_show_stage(&path, "2", &file),
+        incoming: git_show_stage(&path, "3", &file),
+        worktree,
+    })
+}
+
+#[tauri::command]
+pub async fn git_checkout_conflict_version(path: String, file: String, version: String) -> Result<String, String> {
+    match version.as_str() {
+        "ours" => run_git_command(&path, &["checkout", "--ours", "--", &file])?,
+        "theirs" => run_git_command(&path, &["checkout", "--theirs", "--", &file])?,
+        _ => return Err("version 必须是 ours 或 theirs".to_string()),
+    };
+    run_git_command(&path, &["add", "--", &file])
+}
+
+#[tauri::command]
+pub async fn git_mark_resolved(path: String, file: String) -> Result<String, String> {
+    run_git_command(&path, &["add", "--", &file])
 }
 
 #[tauri::command]

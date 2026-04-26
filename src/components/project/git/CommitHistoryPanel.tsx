@@ -21,6 +21,9 @@ interface CommitHistoryPanelProps {
   onLoadMore: () => void;
   onToggleCommit: (hash: string) => void;
   onCopyHash: (hash: string) => void;
+  onCopyMessage: (message: string) => void;
+  onRevertCommit: (commit: CommitInfo) => void;
+  onCherryPickCommit: (commit: CommitInfo) => void;
 }
 
 export function CommitHistoryPanel({
@@ -39,6 +42,9 @@ export function CommitHistoryPanel({
   onLoadMore,
   onToggleCommit,
   onCopyHash,
+  onCopyMessage,
+  onRevertCommit,
+  onCherryPickCommit,
 }: CommitHistoryPanelProps) {
   const visibleCommits = useMemo(() => commits, [commits]);
 
@@ -93,6 +99,9 @@ export function CommitHistoryPanel({
                 copiedHash={copiedHash}
                 onToggle={() => onToggleCommit(commit.hash)}
                 onCopyHash={onCopyHash}
+                onCopyMessage={onCopyMessage}
+                onRevertCommit={onRevertCommit}
+                onCherryPickCommit={onCherryPickCommit}
               />
             ))}
             {!searchQuery.trim() && visibleCommits.length >= historyLimit && (
