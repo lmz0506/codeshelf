@@ -2,12 +2,17 @@ import { useMemo } from "react";
 import { ExternalLink, Server } from "lucide-react";
 import { showToast } from "@/components/ui";
 import {
+  ClientAuthGuide,
   ConfigBlock,
   GatewayListenerForm,
   GatewayStatusCard,
   KeyManagerSection,
+  KeyUsageExamples,
   SecurityNotice,
-  configForKey,
+  codexTomlHeader,
+  codexTomlQuery,
+  configForKeyHeader,
+  configForKeyQuery,
   isActiveKey,
   useMcpGateway,
 } from "./mcpGateway";
@@ -16,7 +21,8 @@ import {
  * MCP Gateway 设置页面（顶层编排）：
  * - 业务状态由 useMcpGateway hook 管理；本组件只负责把数据派发给各小组件，
  *   并在启停时做必要的二次确认（鉴权风险、活动密钥被切断等）。
- * - 各 UI 块都拆到 ./mcpGateway 子目录，便于独立维护与测试。
+ * - 默认所有展示的客户端配置都采用「Authorization: Bearer」标头鉴权，
+ *   兼容性最好；查询参数版本仅作为兜底，给不支持自定义标头的客户端使用。
  */
 export function McpGatewaySettings() {
   const {
@@ -25,11 +31,16 @@ export function McpGatewaySettings() {
   } = useMcpGateway();
 
   const activeKeys = useMemo(() => keys.filter(isActiveKey), [keys]);
-  const exampleKey = activeKeys[0]?.key || "YOUR_MCP_KEY";
+  const firstActiveKey = activeKeys[0]?.key || null;
+  const exampleKey = firstActiveKey || "<YOUR_MCP_KEY>";
   const httpUrl = status?.url || `http://${host || "127.0.0.1"}:${port || "8787"}/mcp`;
-  const queryUrl = `${httpUrl}?key=${encodeURIComponent(exampleKey)}`;
-  const httpConfig = useMemo(() => configForKey(httpUrl, exampleKey), [httpUrl, exampleKey]);
-  const codexToml = `[mcp_servers.codeshelf-api]\nurl = "${queryUrl}"`;
+
+  // 标头鉴权（推荐）
+  const headerJson = useMemo(() => configForKeyHeader(httpUrl, exampleKey), [httpUrl, exampleKey]);
+  const headerToml = useMemo(() => codexTomlHeader(httpUrl, exampleKey), [httpUrl, exampleKey]);
+  // 查询参数鉴权（兼容用）
+  const queryJson = useMemo(() => configForKeyQuery(httpUrl, exampleKey), [httpUrl, exampleKey]);
+  const queryToml = useMemo(() => codexTomlQuery(httpUrl, exampleKey), [httpUrl, exampleKey]);
 
   async function copy(text: string, label: string) {
     try {
@@ -68,6 +79,8 @@ export function McpGatewaySettings() {
         </h3>
         <p className="text-xs text-gray-500 mt-1">
           内置在 CodeShelf 面板里的 MCP Gateway，当前传输模式为流式 HTTP。端口和访问密钥都在这里配置。
+          密钥格式为 <code className="font-mono px-1 rounded bg-gray-100">cs_mcp_v1_&lt;random&gt;_&lt;checksum&gt;</code>，
+          复制粘贴时若校验码不匹配，列表里会标红提醒。
         </p>
       </div>
 
@@ -99,17 +112,32 @@ export function McpGatewaySettings() {
         onCopy={copy}
       />
 
-      <ConfigBlock
-        title="Codex 流式 HTTP 配置"
-        value={codexToml}
-        onCopy={() => copy(codexToml, "Codex 配置")}
-      />
+      <ClientAuthGuide />
 
-      <ConfigBlock
-        title="Claude Code / Kimi / GitHub Copilot / IDE 流式 HTTP 配置"
-        value={httpConfig}
-        onCopy={() => copy(httpConfig, "HTTP 配置")}
-      />
+      <KeyUsageExamples httpUrl={httpUrl} activeKey={firstActiveKey} onCopy={copy} />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <ConfigBlock
+          title="Claude Code / Cline / Cursor / IDE（标头鉴权 ✅ 推荐）"
+          value={headerJson}
+          onCopy={() => copy(headerJson, "JSON 配置")}
+        />
+        <ConfigBlock
+          title="Codex TOML（标头鉴权 ✅ 推荐）"
+          value={headerToml}
+          onCopy={() => copy(headerToml, "Codex TOML 配置")}
+        />
+        <ConfigBlock
+          title="JSON（查询参数鉴权 — 仅兼容用）"
+          value={queryJson}
+          onCopy={() => copy(queryJson, "JSON 配置")}
+        />
+        <ConfigBlock
+          title="Codex TOML（查询参数鉴权 — 仅兼容用）"
+          value={queryToml}
+          onCopy={() => copy(queryToml, "Codex TOML 配置")}
+        />
+      </div>
 
       {status?.running && (
         <a
