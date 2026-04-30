@@ -188,6 +188,13 @@ pub fn run() {
                 app.manage(std::sync::Arc::new(tokio::sync::RwLock::new(handle)));
             }
 
+            // 按设置启动内置 MCP Gateway（作为 CodeShelf 面板的一部分）
+            tauri::async_runtime::spawn(async {
+                if let Err(e) = mcp_gateway::apply_settings_from_storage().await {
+                    eprintln!("MCP Gateway 初始化失败: {}", e);
+                }
+            });
+
             // 初始化 macOS/Linux 全局快捷键插件
             #[cfg(not(target_os = "windows"))]
             {
@@ -443,8 +450,6 @@ pub fn run() {
             api_chat::fetch_api_document_url,
             // MCP gateway
             mcp_gateway::mcp_gateway_status,
-            mcp_gateway::mcp_gateway_start,
-            mcp_gateway::mcp_gateway_stop,
             // Chat tools / tasks
             tools::chat_list_tools,
             tools::chat_execute_tool,

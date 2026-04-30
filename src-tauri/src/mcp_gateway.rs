@@ -11,26 +11,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::sync::{oneshot, Mutex};
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tower_http::cors::CorsLayer;
 
 use crate::commands::api_chat::{execute_api_endpoint, list_api_endpoints};
-use crate::storage::{self, ApiEndpoint};
+use crate::storage::{self, ApiEndpoint, AppSettings};
 
 const DEFAULT_PROTOCOL_VERSION: &str = "2024-11-05";
 
 static APP_HTTP_GATEWAY: Lazy<Mutex<Option<AppHttpGateway>>> = Lazy::new(|| Mutex::new(None));
-
-#[derive(Debug, Clone)]
-pub enum Transport {
-    Stdio,
-    Http { host: String, port: u16 },
-}
-
-#[derive(Debug, Clone)]
-pub struct GatewayConfig {
-    pub transport: Transport,
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +28,6 @@ pub struct McpGatewayStatus {
     pub host: Option<String>,
     pub port: Option<u16>,
     pub started_at: Option<String>,
-    pub binary_path: Option<String>,
 }
 
 struct AppHttpGateway {
@@ -88,134 +75,8 @@ struct ToolsCallParams {
     arguments: Option<Value>,
 }
 
-pub async fn run_cli() -> Result<(), String> {
-    let config = parse_args(std::env::args().skip(1).collect())?;
-    run(config).await
-}
-
-pub async fn run(config: GatewayConfig) -> Result<(), String> {
-    storage::init_storage()?;
-
-    match config.transport {
-        Transport::Stdio => run_stdio().await,
-        Transport::Http { host, port } => run_http(host, port).await,
-    }
-}
-
-fn parse_args(args: Vec<String>) -> Result<GatewayConfig, String> {
-    let mut transport = "stdio".to_string();
-    let mut host = "127.0.0.1".to_string();
-    let mut port: u16 = 8787;
-    let mut i = 0;
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--transport" => {
-                i += 1;
-                transport = args
-                    .get(i)
-                    .ok_or_else(|| "--transport requires a value".to_string())?
-                    .clone();
-            }
-            "--host" => {
-                i += 1;
-                host = args
-                    .get(i)
-                    .ok_or_else(|| "--host requires a value".to_string())?
-                    .clone();
-            }
-            "--port" => {
-                i += 1;
-                let raw = args
-                    .get(i)
-                    .ok_or_else(|| "--port requires a value".to_string())?;
-                port = raw
-                    .parse::<u16>()
-                    .map_err(|e| format!("invalid --port value: {}", e))?;
-            }
-            "--help" | "-h" => {
-                return Err(help_text());
-            }
-            other => return Err(format!("unknown argument: {}\n{}", other, help_text())),
-        }
-        i += 1;
-    }
-
-    let transport = match transport.as_str() {
-        "stdio" => Transport::Stdio,
-        "http" => Transport::Http { host, port },
-        other => return Err(format!("unsupported transport: {}", other)),
-    };
-
-    Ok(GatewayConfig { transport })
-}
-
-fn help_text() -> String {
-    "Usage: codeshelf-mcp [--transport stdio|http] [--host 127.0.0.1] [--port 8787]"
-        .to_string()
-}
-
-async fn run_stdio() -> Result<(), String> {
-    let stdin = BufReader::new(io::stdin());
-    let mut lines = stdin.lines();
-    let mut stdout = io::stdout();
-
-    while let Some(line) = lines
-        .next_line()
-        .await
-        .map_err(|e| format!("stdin read failed: {}", e))?
-    {
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let response = match serde_json::from_str::<JsonRpcRequest>(&line) {
-            Ok(req) => handle_json_rpc(req).await,
-            Err(e) => Some(error_response(
-                Value::Null,
-                -32700,
-                "Parse error",
-                Some(json!({ "message": e.to_string() })),
-            )),
-        };
-
-        if let Some(resp) = response {
-            let payload = serde_json::to_string(&resp)
-                .map_err(|e| format!("response serialization failed: {}", e))?;
-            stdout
-                .write_all(payload.as_bytes())
-                .await
-                .map_err(|e| format!("stdout write failed: {}", e))?;
-            stdout
-                .write_all(b"\n")
-                .await
-                .map_err(|e| format!("stdout write failed: {}", e))?;
-            stdout
-                .flush()
-                .await
-                .map_err(|e| format!("stdout flush failed: {}", e))?;
-        }
-    }
-
-    Ok(())
-}
-
 #[derive(Clone)]
 struct HttpState;
-
-async fn run_http(host: String, port: u16) -> Result<(), String> {
-    let addr: SocketAddr = format!("{}:{}", host, port)
-        .parse()
-        .map_err(|e| format!("invalid HTTP bind address: {}", e))?;
-
-    eprintln!("CodeShelf MCP gateway listening on http://{}", addr);
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .map_err(|e| format!("HTTP bind failed: {}", e))?;
-    axum::serve(listener, http_router())
-        .await
-        .map_err(|e| format!("HTTP server failed: {}", e))
-}
 
 fn http_router() -> Router {
     let cors = CorsLayer::new()
@@ -237,12 +98,21 @@ pub async fn mcp_gateway_status() -> Result<McpGatewayStatus, String> {
     Ok(status_from_gateway(guard.as_ref()))
 }
 
-#[tauri::command]
-pub async fn mcp_gateway_start(host: Option<String>, port: Option<u16>) -> Result<McpGatewayStatus, String> {
-    storage::init_storage()?;
+pub async fn apply_settings_from_storage() -> Result<McpGatewayStatus, String> {
+    let settings = crate::commands::settings::get_app_settings().await?;
+    apply_settings(&settings).await
+}
 
-    let host = host.unwrap_or_else(|| "127.0.0.1".to_string());
-    let port = port.unwrap_or(8787);
+pub async fn apply_settings(settings: &AppSettings) -> Result<McpGatewayStatus, String> {
+    if settings.mcp_gateway_enabled {
+        start_gateway(settings.mcp_gateway_host.clone(), settings.mcp_gateway_port).await
+    } else {
+        stop_gateway().await
+    }
+}
+
+async fn start_gateway(host: String, port: u16) -> Result<McpGatewayStatus, String> {
+    storage::init_storage()?;
     let addr: SocketAddr = format!("{}:{}", host, port)
         .parse()
         .map_err(|e| format!("invalid HTTP bind address: {}", e))?;
@@ -285,8 +155,7 @@ pub async fn mcp_gateway_start(host: Option<String>, port: Option<u16>) -> Resul
     Ok(status_from_gateway(guard.as_ref()))
 }
 
-#[tauri::command]
-pub async fn mcp_gateway_stop() -> Result<McpGatewayStatus, String> {
+async fn stop_gateway() -> Result<McpGatewayStatus, String> {
     let mut guard = APP_HTTP_GATEWAY.lock().await;
     if let Some(mut gateway) = guard.take() {
         if let Some(tx) = gateway.shutdown.take() {
@@ -306,7 +175,6 @@ fn status_from_gateway(gateway: Option<&AppHttpGateway>) -> McpGatewayStatus {
                 host: Some(gateway.host.clone()),
                 port: Some(gateway.port),
                 started_at: Some(gateway.started_at.to_rfc3339()),
-                binary_path: default_binary_path(),
             };
         }
     }
@@ -317,20 +185,7 @@ fn status_from_gateway(gateway: Option<&AppHttpGateway>) -> McpGatewayStatus {
         host: None,
         port: None,
         started_at: None,
-        binary_path: default_binary_path(),
     }
-}
-
-fn default_binary_path() -> Option<String> {
-    let exe_name = if cfg!(target_os = "windows") {
-        "codeshelf-mcp.exe"
-    } else {
-        "codeshelf-mcp"
-    };
-    std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(|parent| parent.join(exe_name)))
-        .map(|path| path.to_string_lossy().to_string())
 }
 
 async fn http_index() -> impl IntoResponse {
@@ -343,14 +198,6 @@ async fn http_index() -> impl IntoResponse {
             "methods": ["initialize", "tools/list", "tools/call"]
         },
         "configs": {
-            "stdio": {
-                "mcpServers": {
-                    "codeshelf-api": {
-                        "command": default_binary_path().unwrap_or_else(|| "codeshelf-mcp".to_string()),
-                        "args": ["--transport", "stdio"]
-                    }
-                }
-            },
             "http": {
                 "mcpServers": {
                     "codeshelf-api": {

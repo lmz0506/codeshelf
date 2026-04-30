@@ -73,10 +73,27 @@ pub struct AppSettings {
     /// 客户端标识，默认 codeshelf-<hostname>
     #[serde(default)]
     pub bridge_client_id: Option<String>,
+    /// 是否启用内置 MCP HTTP 网关
+    #[serde(default)]
+    pub mcp_gateway_enabled: bool,
+    /// MCP HTTP 网关监听地址
+    #[serde(default = "default_mcp_gateway_host")]
+    pub mcp_gateway_host: String,
+    /// MCP HTTP 网关监听端口
+    #[serde(default = "default_mcp_gateway_port")]
+    pub mcp_gateway_port: u16,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_mcp_gateway_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_mcp_gateway_port() -> u16 {
+    8787
 }
 
 impl Default for AppSettings {
@@ -93,6 +110,9 @@ impl Default for AppSettings {
             bridge_provider_id: None,
             bridge_model_id: None,
             bridge_client_id: None,
+            mcp_gateway_enabled: false,
+            mcp_gateway_host: default_mcp_gateway_host(),
+            mcp_gateway_port: default_mcp_gateway_port(),
         }
     }
 }

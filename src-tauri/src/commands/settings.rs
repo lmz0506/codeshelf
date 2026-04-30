@@ -282,6 +282,9 @@ pub struct AppSettingsInput {
     pub bridge_provider_id: Option<String>,
     pub bridge_model_id: Option<String>,
     pub bridge_client_id: Option<String>,
+    pub mcp_gateway_enabled: Option<bool>,
+    pub mcp_gateway_host: Option<String>,
+    pub mcp_gateway_port: Option<u16>,
 }
 
 #[tauri::command]
@@ -315,6 +318,9 @@ pub async fn save_app_settings(app: tauri::AppHandle, input: AppSettingsInput) -
     if let Some(v) = input.bridge_provider_id { settings.bridge_provider_id = Some(v); }
     if let Some(v) = input.bridge_model_id { settings.bridge_model_id = Some(v); }
     if let Some(v) = input.bridge_client_id { settings.bridge_client_id = Some(v); }
+    if let Some(v) = input.mcp_gateway_enabled { settings.mcp_gateway_enabled = v; }
+    if let Some(v) = input.mcp_gateway_host { settings.mcp_gateway_host = v; }
+    if let Some(v) = input.mcp_gateway_port { settings.mcp_gateway_port = v; }
 
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -327,6 +333,7 @@ pub async fn save_app_settings(app: tauri::AppHandle, input: AppSettingsInput) -
 
     // 通知聊天桥接 poller 重新加载配置
     super::chat_bridge::notify_reload(&app).await;
+    crate::mcp_gateway::apply_settings(&settings).await?;
 
     Ok(settings)
 }

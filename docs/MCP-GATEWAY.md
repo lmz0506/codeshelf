@@ -1,67 +1,29 @@
 # CodeShelf MCP Gateway
 
-CodeShelf can expose the API library from the "assistant - API" feature as MCP tools. External clients can call the same `ApiGroup` / `ApiEndpoint` definitions used by the in-app API chat panel.
+CodeShelf 的 MCP Gateway 是应用面板的一部分，不需要单独启动第二个服务。你在 `设置 -> MCP Gateway` 里配置监听地址和端口，CodeShelf 会把接口库暴露为 MCP tools，外部工具通过这个本地 HTTP 地址调用。
 
-## What It Exposes
+## 能力
 
-- Each saved API endpoint becomes one MCP tool.
-- Tool names are readable and stable, for example `api_get_api_assets_18a7fb87`.
-- Legacy endpoint-id names such as `ep_18a7fb8742e76640` are still accepted for compatibility.
-- The endpoint JSON schema becomes the MCP `inputSchema`.
-- Tool calls reuse the existing CodeShelf executor, including base URL handling, path/query/body splitting, fixed headers, Bearer/Basic/API key auth, and session login auth.
-- Results include both text content and structured response data.
+- 每个已保存的 API 接口会变成一个 MCP tool。
+- Tool 名可读且稳定，例如 `api_get_api_assets_18a7fb87`。
+- 旧的 endpoint-id 名称，例如 `ep_18a7fb8742e76640`，仍可作为兼容调用入口。
+- 接口的 JSON Schema 会映射为 MCP `inputSchema`。
+- 调用复用 CodeShelf 现有执行器，包括 baseUrl、path/query/body、headers、Bearer/Basic/API Key/Session 鉴权。
+- 返回内容同时包含文本结果和结构化结果。
 
-## Transports
+## 启动方式
 
-### stdio
+1. 打开 CodeShelf。
+2. 进入 `设置 -> MCP Gateway`。
+3. 设置监听地址和端口，例如 `127.0.0.1` + `8787`。
+4. 点击启动。
+5. 外部 MCP 客户端连接 `http://127.0.0.1:8787/mcp`。
 
-Use stdio when the MCP client can launch a local command.
+启用状态、host、port 会保存到应用设置里。下次 CodeShelf 启动时，如果 MCP Gateway 是启用状态，会自动按保存的端口恢复。
 
-```bash
-codeshelf-mcp --transport stdio
-```
+## MCP 客户端配置
 
-Development build:
-
-```bash
-cd src-tauri
-cargo build --bin codeshelf-mcp
-./target/debug/codeshelf-mcp --transport stdio
-```
-
-Example MCP config:
-
-```json
-{
-  "mcpServers": {
-    "codeshelf-api": {
-      "command": "/absolute/path/to/codeshelf-mcp",
-      "args": ["--transport", "stdio"]
-    }
-  }
-}
-```
-
-This is the recommended mode for Claude Code, Kimi, Codex, and other clients that support command-based MCP servers.
-
-### HTTP
-
-Use HTTP when the MCP client can connect to a local gateway URL, or when you want to keep CodeShelf running as the gateway host.
-
-Manual command:
-
-```bash
-codeshelf-mcp --transport http --host 127.0.0.1 --port 8787
-```
-
-In-app:
-
-1. Open `Settings`.
-2. Open `MCP Gateway`.
-3. Start the HTTP gateway.
-4. Use `http://127.0.0.1:8787/mcp` as the MCP endpoint.
-
-Example MCP config:
+HTTP 配置示例：
 
 ```json
 {
@@ -73,32 +35,27 @@ Example MCP config:
 }
 ```
 
-## Client Notes
+Codex TOML 示例：
 
-- Claude Code: use the stdio config unless your environment specifically supports HTTP MCP endpoints.
-- Kimi: use the same stdio config shape if its MCP settings accept command-based servers.
-- Codex: use stdio or HTTP depending on the environment.
-- GitHub Copilot / IDE MCP integrations: use stdio when the IDE asks for `command` + `args`; use HTTP when it asks for a URL.
-
-## Smoke Tests
-
-Initialize over stdio:
-
-```bash
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}' \
-  | ./target/debug/codeshelf-mcp --transport stdio
+```toml
+[mcp_servers.codeshelf-api]
+url = "http://127.0.0.1:8787/mcp"
 ```
 
-List tools over HTTP:
+Claude Code、Kimi、GitHub Copilot 和 IDE 集成如果支持 HTTP MCP endpoint，就填上面的 URL。这个实现刻意不再提供独立 stdio sidecar，避免出现面板和外部进程两套网关。
+
+## 冒烟测试
+
+健康检查：
+
+```bash
+curl -s http://127.0.0.1:8787/health
+```
+
+列出 tools：
 
 ```bash
 curl -s -X POST http://127.0.0.1:8787/mcp \
   -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
-```
-
-Health check:
-
-```bash
-curl -s http://127.0.0.1:8787/health
 ```

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CheckCircle2, Copy, ExternalLink, Play, RefreshCw, Server, Square, XCircle } from "lucide-react";
 import { Button, showToast } from "@/components/ui";
@@ -9,7 +9,12 @@ interface McpGatewayStatus {
   host?: string | null;
   port?: number | null;
   startedAt?: string | null;
-  binaryPath?: string | null;
+}
+
+interface AppSettings {
+  mcp_gateway_enabled?: boolean;
+  mcp_gateway_host?: string;
+  mcp_gateway_port?: number;
 }
 
 export function McpGatewaySettings() {
@@ -18,19 +23,22 @@ export function McpGatewaySettings() {
   const [port, setPort] = useState("8787");
   const [busy, setBusy] = useState(false);
 
-  async function refresh() {
+  async function refresh(loadSavedSettings = false) {
     try {
+      if (loadSavedSettings) {
+        const settings = await invoke<AppSettings>("get_app_settings");
+        setHost(settings.mcp_gateway_host || "127.0.0.1");
+        setPort(String(settings.mcp_gateway_port || 8787));
+      }
       const next = await invoke<McpGatewayStatus>("mcp_gateway_status");
       setStatus(next);
-      if (next.host) setHost(next.host);
-      if (next.port) setPort(String(next.port));
     } catch (e) {
       showToast("error", e instanceof Error ? e.message : "读取 MCP 网关状态失败");
     }
   }
 
   useEffect(() => {
-    refresh();
+    refresh(true);
   }, []);
 
   async function startGateway() {
@@ -41,12 +49,16 @@ export function McpGatewaySettings() {
     }
     setBusy(true);
     try {
-      const next = await invoke<McpGatewayStatus>("mcp_gateway_start", {
-        host: host.trim(),
-        port: parsedPort,
+      await invoke<AppSettings>("save_app_settings", {
+        input: {
+          mcp_gateway_enabled: true,
+          mcp_gateway_host: host.trim(),
+          mcp_gateway_port: parsedPort,
+        },
       });
+      const next = await invoke<McpGatewayStatus>("mcp_gateway_status");
       setStatus(next);
-      showToast("success", "MCP HTTP 网关已启动");
+      showToast("success", `MCP Gateway 已在 ${host.trim()}:${parsedPort} 启动`);
     } catch (e) {
       showToast("error", e instanceof Error ? e.message : "启动 MCP HTTP 网关失败");
     } finally {
@@ -57,9 +69,16 @@ export function McpGatewaySettings() {
   async function stopGateway() {
     setBusy(true);
     try {
-      const next = await invoke<McpGatewayStatus>("mcp_gateway_stop");
+      await invoke<AppSettings>("save_app_settings", {
+        input: {
+          mcp_gateway_enabled: false,
+          mcp_gateway_host: host.trim() || "127.0.0.1",
+          mcp_gateway_port: Number(port) || 8787,
+        },
+      });
+      const next = await invoke<McpGatewayStatus>("mcp_gateway_status");
       setStatus(next);
-      showToast("success", "MCP HTTP 网关已停止");
+      showToast("success", "MCP Gateway 已停止");
     } catch (e) {
       showToast("error", e instanceof Error ? e.message : "停止 MCP HTTP 网关失败");
     } finally {
@@ -76,28 +95,15 @@ export function McpGatewaySettings() {
     }
   }
 
-  const binary = status?.binaryPath || "codeshelf-mcp";
   const httpUrl = status?.url || `http://${host || "127.0.0.1"}:${port || "8787"}/mcp`;
-
-  const stdioConfig = useMemo(() => JSON.stringify({
-    mcpServers: {
-      "codeshelf-api": {
-        command: binary,
-        args: ["--transport", "stdio"],
-      },
-    },
-  }, null, 2), [binary]);
-
-  const httpConfig = useMemo(() => JSON.stringify({
+  const httpConfig = JSON.stringify({
     mcpServers: {
       "codeshelf-api": {
         url: httpUrl,
       },
     },
-  }, null, 2), [httpUrl]);
-
-  const httpCommand = `${binary} --transport http --host ${host || "127.0.0.1"} --port ${port || "8787"}`;
-  const codexToml = `[mcp_servers.codeshelf-api]\ncommand = "${escapeToml(binary)}"\nargs = ["--transport", "stdio"]`;
+  }, null, 2);
+  const codexToml = `[mcp_servers.codeshelf-api]\nurl = "${httpUrl}"`;
 
   return (
     <div className="space-y-5">
@@ -106,7 +112,7 @@ export function McpGatewaySettings() {
           <Server size={18} /> MCP Gateway
         </h3>
         <p className="text-xs text-gray-500 mt-1">
-          将接口库暴露为 MCP tools，供 Claude Code、Kimi、Codex、GitHub Copilot 以及其他 MCP 客户端调用。
+          内置在 CodeShelf 面板里的 MCP HTTP 网关。端口在这里配置，外部工具通过这个地址调用接口库 tools。
         </p>
       </div>
 
@@ -119,13 +125,10 @@ export function McpGatewaySettings() {
             {status?.running ? "HTTP 网关运行中" : "HTTP 网关未启动"}
           </div>
           <div className="text-xs text-gray-500 font-mono mt-1 break-all">
-            {status?.running ? status.url : "stdio 模式无需常驻服务，外部客户端会按需启动二进制。"}
-          </div>
-          <div className="text-xs text-gray-400 font-mono mt-1 break-all">
-            {binary}
+            {status?.running ? status.url : "网关由 CodeShelf 面板控制，启动后外部 MCP 客户端连接这里。"}
           </div>
         </div>
-        <Button variant="secondary" size="sm" onClick={refresh} disabled={busy} title="刷新状态">
+        <Button variant="secondary" size="sm" onClick={() => refresh()} disabled={busy} title="刷新状态">
           <RefreshCw size={15} />
         </Button>
       </div>
@@ -159,27 +162,15 @@ export function McpGatewaySettings() {
       </div>
 
       <ConfigBlock
-        title="Claude Code / Kimi 配置"
-        value={stdioConfig}
-        onCopy={() => copy(stdioConfig, "stdio 配置")}
-      />
-
-      <ConfigBlock
-        title="Codex TOML 配置"
+        title="Codex HTTP 配置"
         value={codexToml}
         onCopy={() => copy(codexToml, "Codex 配置")}
       />
 
       <ConfigBlock
-        title="GitHub Copilot / IDE HTTP 配置"
+        title="Claude Code / Kimi / GitHub Copilot / IDE HTTP 配置"
         value={httpConfig}
         onCopy={() => copy(httpConfig, "HTTP 配置")}
-      />
-
-      <ConfigBlock
-        title="手动启动 HTTP 网关"
-        value={httpCommand}
-        onCopy={() => copy(httpCommand, "启动命令")}
       />
 
       {status?.running && (
@@ -210,8 +201,4 @@ function ConfigBlock({ title, value, onCopy }: { title: string; value: string; o
       </pre>
     </div>
   );
-}
-
-function escapeToml(value: string) {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }

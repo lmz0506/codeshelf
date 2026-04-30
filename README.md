@@ -239,8 +239,6 @@ codeshelf/
 | `npm run verify:release` | 推送前本地校验：tsc + vite + cargo check（对齐 release.yml 的编译环节） |
 | `npm run tauri dev` | 启动 Tauri 开发模式 |
 | `npm run tauri build` | 构建桌面应用（安装版） |
-| `cd src-tauri && cargo run --bin codeshelf-mcp -- --transport stdio` | 启动 MCP stdio 网关 |
-| `cd src-tauri && cargo run --bin codeshelf-mcp -- --transport http --port 8787` | 启动 MCP HTTP 网关 |
 | `npm run build:portable` | 构建便携版（绿色版） |
 | `npm run tauri build -- --debug` | 构建调试版本 |
 
@@ -274,4 +272,3 @@ pkg-config --modversion webkit2gtk-4.1
 - [React](https://react.dev/) - UI 框架
 - [TailwindCSS](https://tailwindcss.com/) - CSS 框架
 - [Lucide](https://lucide.dev/) - 图标库
-
