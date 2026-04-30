@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { CheckCircle2, Copy, Play, RefreshCw, Server, Square, XCircle } from "lucide-react";
+import { CheckCircle2, Copy, ExternalLink, Play, RefreshCw, Server, Square, XCircle } from "lucide-react";
 import { Button, showToast } from "@/components/ui";
 
 interface McpGatewayStatus {
@@ -97,6 +97,7 @@ export function McpGatewaySettings() {
   }, null, 2), [httpUrl]);
 
   const httpCommand = `${binary} --transport http --host ${host || "127.0.0.1"} --port ${port || "8787"}`;
+  const codexToml = `[mcp_servers.codeshelf-api]\ncommand = "${escapeToml(binary)}"\nargs = ["--transport", "stdio"]`;
 
   return (
     <div className="space-y-5">
@@ -119,6 +120,9 @@ export function McpGatewaySettings() {
           </div>
           <div className="text-xs text-gray-500 font-mono mt-1 break-all">
             {status?.running ? status.url : "stdio 模式无需常驻服务，外部客户端会按需启动二进制。"}
+          </div>
+          <div className="text-xs text-gray-400 font-mono mt-1 break-all">
+            {binary}
           </div>
         </div>
         <Button variant="secondary" size="sm" onClick={refresh} disabled={busy} title="刷新状态">
@@ -155,13 +159,19 @@ export function McpGatewaySettings() {
       </div>
 
       <ConfigBlock
-        title="Claude Code / Kimi / Codex 配置"
+        title="Claude Code / Kimi 配置"
         value={stdioConfig}
         onCopy={() => copy(stdioConfig, "stdio 配置")}
       />
 
       <ConfigBlock
-        title="HTTP MCP 配置"
+        title="Codex TOML 配置"
+        value={codexToml}
+        onCopy={() => copy(codexToml, "Codex 配置")}
+      />
+
+      <ConfigBlock
+        title="GitHub Copilot / IDE HTTP 配置"
         value={httpConfig}
         onCopy={() => copy(httpConfig, "HTTP 配置")}
       />
@@ -171,6 +181,17 @@ export function McpGatewaySettings() {
         value={httpCommand}
         onCopy={() => copy(httpCommand, "启动命令")}
       />
+
+      {status?.running && (
+        <a
+          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+          href={status.url || httpUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <ExternalLink size={13} /> 打开 MCP 网关信息
+        </a>
+      )}
     </div>
   );
 }
@@ -189,4 +210,8 @@ function ConfigBlock({ title, value, onCopy }: { title: string; value: string; o
       </pre>
     </div>
   );
+}
+
+function escapeToml(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }

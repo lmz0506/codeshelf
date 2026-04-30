@@ -14,8 +14,8 @@ use tokio::sync::{oneshot, Mutex};
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tower_http::cors::CorsLayer;
 
-use crate::commands::api_chat::{build_api_tools, execute_api_endpoint, list_api_endpoints};
-use crate::storage;
+use crate::commands::api_chat::{execute_api_endpoint, list_api_endpoints};
+use crate::storage::{self, ApiEndpoint};
 
 const DEFAULT_PROTOCOL_VERSION: &str = "2024-11-05";
 
@@ -341,6 +341,23 @@ async fn http_index() -> impl IntoResponse {
             "endpoint": "/mcp",
             "transport": "http-json-rpc",
             "methods": ["initialize", "tools/list", "tools/call"]
+        },
+        "configs": {
+            "stdio": {
+                "mcpServers": {
+                    "codeshelf-api": {
+                        "command": default_binary_path().unwrap_or_else(|| "codeshelf-mcp".to_string()),
+                        "args": ["--transport", "stdio"]
+                    }
+                }
+            },
+            "http": {
+                "mcpServers": {
+                    "codeshelf-api": {
+                        "url": "/mcp"
+                    }
+                }
+            }
         }
     }))
 }
@@ -437,46 +454,7 @@ async fn tools_list_result() -> Result<Value, JsonRpcError> {
     let endpoints = list_api_endpoints()
         .await
         .map_err(internal_error)?;
-    let endpoint_ids: Vec<String> = endpoints.iter().map(|e| e.id.clone()).collect();
-    let bundle = build_api_tools(endpoint_ids)
-        .await
-        .map_err(internal_error)?;
-
-    let by_id = endpoints
-        .into_iter()
-        .map(|endpoint| (endpoint.id.clone(), endpoint))
-        .collect::<HashMap<_, _>>();
-
-    let tools = bundle
-        .tools
-        .into_iter()
-        .filter_map(|tool| {
-            let function = tool.get("function")?;
-            let name = function.get("name")?.as_str()?.to_string();
-            let endpoint = bundle
-                .tool_name_map
-                .get(&name)
-                .and_then(|endpoint_id| by_id.get(endpoint_id));
-            let description = endpoint
-                .and_then(|e| e.description.clone())
-                .or_else(|| function.get("description").and_then(|v| v.as_str()).map(str::to_string))
-                .unwrap_or_else(|| "CodeShelf API endpoint".to_string());
-            let input_schema = function
-                .get("parameters")
-                .cloned()
-                .unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
-            let title = endpoint.map(|e| e.name.clone()).unwrap_or_else(|| name.clone());
-
-            Some(json!({
-                "name": name,
-                "description": description,
-                "inputSchema": input_schema,
-                "annotations": {
-                    "title": title
-                }
-            }))
-        })
-        .collect::<Vec<_>>();
+    let (tools, _) = build_mcp_tool_index(&endpoints);
 
     Ok(json!({ "tools": tools }))
 }
@@ -491,11 +469,8 @@ async fn tools_call_result(params: Option<Value>) -> Result<Value, JsonRpcError>
     let endpoints = list_api_endpoints()
         .await
         .map_err(internal_error)?;
-    let endpoint_ids: Vec<String> = endpoints.into_iter().map(|e| e.id).collect();
-    let bundle = build_api_tools(endpoint_ids)
-        .await
-        .map_err(internal_error)?;
-    let endpoint_id = bundle.tool_name_map.get(&params.name).ok_or_else(|| {
+    let (_, tool_name_map) = build_mcp_tool_index(&endpoints);
+    let endpoint_id = tool_name_map.get(&params.name).ok_or_else(|| {
         json_rpc_error(
             -32602,
             "Unknown tool",
@@ -526,6 +501,142 @@ async fn tools_call_result(params: Option<Value>) -> Result<Value, JsonRpcError>
         "structuredContent": result,
         "isError": false
     }))
+}
+
+fn build_mcp_tool_index(endpoints: &[ApiEndpoint]) -> (Vec<Value>, HashMap<String, String>) {
+    let mut used = HashMap::<String, usize>::new();
+    let mut tools = Vec::with_capacity(endpoints.len());
+    let mut map = HashMap::with_capacity(endpoints.len() * 2);
+
+    for endpoint in endpoints {
+        let name = endpoint_tool_name(endpoint, &mut used);
+        let legacy_name = legacy_endpoint_tool_name(&endpoint.id);
+        let description = endpoint
+            .description
+            .clone()
+            .unwrap_or_else(|| format!("{} {}", endpoint.method.to_uppercase(), endpoint.url));
+        let input_schema = if endpoint.params_schema.is_null() {
+            json!({ "type": "object", "properties": {} })
+        } else {
+            endpoint.params_schema.clone()
+        };
+        let method = endpoint.method.to_uppercase();
+        let read_only = method == "GET";
+        let destructive = matches!(method.as_str(), "DELETE" | "PATCH" | "PUT");
+
+        tools.push(json!({
+            "name": name,
+            "description": endpoint_description(&description, &method, &endpoint.url),
+            "inputSchema": input_schema,
+            "annotations": {
+                "title": endpoint.name,
+                "readOnlyHint": read_only,
+                "destructiveHint": destructive,
+                "idempotentHint": matches!(method.as_str(), "GET" | "PUT" | "DELETE")
+            },
+            "_meta": {
+                "codeshelfEndpointId": endpoint.id,
+                "codeshelfLegacyName": legacy_name,
+                "method": method,
+                "url": endpoint.url
+            }
+        }));
+
+        map.insert(name, endpoint.id.clone());
+        map.insert(legacy_name, endpoint.id.clone());
+    }
+
+    (tools, map)
+}
+
+fn endpoint_tool_name(endpoint: &ApiEndpoint, used: &mut HashMap<String, usize>) -> String {
+    let method = endpoint.method.to_lowercase();
+    let base = format!("api_{}_{}", method, endpoint.url);
+    let mut slug = slugify_ascii(&base);
+    if slug == "api" || slug.is_empty() {
+        slug = slugify_ascii(&format!("api_{}_{}", method, endpoint.name));
+    }
+    if slug == "api" || slug.is_empty() {
+        slug = "api_endpoint".to_string();
+    }
+
+    let suffix = short_endpoint_id(&endpoint.id);
+    let max_prefix = 64usize.saturating_sub(suffix.len() + 1);
+    let mut prefix = slug.chars().take(max_prefix).collect::<String>();
+    prefix = prefix.trim_matches('_').to_string();
+    if prefix.is_empty() {
+        prefix = "api_endpoint".to_string();
+    }
+
+    let mut name = format!("{}_{}", prefix, suffix);
+    let count = used.entry(name.clone()).or_insert(0);
+    if *count > 0 {
+        let collision_suffix = format!("_{}", *count + 1);
+        let max = 64usize.saturating_sub(collision_suffix.len());
+        name = format!("{}{}", name.chars().take(max).collect::<String>(), collision_suffix);
+    }
+    *count += 1;
+    name
+}
+
+fn legacy_endpoint_tool_name(endpoint_id: &str) -> String {
+    let raw = format!("ep_{}", endpoint_id);
+    let cleaned: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if cleaned.len() <= 60 {
+        cleaned
+    } else {
+        cleaned.chars().take(60).collect()
+    }
+}
+
+fn slugify_ascii(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut last_was_sep = false;
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            last_was_sep = false;
+        } else if !last_was_sep {
+            out.push('_');
+            last_was_sep = true;
+        }
+    }
+    out.trim_matches('_').to_string()
+}
+
+fn short_endpoint_id(endpoint_id: &str) -> String {
+    let normalized = endpoint_id
+        .strip_prefix("api_ep_")
+        .or_else(|| endpoint_id.strip_prefix("ep_"))
+        .unwrap_or(endpoint_id);
+    let cleaned = normalized
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(8)
+        .collect::<String>();
+    if cleaned.is_empty() {
+        "endpoint".to_string()
+    } else {
+        cleaned
+    }
+}
+
+fn endpoint_description(description: &str, method: &str, url: &str) -> String {
+    let signature = format!("{} {}", method, url);
+    if description.contains(&signature) {
+        description.to_string()
+    } else {
+        format!("{}\n{}", description, signature)
+    }
 }
 
 fn error_response(id: Value, code: i64, message: &str, data: Option<Value>) -> JsonRpcResponse {

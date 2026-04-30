@@ -5,6 +5,8 @@ CodeShelf can expose the API library from the "assistant - API" feature as MCP t
 ## What It Exposes
 
 - Each saved API endpoint becomes one MCP tool.
+- Tool names are readable and stable, for example `api_get_api_assets_18a7fb87`.
+- Legacy endpoint-id names such as `ep_18a7fb8742e76640` are still accepted for compatibility.
 - The endpoint JSON schema becomes the MCP `inputSchema`.
 - Tool calls reuse the existing CodeShelf executor, including base URL handling, path/query/body splitting, fixed headers, Bearer/Basic/API key auth, and session login auth.
 - Results include both text content and structured response data.
