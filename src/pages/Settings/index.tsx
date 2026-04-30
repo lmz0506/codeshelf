@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
-import { Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard, Link2 } from "lucide-react";
+import { Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard, Link2, Server } from "lucide-react";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import { getVersion } from "@tauri-apps/api/app";
 import { EditorSettings } from "./EditorSettings";
@@ -12,8 +12,9 @@ import { UpdateSettings } from "./UpdateSettings";
 import { AboutSettings } from "./AboutSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { ChatBridgeSettings } from "./ChatBridgeSettings";
+import { McpGatewaySettings } from "./McpGatewaySettings";
 
-type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "shortcuts" | "chatBridge" | "update" | "about" | null;
+type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "shortcuts" | "chatBridge" | "mcpGateway" | "update" | "about" | null;
 
 export function SettingsPage() {
   const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, labels, appShortcuts } = useAppStore();
@@ -104,6 +105,14 @@ export function SettingsPage() {
       icon: Link2,
       value: "点击配置",
       component: ChatBridgeSettings,
+    },
+    {
+      id: "mcpGateway" as const,
+      title: "MCP Gateway",
+      description: "将接口库暴露给 Claude/Codex/Kimi/Copilot",
+      icon: Server,
+      value: "外部调用",
+      component: McpGatewaySettings,
     },
     {
       id: "update" as const,

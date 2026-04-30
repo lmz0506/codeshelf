@@ -441,6 +441,10 @@ pub fn run() {
             api_chat::build_api_tools,
             api_chat::execute_api_endpoint,
             api_chat::fetch_api_document_url,
+            // MCP gateway
+            mcp_gateway::mcp_gateway_status,
+            mcp_gateway::mcp_gateway_start,
+            mcp_gateway::mcp_gateway_stop,
             // Chat tools / tasks
             tools::chat_list_tools,
             tools::chat_execute_tool,
