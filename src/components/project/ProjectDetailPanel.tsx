@@ -89,6 +89,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [historyLimit, setHistoryLimit] = useState(20);
   const [searchQuery, setSearchQuery] = useState("");
+  const [commitView, setCommitView] = useState<"history" | "ahead" | "behind">("history");
 
   // 窗口最大化状态
   const [isMaximized, setIsMaximized] = useState(false);
@@ -170,12 +171,16 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
 
   // 当切换远程仓库时，重新获取提交历史
   useEffect(() => {
-    if (currentRemote && gitStatus?.branch) {
+    if (commitView === "history" && currentRemote && gitStatus?.branch) {
       loadCommitHistory();
     }
-  }, [currentRemote, gitStatus?.branch, historyLimit]);
+  }, [currentRemote, gitStatus?.branch, historyLimit, commitView]);
 
   useEffect(() => {
+    if (commitView !== "history") {
+      return;
+    }
+
     const query = searchQuery.trim();
     if (!query) {
       loadCommitHistory();
@@ -196,13 +201,12 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [project.path, searchQuery]);
+  }, [project.path, searchQuery, commitView]);
 
   async function loadCommitHistory() {
     if (!gitStatus?.branch) return;
     try {
-      const refName = currentRemote ? `${currentRemote}/${gitStatus.branch}` : undefined;
-      const commitHistory = await getCommitHistory(project.path, historyLimit, refName);
+      const commitHistory = await getCommitHistory(project.path, historyLimit);
       setCommits(commitHistory);
     } catch (error) {
       console.error("Failed to load commit history:", error);
@@ -215,6 +219,28 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
     }
   }
 
+  async function loadDivergenceCommits(view: "ahead" | "behind") {
+    try {
+      setLoading(true);
+      setSearchQuery("");
+      setCommitView(view);
+      const range = view === "ahead" ? "@{upstream}..HEAD" : "HEAD..@{upstream}";
+      const result = await getCommitHistory(project.path, historyLimit, range);
+      setCommits(result);
+    } catch (error) {
+      console.error("Failed to load divergence commits:", error);
+      setCommits([]);
+      showToast("error", view === "ahead" ? "读取待推送提交失败" : "读取待拉取提交失败", "当前分支可能没有设置 upstream，或需要先执行 git fetch");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function showRecentCommits() {
+    setCommitView("history");
+    await loadCommitHistory();
+  }
+
   async function loadProjectDetails() {
     try {
       setLoading(true);
@@ -224,12 +250,20 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
       ]);
       setGitStatus(status);
       setRemotes(remoteList);
+      if (commitView !== "history") {
+        const range = commitView === "ahead" ? "@{upstream}..HEAD" : "HEAD..@{upstream}";
+        try {
+          const commitHistory = await getCommitHistory(project.path, historyLimit, range);
+          setCommits(commitHistory);
+        } catch {
+          setCommits([]);
+        }
+        return;
+      }
 
       if (status.branch) {
-        const selectedRemote = currentRemote || remoteList[0]?.name;
-        const refName = selectedRemote ? `${selectedRemote}/${status.branch}` : undefined;
         try {
-          const commitHistory = await getCommitHistory(project.path, historyLimit, refName);
+          const commitHistory = await getCommitHistory(project.path, historyLimit);
           setCommits(commitHistory);
         } catch {
           try {
@@ -781,7 +815,11 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
           copiedHash={copiedHash}
           searchQuery={searchQuery}
           historyLimit={historyLimit}
+          activeView={commitView}
           onRefresh={loadProjectDetails}
+          onShowHistory={showRecentCommits}
+          onShowAhead={() => loadDivergenceCommits("ahead")}
+          onShowBehind={() => loadDivergenceCommits("behind")}
           onSearchChange={setSearchQuery}
           onLoadMore={() => setHistoryLimit((limit) => limit + 20)}
           onToggleCommit={(hash) => setExpandedCommit(expandedCommit === hash ? null : hash)}

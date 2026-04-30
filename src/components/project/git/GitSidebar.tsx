@@ -183,17 +183,17 @@ export function GitSidebar({
 
         {remotes.length > 0 && (
           <div className="git-remote-actions">
-            <button onClick={onFetchRemote} className="git-remote-action-btn">
+            <button onClick={onOpenSyncModal} className="sync-btn" title="把当前仓库同步到另一个远程地址">
+              <Database size={14} />
+              <span>同步到其他远程</span>
+            </button>
+            <button onClick={onFetchRemote} className="git-remote-action-btn" title="git fetch 获取远程更新">
               <DownloadCloud size={14} />
               <span>fetch</span>
             </button>
-            <button onClick={onAddRemote} className="git-remote-action-btn">
+            <button onClick={onAddRemote} className="git-remote-action-btn" title="添加一个新的远程仓库地址">
               <Plus size={14} />
               <span>添加远程</span>
-            </button>
-            <button onClick={onOpenSyncModal} className="flex-1 sync-btn">
-              <Database size={14} />
-              <span>同步远程库</span>
             </button>
           </div>
         )}

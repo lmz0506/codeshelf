@@ -16,7 +16,11 @@ interface CommitHistoryPanelProps {
   copiedHash: string | null;
   searchQuery: string;
   historyLimit: number;
+  activeView: "history" | "ahead" | "behind";
   onRefresh: () => void;
+  onShowHistory: () => void;
+  onShowAhead: () => void;
+  onShowBehind: () => void;
   onSearchChange: (query: string) => void;
   onLoadMore: () => void;
   onToggleCommit: (hash: string) => void;
@@ -37,7 +41,11 @@ export function CommitHistoryPanel({
   copiedHash,
   searchQuery,
   historyLimit,
+  activeView,
   onRefresh,
+  onShowHistory,
+  onShowAhead,
+  onShowBehind,
   onSearchChange,
   onLoadMore,
   onToggleCommit,
@@ -47,13 +55,20 @@ export function CommitHistoryPanel({
   onCherryPickCommit,
 }: CommitHistoryPanelProps) {
   const visibleCommits = useMemo(() => commits, [commits]);
+  const emptyText = searchQuery.trim()
+    ? "没有匹配的提交"
+    : activeView === "ahead"
+      ? "没有本地未推送的提交"
+      : activeView === "behind"
+        ? "没有远程未拉取的提交"
+        : "暂无提交记录";
 
   return (
     <main className="project-detail-main">
       <div className="commits-header git-toolbar">
         <div className="commits-title">
           <History size={16} className="text-gray-500" />
-          <span className="commits-title-text">最近提交</span>
+          <span className="commits-title-text">{activeView === "ahead" ? "待推送提交" : activeView === "behind" ? "待拉取提交" : "最近提交"}</span>
           <span className="commits-count">{visibleCommits.length}</span>
         </div>
 
@@ -73,7 +88,14 @@ export function CommitHistoryPanel({
       </div>
 
       <div className="commits-list">
-        <GitStatusSummary gitStatus={gitStatus} currentRemote={currentRemote} />
+        <GitStatusSummary
+          gitStatus={gitStatus}
+          currentRemote={currentRemote}
+          activeView={activeView}
+          onShowHistory={onShowHistory}
+          onShowAhead={onShowAhead}
+          onShowBehind={onShowBehind}
+        />
 
         {loading ? (
           <div className="flex items-center justify-center h-64">
@@ -82,7 +104,7 @@ export function CommitHistoryPanel({
         ) : visibleCommits.length === 0 ? (
           <div className="empty-state">
             <History size={48} className="empty-state-icon" />
-            <p className="empty-state-text">{searchQuery.trim() ? "没有匹配的提交" : "暂无提交记录"}</p>
+            <p className="empty-state-text">{emptyText}</p>
           </div>
         ) : (
           <>
