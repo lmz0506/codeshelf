@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { X, GitBranch, Terminal, RefreshCw, CloudUpload, FolderOpen, Edit2, FileText, Loader2, GitCommit, Copy, Minus, Maximize2, Minimize2, ArrowRightLeft, Box, MessageSquare } from "lucide-react";
+import { X, GitBranch, Terminal, RefreshCw, CloudUpload, FolderOpen, Edit2, FileText, Loader2, GitCommit, Copy, ArrowRightLeft, Box, MessageSquare } from "lucide-react";
+import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import { CategorySelector } from "./CategorySelector";
 import { LabelSelector } from "./LabelSelector";
 import { SyncRemoteModal } from "./SyncRemoteModal";
@@ -36,7 +37,6 @@ import { openInEditor, openInExplorer, openInTerminal, updateProject } from "@/s
 import { getEditorForProject, getEditorConfigForProject, getEditorIcon } from "@/utils/editor";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createChatSession, saveChatSession } from "@/services/chat";
 
 interface ProjectDetailPanelProps {
@@ -91,9 +91,6 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [searchQuery, setSearchQuery] = useState("");
   const [commitView, setCommitView] = useState<"history" | "ahead" | "behind">("history");
 
-  // 窗口最大化状态
-  const [isMaximized, setIsMaximized] = useState(false);
-
   // 获取最近打开的项目列表（排除当前项目）
   const recentProjects = recentDetailProjectIds
     .filter((id) => id !== project.id)
@@ -112,43 +109,6 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
     setCopiedHash(hash);
     setTimeout(() => setCopiedHash(null), 2000);
     showToast("success", "已复制", "哈希值已复制到剪贴板");
-  }
-
-  // 检查窗口最大化状态
-  useEffect(() => {
-    checkMaximized();
-    const handleResize = () => checkMaximized();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  async function checkMaximized() {
-    try {
-      const appWindow = getCurrentWindow();
-      const maximized = await appWindow.isMaximized();
-      setIsMaximized(maximized);
-    } catch (error) {
-      console.error("Failed to check maximized state:", error);
-    }
-  }
-
-  async function handleToggleMaximize() {
-    try {
-      const appWindow = getCurrentWindow();
-      await appWindow.toggleMaximize();
-      checkMaximized();
-    } catch (error) {
-      console.error("Failed to toggle maximize:", error);
-    }
-  }
-
-  async function handleMinimize() {
-    try {
-      const appWindow = getCurrentWindow();
-      await appWindow.minimize();
-    } catch (error) {
-      console.error("Failed to minimize:", error);
-    }
   }
 
   // 当外部 project prop 改变时同步本地状态
@@ -660,30 +620,8 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
           >
             <X size={16} />
           </button>
-          {/* 窗口控制按钮 */}
-          <div className="flex items-center ml-1 border-l border-gray-200 pl-2 gap-1">
-            <button
-              onClick={handleToggleMaximize}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
-              title={isMaximized ? "还原" : "最大化"}
-            >
-              {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </button>
-            <button
-              onClick={handleMinimize}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
-              title="最小化"
-            >
-              <Minus size={14} />
-            </button>
-            <button
-              onClick={() => getCurrentWindow()?.close()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white rounded-md transition-colors text-gray-400"
-              title="关闭窗口"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          {/* 窗口控制按钮 - 与主面板保持一致 */}
+          <MacWindowControls />
         </div>
       </header>
 
