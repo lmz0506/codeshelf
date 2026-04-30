@@ -273,7 +273,7 @@ async fn validate_mcp_auth(
     let supplied = extract_mcp_key(headers, query);
     let authorized = supplied
         .as_deref()
-        .map(|key| active_keys.iter().any(|entry| entry.key == key))
+        .map(|key| active_keys.iter().any(|entry| entry.key.trim() == key))
         .unwrap_or(false);
 
     if authorized {
@@ -312,11 +312,14 @@ fn active_mcp_keys(keys: &[McpGatewayKey]) -> Vec<&McpGatewayKey> {
 fn extract_mcp_key(headers: &HeaderMap, query: &HashMap<String, String>) -> Option<String> {
     if let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
         let trimmed = auth.trim();
-        if let Some(token) = trimmed.strip_prefix("Bearer ") {
+        if let Some(token) = strip_bearer_prefix(trimmed) {
             let token = token.trim();
             if !token.is_empty() {
                 return Some(token.to_string());
             }
+        }
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
     }
 
@@ -337,6 +340,15 @@ fn extract_mcp_key(headers: &HeaderMap, query: &HashMap<String, String>) -> Opti
     }
 
     None
+}
+
+fn strip_bearer_prefix(value: &str) -> Option<&str> {
+    let (prefix, rest) = value.split_once(' ')?;
+    if prefix.eq_ignore_ascii_case("bearer") {
+        Some(rest)
+    } else {
+        None
+    }
 }
 
 async fn handle_json_rpc(req: JsonRpcRequest) -> Option<JsonRpcResponse> {

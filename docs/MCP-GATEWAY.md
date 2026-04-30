@@ -39,7 +39,7 @@ x-api-key: cs_mcp_xxx
 http://127.0.0.1:8787/mcp?key=cs_mcp_xxx
 ```
 
-优先推荐 header。对不支持自定义 header 的客户端，可以使用 `?key=` 查询参数。
+如果客户端支持自定义 header，可以使用 header。更通用的方式是 `?key=` 查询参数，很多自定义 MCP 表单都会稳定传递 URL。
 
 ## MCP 客户端配置
 
@@ -49,10 +49,7 @@ http://127.0.0.1:8787/mcp?key=cs_mcp_xxx
 {
   "mcpServers": {
     "codeshelf-api": {
-      "url": "http://127.0.0.1:8787/mcp",
-      "headers": {
-        "Authorization": "Bearer cs_mcp_xxx"
-      }
+      "url": "http://127.0.0.1:8787/mcp?key=cs_mcp_xxx"
     }
   }
 }

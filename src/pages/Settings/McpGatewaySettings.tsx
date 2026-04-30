@@ -78,10 +78,7 @@ export function McpGatewaySettings() {
   const httpConfig = JSON.stringify({
     mcpServers: {
       "codeshelf-api": {
-        url: httpUrl,
-        headers: {
-          Authorization: `Bearer ${exampleKey}`,
-        },
+        url: queryUrl,
       },
     },
   }, null, 2);
@@ -443,10 +440,7 @@ function configForKey(url: string, key: string) {
   return JSON.stringify({
     mcpServers: {
       "codeshelf-api": {
-        url,
-        headers: {
-          Authorization: `Bearer ${key}`,
-        },
+        url: `${url}?key=${encodeURIComponent(key)}`,
       },
     },
   }, null, 2);
