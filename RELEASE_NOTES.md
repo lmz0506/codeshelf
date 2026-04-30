@@ -1,8 +1,8 @@
 ## 更新说明
 
-1. 优化 chat
-2. 本地服务新增nginx配置参考
-3. 新增docker镜像管理
+1. 新增 mcp gateway 配置
+2. 优化 UI
+3. GIT优化
 
 
 
