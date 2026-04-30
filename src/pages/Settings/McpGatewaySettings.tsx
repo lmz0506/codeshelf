@@ -199,8 +199,8 @@ export function McpGatewaySettings() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h3 className="text-lg font-semibold flex items-center gap-2">
+      <div className="space-y-1">
+        <h3 className="text-lg font-semibold flex items-center gap-2 text-gray-900">
           <Server size={18} /> MCP Gateway
         </h3>
         <p className="text-xs text-gray-500 mt-1">
@@ -208,28 +208,36 @@ export function McpGatewaySettings() {
         </p>
       </div>
 
-      <div className="border border-gray-200 rounded-lg p-3 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-medium">
+      <div className="border border-gray-200 rounded-lg p-3 flex items-center justify-between gap-3 bg-white">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
             {status?.running
               ? <CheckCircle2 size={16} className="text-emerald-500" />
               : <XCircle size={16} className="text-gray-400" />}
             {status?.running ? "流式 HTTP 网关运行中" : "流式 HTTP 网关未启动"}
+            <span className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600">Streamable HTTP</span>
           </div>
           <div className="text-xs text-gray-500 font-mono mt-1 break-all">
             {status?.running ? status.url : "网关由 CodeShelf 面板控制，启动后外部 MCP 客户端连接这里。"}
           </div>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => refresh(true)} disabled={busy} title="刷新状态">
-          <RefreshCw size={15} />
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          {status?.running && status.url && (
+            <Button variant="secondary" size="sm" onClick={() => copy(status.url || httpUrl, "网关地址")} title="复制地址">
+              <Copy size={14} className="mr-1" /> 复制
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" onClick={() => refresh(true)} disabled={busy} title="刷新状态">
+            <RefreshCw size={15} />
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_120px_120px] gap-2 items-end">
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_120px_120px] gap-2 items-end">
         <label className="block text-xs text-gray-700">
           监听地址
           <input
-            className="mt-1 w-full border border-gray-200 rounded px-2 py-1.5 text-sm font-mono"
+            className="mt-1 h-9 w-full border border-gray-200 rounded px-2 text-sm font-mono"
             value={host}
             onChange={(e) => setHost(e.target.value)}
           />
@@ -237,51 +245,51 @@ export function McpGatewaySettings() {
         <label className="block text-xs text-gray-700">
           端口
           <input
-            className="mt-1 w-full border border-gray-200 rounded px-2 py-1.5 text-sm font-mono"
+            className="mt-1 h-9 w-full border border-gray-200 rounded px-2 text-sm font-mono"
             value={port}
             onChange={(e) => setPort(e.target.value)}
           />
         </label>
         {status?.running ? (
-          <Button variant="danger" onClick={stopGateway} disabled={busy}>
+          <Button variant="danger" onClick={stopGateway} disabled={busy} className="h-9 whitespace-nowrap">
             <Square size={15} className="mr-1" /> 停止
           </Button>
         ) : (
-          <Button onClick={startGateway} disabled={busy}>
+          <Button onClick={startGateway} disabled={busy} className="h-9 whitespace-nowrap">
             <Play size={15} className="mr-1" /> 启动
           </Button>
         )}
       </div>
 
-      <section className="border border-gray-200 rounded-lg p-3 space-y-3">
+      <section className="border border-gray-200 rounded-lg p-3 space-y-3 bg-white">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold flex items-center gap-2">
+          <div className="text-sm font-semibold flex items-center gap-2 text-gray-900">
             <KeyRound size={16} /> 访问密钥
           </div>
           <span className="text-xs text-gray-500">{activeKeys.length}/{keys.length} 个可用</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-[160px_1fr_auto] gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-[160px_minmax(0,1fr)_120px] gap-2 items-start">
           <input
-            className="border border-gray-200 rounded px-2 py-1.5 text-sm"
+            className="h-9 border border-gray-200 rounded px-2 text-sm"
             placeholder="客户端名称"
             value={keyName}
             onChange={(e) => setKeyName(e.target.value)}
           />
           <input
-            className="border border-gray-200 rounded px-2 py-1.5 text-sm font-mono"
+            className="h-9 min-w-0 border border-gray-200 rounded px-2 text-sm font-mono"
             placeholder="手动输入密钥，或点击自动生成"
             value={keyValue}
             onChange={(e) => setKeyValue(e.target.value)}
           />
-          <Button variant="secondary" onClick={() => setKeyValue(generateToken())}>
-            <Wand2 size={15} className="mr-1" /> 自动生成
+          <Button variant="secondary" onClick={() => setKeyValue(generateToken())} className="h-9 whitespace-nowrap">
+            <Wand2 size={15} className="mr-1" /> 生成
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-[160px_1fr_auto] gap-2 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-[160px_minmax(0,1fr)_120px] gap-2 items-start">
           <select
-            className="border border-gray-200 rounded px-2 py-1.5 text-sm"
+            className="h-9 border border-gray-200 rounded px-2 text-sm"
             value={expiryMode}
             onChange={(e) => setExpiryMode(e.target.value as ExpiryMode)}
           >
@@ -289,14 +297,14 @@ export function McpGatewaySettings() {
             <option value="at">指定过期时间</option>
           </select>
           <input
-            className="border border-gray-200 rounded px-2 py-1.5 text-sm"
+            className="h-9 min-w-0 border border-gray-200 rounded px-2 text-sm"
             type="datetime-local"
             value={expiresAtLocal}
             onChange={(e) => setExpiresAtLocal(e.target.value)}
             disabled={expiryMode === "never"}
           />
-          <Button onClick={addKey}>
-            <KeyRound size={15} className="mr-1" /> 添加密钥
+          <Button onClick={addKey} className="h-9 whitespace-nowrap">
+            <KeyRound size={15} className="mr-1" /> 添加
           </Button>
         </div>
 
