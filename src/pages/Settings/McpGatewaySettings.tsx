@@ -292,7 +292,11 @@ export function McpGatewaySettings() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-[160px_minmax(0,1fr)_120px] gap-2 items-start">
+        <div className={`grid grid-cols-1 gap-2 items-start ${
+          expiryMode === "at"
+            ? "md:grid-cols-[160px_minmax(0,1fr)_120px]"
+            : "md:grid-cols-[160px_120px]"
+        }`}>
           <select
             className="h-9 border border-gray-200 rounded px-2 text-sm"
             value={expiryMode}
@@ -301,13 +305,14 @@ export function McpGatewaySettings() {
             <option value="never">永久有效</option>
             <option value="at">指定过期时间</option>
           </select>
-          <input
-            className="h-9 min-w-0 border border-gray-200 rounded px-2 text-sm"
-            type="datetime-local"
-            value={expiresAtLocal}
-            onChange={(e) => setExpiresAtLocal(e.target.value)}
-            disabled={expiryMode === "never"}
-          />
+          {expiryMode === "at" && (
+            <input
+              className="h-9 min-w-0 border border-gray-200 rounded px-2 text-sm"
+              type="datetime-local"
+              value={expiresAtLocal}
+              onChange={(e) => setExpiresAtLocal(e.target.value)}
+            />
+          )}
           <Button onClick={addKey} className="h-9 whitespace-nowrap">
             <KeyRound size={15} className="mr-1" /> 添加
           </Button>
