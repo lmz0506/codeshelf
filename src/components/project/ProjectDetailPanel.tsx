@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, GitBranch, Terminal, RefreshCw, CloudUpload, FolderOpen, Edit2, FileText, Loader2, GitCommit, Copy, ArrowRightLeft, Box, MessageSquare } from "lucide-react";
+import { X, GitBranch, Terminal, RefreshCw, CloudUpload, FolderOpen, Edit2, FileText, Loader2, GitCommit, Copy, ArrowRightLeft, ArrowLeft, Box, MessageSquare } from "lucide-react";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import { CategorySelector } from "./CategorySelector";
 import { LabelSelector } from "./LabelSelector";
@@ -613,12 +613,14 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
             <span>{pushing ? '推送中...' : '推送'}</span>
           </button>
           <div className="divider-vertical"></div>
+          {/* 关闭详情面板 - 文字 + 左箭头，明显区别于右侧 macOS 窗口控制按钮 */}
           <button
             onClick={onClose}
-            className="icon-btn"
-            title="关闭面板"
+            className="back-to-shelf-btn"
+            title="返回项目书架（仅关闭详情面板，不关闭窗口）"
           >
-            <X size={16} />
+            <ArrowLeft size={14} />
+            <span>返回书架</span>
           </button>
           {/* 窗口控制按钮 - 与主面板保持一致 */}
           <MacWindowControls />
