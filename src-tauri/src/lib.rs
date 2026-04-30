@@ -1,5 +1,6 @@
 mod commands;
 mod keyboard_hook;
+pub mod mcp_gateway;
 mod storage;
 
 use commands::{git, project, stats, system, toolbox, settings, chat, tools, extras, api_chat};
