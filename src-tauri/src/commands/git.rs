@@ -186,6 +186,14 @@ fn run_git_command(path: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
+fn is_system_junk_file(file: &str) -> bool {
+    std::path::Path::new(file)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name == ".DS_Store")
+        .unwrap_or(false)
+}
+
 /// 解析 git status --porcelain 输出中的文件路径
 /// 处理引号包裹的路径（包含空格或特殊字符时）
 fn unquote_git_path(path: &str) -> String {
@@ -274,6 +282,10 @@ pub async fn get_git_status(path: String) -> Result<GitStatus, String> {
         let file = unquote_git_path(file_part);
 
         if file.is_empty() {
+            continue;
+        }
+
+        if is_system_junk_file(&file) {
             continue;
         }
 
@@ -1013,13 +1025,22 @@ pub async fn create_branch(path: String, branch: String, checkout: bool) -> Resu
 #[tauri::command]
 pub async fn git_add(path: String, files: Vec<String>) -> Result<String, String> {
     if files.is_empty() {
-        // Add all changes
-        run_git_command(&path, &["add", "-A"])
+        // Add all changes while keeping macOS Finder metadata out of commits,
+        // even when the target project has not configured its own .gitignore.
+        run_git_command(&path, &["add", "-A", "--", ".", ":(exclude).DS_Store", ":(exclude)**/.DS_Store"])
     } else {
         // Add specific files
-        let mut args = vec!["add"];
-        args.extend(files.iter().map(|s| s.as_str()));
-        run_git_command(&path, &args)
+        let files_to_add: Vec<String> = files
+            .into_iter()
+            .filter(|file| !is_system_junk_file(file))
+            .collect();
+        if files_to_add.is_empty() {
+            Ok("没有需要暂存的文件".to_string())
+        } else {
+            let mut args = vec!["add", "--"];
+            args.extend(files_to_add.iter().map(|s| s.as_str()));
+            run_git_command(&path, &args)
+        }
     }
 }
 
