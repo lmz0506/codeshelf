@@ -6,7 +6,7 @@ use std::fs;
 use crate::storage::{
     get_storage_config, generate_id, current_iso_time,
     EditorConfig, TerminalConfig, AppSettings, UiState, Notification,
-    AiProviderConfig,
+    AiProviderConfig, McpGatewayKey,
 };
 
 // ============== 标签管理 ==============
@@ -285,6 +285,7 @@ pub struct AppSettingsInput {
     pub mcp_gateway_enabled: Option<bool>,
     pub mcp_gateway_host: Option<String>,
     pub mcp_gateway_port: Option<u16>,
+    pub mcp_gateway_keys: Option<Vec<McpGatewayKey>>,
 }
 
 #[tauri::command]
@@ -321,6 +322,7 @@ pub async fn save_app_settings(app: tauri::AppHandle, input: AppSettingsInput) -
     if let Some(v) = input.mcp_gateway_enabled { settings.mcp_gateway_enabled = v; }
     if let Some(v) = input.mcp_gateway_host { settings.mcp_gateway_host = v; }
     if let Some(v) = input.mcp_gateway_port { settings.mcp_gateway_port = v; }
+    if let Some(v) = input.mcp_gateway_keys { settings.mcp_gateway_keys = v; }
 
     let config = get_storage_config()?;
     config.ensure_dirs()?;

@@ -1,6 +1,6 @@
 use axum::{
-    extract::State,
-    http::{HeaderValue, Method, StatusCode},
+    extract::{Query, State},
+    http::{HeaderMap, HeaderValue, Method, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
@@ -14,7 +14,7 @@ use tokio::sync::{oneshot, Mutex};
 use tower_http::cors::CorsLayer;
 
 use crate::commands::api_chat::{execute_api_endpoint, list_api_endpoints};
-use crate::storage::{self, ApiEndpoint, AppSettings};
+use crate::storage::{self, ApiEndpoint, AppSettings, McpGatewayKey};
 
 const DEFAULT_PROTOCOL_VERSION: &str = "2024-11-05";
 
@@ -194,8 +194,12 @@ async fn http_index() -> impl IntoResponse {
         "ok": true,
         "mcp": {
             "endpoint": "/mcp",
-            "transport": "http-json-rpc",
+            "transport": "streamable-http",
             "methods": ["initialize", "tools/list", "tools/call"]
+        },
+        "auth": {
+            "required": true,
+            "schemes": ["Authorization: Bearer <key>", "x-api-key: <key>", "?key=<key>"]
         },
         "configs": {
             "http": {
@@ -215,12 +219,120 @@ async fn http_health() -> impl IntoResponse {
 
 async fn http_mcp(
     State(_state): State<Arc<HttpState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
     Json(req): Json<JsonRpcRequest>,
 ) -> impl IntoResponse {
+    if let Err(resp) = validate_mcp_auth(&headers, &query, req.id.clone()).await {
+        return resp.into_response();
+    }
+
     match handle_json_rpc(req).await {
         Some(resp) => (StatusCode::OK, Json(resp)).into_response(),
         None => (StatusCode::ACCEPTED, Json(json!({ "ok": true }))).into_response(),
     }
+}
+
+async fn validate_mcp_auth(
+    headers: &HeaderMap,
+    query: &HashMap<String, String>,
+    request_id: Option<Value>,
+) -> Result<(), (StatusCode, Json<JsonRpcResponse>)> {
+    let settings = match crate::commands::settings::get_app_settings().await {
+        Ok(s) => s,
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error_response(
+                    request_id.unwrap_or(Value::Null),
+                    -32603,
+                    "Internal error",
+                    Some(json!({ "message": e })),
+                )),
+            ));
+        }
+    };
+
+    let active_keys = active_mcp_keys(&settings.mcp_gateway_keys);
+    if active_keys.is_empty() {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(error_response(
+                request_id.unwrap_or(Value::Null),
+                -32001,
+                "MCP authentication is not configured",
+                Some(json!({ "message": "请先在 CodeShelf 设置页创建至少一个未过期的 MCP 密钥" })),
+            )),
+        ));
+    }
+
+    let supplied = extract_mcp_key(headers, query);
+    let authorized = supplied
+        .as_deref()
+        .map(|key| active_keys.iter().any(|entry| entry.key == key))
+        .unwrap_or(false);
+
+    if authorized {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::UNAUTHORIZED,
+            Json(error_response(
+                request_id.unwrap_or(Value::Null),
+                -32001,
+                "Unauthorized",
+                Some(json!({ "message": "缺少或无效的 MCP 密钥" })),
+            )),
+        ))
+    }
+}
+
+fn active_mcp_keys(keys: &[McpGatewayKey]) -> Vec<&McpGatewayKey> {
+    keys.iter()
+        .filter(|key| {
+            key.enabled
+                && !key.key.trim().is_empty()
+                && key
+                    .expires_at
+                    .as_deref()
+                    .map(|expires_at| {
+                        DateTime::parse_from_rfc3339(expires_at)
+                            .map(|dt| dt.with_timezone(&Utc) > Utc::now())
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(true)
+        })
+        .collect()
+}
+
+fn extract_mcp_key(headers: &HeaderMap, query: &HashMap<String, String>) -> Option<String> {
+    if let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
+        let trimmed = auth.trim();
+        if let Some(token) = trimmed.strip_prefix("Bearer ") {
+            let token = token.trim();
+            if !token.is_empty() {
+                return Some(token.to_string());
+            }
+        }
+    }
+
+    if let Some(key) = headers.get("x-api-key").and_then(|v| v.to_str().ok()) {
+        let key = key.trim();
+        if !key.is_empty() {
+            return Some(key.to_string());
+        }
+    }
+
+    for name in ["key", "token", "apiKey"] {
+        if let Some(value) = query.get(name) {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+
+    None
 }
 
 async fn handle_json_rpc(req: JsonRpcRequest) -> Option<JsonRpcResponse> {

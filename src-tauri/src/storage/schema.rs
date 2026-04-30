@@ -82,6 +82,22 @@ pub struct AppSettings {
     /// MCP HTTP 网关监听端口
     #[serde(default = "default_mcp_gateway_port")]
     pub mcp_gateway_port: u16,
+    /// MCP Gateway 客户端访问密钥
+    #[serde(default)]
+    pub mcp_gateway_keys: Vec<McpGatewayKey>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct McpGatewayKey {
+    pub id: String,
+    pub name: String,
+    pub key: String,
+    #[serde(default)]
+    pub enabled: bool,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -113,6 +129,7 @@ impl Default for AppSettings {
             mcp_gateway_enabled: false,
             mcp_gateway_host: default_mcp_gateway_host(),
             mcp_gateway_port: default_mcp_gateway_port(),
+            mcp_gateway_keys: Vec::new(),
         }
     }
 }

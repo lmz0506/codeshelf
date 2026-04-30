@@ -1,6 +1,6 @@
 # CodeShelf MCP Gateway
 
-CodeShelf 的 MCP Gateway 是应用面板的一部分，不需要单独启动第二个服务。你在 `设置 -> MCP Gateway` 里配置监听地址和端口，CodeShelf 会把接口库暴露为 MCP tools，外部工具通过这个本地 HTTP 地址调用。
+CodeShelf 的 MCP Gateway 是应用面板的一部分，不需要单独启动第二个服务。你在 `设置 -> MCP Gateway` 里配置监听地址、端口和访问密钥，CodeShelf 会通过流式 HTTP MCP 入口把接口库暴露为 tools。
 
 ## 能力
 
@@ -10,26 +10,49 @@ CodeShelf 的 MCP Gateway 是应用面板的一部分，不需要单独启动第
 - 接口的 JSON Schema 会映射为 MCP `inputSchema`。
 - 调用复用 CodeShelf 现有执行器，包括 baseUrl、path/query/body、headers、Bearer/Basic/API Key/Session 鉴权。
 - 返回内容同时包含文本结果和结构化结果。
+- `/mcp` JSON-RPC 请求需要访问密钥；`/health` 和信息页可用于连通检查。
 
 ## 启动方式
 
 1. 打开 CodeShelf。
 2. 进入 `设置 -> MCP Gateway`。
 3. 设置监听地址和端口，例如 `127.0.0.1` + `8787`。
-4. 点击启动。
-5. 外部 MCP 客户端连接 `http://127.0.0.1:8787/mcp`。
+4. 创建至少一个未过期访问密钥。密钥可以手动输入，也可以自动生成；可以永久有效，也可以设置过期时间；可以为不同客户端创建多个密钥。
+5. 点击启动。
+6. 外部 MCP 客户端连接 `http://127.0.0.1:8787/mcp`。
 
-启用状态、host、port 会保存到应用设置里。下次 CodeShelf 启动时，如果 MCP Gateway 是启用状态，会自动按保存的端口恢复。
+启用状态、host、port 和密钥列表会保存到应用设置里。下次 CodeShelf 启动时，如果 MCP Gateway 是启用状态，会自动按保存的端口恢复。
+
+## 鉴权
+
+`/mcp` 支持三种传递密钥的方式：
+
+```http
+Authorization: Bearer cs_mcp_xxx
+```
+
+```http
+x-api-key: cs_mcp_xxx
+```
+
+```text
+http://127.0.0.1:8787/mcp?key=cs_mcp_xxx
+```
+
+优先推荐 header。对不支持自定义 header 的客户端，可以使用 `?key=` 查询参数。
 
 ## MCP 客户端配置
 
-HTTP 配置示例：
+流式 HTTP 配置示例：
 
 ```json
 {
   "mcpServers": {
     "codeshelf-api": {
-      "url": "http://127.0.0.1:8787/mcp"
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer cs_mcp_xxx"
+      }
     }
   }
 }
@@ -39,10 +62,10 @@ Codex TOML 示例：
 
 ```toml
 [mcp_servers.codeshelf-api]
-url = "http://127.0.0.1:8787/mcp"
+url = "http://127.0.0.1:8787/mcp?key=cs_mcp_xxx"
 ```
 
-Claude Code、Kimi、GitHub Copilot 和 IDE 集成如果支持 HTTP MCP endpoint，就填上面的 URL。这个实现刻意不再提供独立 stdio sidecar，避免出现面板和外部进程两套网关。
+Claude Code、Kimi、GitHub Copilot 和 IDE 集成如果支持流式 HTTP MCP endpoint，就填上面的 URL 和密钥。这个实现刻意不再提供独立 stdio sidecar，避免出现面板和外部进程两套网关。
 
 ## 冒烟测试
 
@@ -57,5 +80,6 @@ curl -s http://127.0.0.1:8787/health
 ```bash
 curl -s -X POST http://127.0.0.1:8787/mcp \
   -H 'content-type: application/json' \
+  -H 'authorization: Bearer cs_mcp_xxx' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
