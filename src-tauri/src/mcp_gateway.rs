@@ -273,7 +273,12 @@ async fn validate_mcp_auth(
     let supplied = extract_mcp_key(headers, query);
     let authorized = supplied
         .as_deref()
-        .map(|key| active_keys.iter().any(|entry| entry.key.trim() == key))
+        .map(|key| {
+            let normalized = normalize_mcp_key(key);
+            active_keys
+                .iter()
+                .any(|entry| normalize_mcp_key(&entry.key) == normalized)
+        })
         .unwrap_or(false);
 
     if authorized {
@@ -285,7 +290,12 @@ async fn validate_mcp_auth(
                 request_id.unwrap_or(Value::Null),
                 -32001,
                 "Unauthorized",
-                Some(json!({ "message": "缺少或无效的 MCP 密钥" })),
+                Some(json!({
+                    "message": "缺少或无效的 MCP 密钥",
+                    "configuredKeyCount": settings.mcp_gateway_keys.len(),
+                    "activeKeyCount": active_keys.len(),
+                    "receivedKey": supplied.is_some()
+                })),
             )),
         ))
     }
@@ -311,30 +321,26 @@ fn active_mcp_keys(keys: &[McpGatewayKey]) -> Vec<&McpGatewayKey> {
 
 fn extract_mcp_key(headers: &HeaderMap, query: &HashMap<String, String>) -> Option<String> {
     if let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
-        let trimmed = auth.trim();
-        if let Some(token) = strip_bearer_prefix(trimmed) {
-            let token = token.trim();
+        let token = normalize_mcp_key(auth);
+        if !token.is_empty() {
+            return Some(token);
+        }
+    }
+
+    for header in ["x-api-key", "x-mcp-key", "mcp-bearer-token"] {
+        if let Some(value) = headers.get(header).and_then(|v| v.to_str().ok()) {
+            let token = normalize_mcp_key(value);
             if !token.is_empty() {
-                return Some(token.to_string());
+                return Some(token);
             }
         }
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
     }
 
-    if let Some(key) = headers.get("x-api-key").and_then(|v| v.to_str().ok()) {
-        let key = key.trim();
-        if !key.is_empty() {
-            return Some(key.to_string());
-        }
-    }
-
-    for name in ["key", "token", "apiKey"] {
+    for name in ["key", "token", "apiKey", "access_token", "bearer_token"] {
         if let Some(value) = query.get(name) {
-            let value = value.trim();
-            if !value.is_empty() {
-                return Some(value.to_string());
+            let token = normalize_mcp_key(value);
+            if !token.is_empty() {
+                return Some(token);
             }
         }
     }
@@ -342,13 +348,19 @@ fn extract_mcp_key(headers: &HeaderMap, query: &HashMap<String, String>) -> Opti
     None
 }
 
-fn strip_bearer_prefix(value: &str) -> Option<&str> {
-    let (prefix, rest) = value.split_once(' ')?;
-    if prefix.eq_ignore_ascii_case("bearer") {
-        Some(rest)
-    } else {
-        None
+fn normalize_mcp_key(value: &str) -> String {
+    let mut token = value.trim();
+    loop {
+        let Some((prefix, rest)) = token.split_once(char::is_whitespace) else {
+            break;
+        };
+        if prefix.eq_ignore_ascii_case("bearer") {
+            token = rest.trim();
+        } else {
+            break;
+        }
     }
+    token.trim_matches('"').trim_matches('\'').trim().to_string()
 }
 
 async fn handle_json_rpc(req: JsonRpcRequest) -> Option<JsonRpcResponse> {
