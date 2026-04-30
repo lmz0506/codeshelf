@@ -81,3 +81,7 @@ export async function buildApiTools(endpointIds: string[]): Promise<ApiToolsBund
 export async function executeApiEndpoint(endpointId: string, argumentsJson: string): Promise<ApiExecutionResult> {
   return invoke("execute_api_endpoint", { endpointId, argumentsJson });
 }
+
+export async function fetchApiDocumentUrl(url: string): Promise<string> {
+  return invoke("fetch_api_document_url", { url });
+}

@@ -27,6 +27,7 @@ use crate::storage::{
 };
 
 const DEFAULT_RESPONSE_TRIM_BYTES: usize = 8192;
+const MAX_API_DOCUMENT_BYTES: u64 = 10 * 1024 * 1024;
 
 // ============== 路径 / IO 辅助 ==============
 
@@ -964,4 +965,50 @@ pub async fn execute_api_endpoint(
         truncated,
         body: body_str,
     })
+}
+
+#[tauri::command]
+pub async fn fetch_api_document_url(url: String) -> Result<String, String> {
+    let trimmed = url.trim();
+    let parsed = reqwest::Url::parse(trimmed).map_err(|e| format!("URL 不合法: {}", e))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("只支持 http 或 https 链接".into());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| format!("构建下载 client 失败: {}", e))?;
+
+    let resp = client
+        .get(parsed)
+        .send()
+        .await
+        .map_err(|e| format!("读取在线文档失败: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "在线文档返回 {}: {}",
+            status,
+            text.chars().take(300).collect::<String>()
+        ));
+    }
+
+    if let Some(len) = resp.content_length() {
+        if len > MAX_API_DOCUMENT_BYTES {
+            return Err("在线文档超过 10MB，已停止导入".into());
+        }
+    }
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取在线文档内容失败: {}", e))?;
+    if bytes.len() as u64 > MAX_API_DOCUMENT_BYTES {
+        return Err("在线文档超过 10MB，已停止导入".into());
+    }
+
+    String::from_utf8(bytes.to_vec()).map_err(|e| format!("在线文档不是 UTF-8 文本: {}", e))
 }

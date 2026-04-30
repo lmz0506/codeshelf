@@ -439,6 +439,7 @@ pub fn run() {
             api_chat::delete_api_chat_session,
             api_chat::build_api_tools,
             api_chat::execute_api_endpoint,
+            api_chat::fetch_api_document_url,
             // Chat tools / tasks
             tools::chat_list_tools,
             tools::chat_execute_tool,

@@ -4,6 +4,7 @@ import { AuthEditor } from "./AuthEditor";
 
 interface EndpointEditorProps {
   initial?: ApiEndpoint;
+  initialGroupId?: string;
   groups: ApiGroup[];
   onCancel: () => void;
   onSave: (endpoint: ApiEndpoint) => Promise<void> | void;
@@ -29,12 +30,12 @@ function blankSchema(): Record<string, unknown> {
   return { type: "object", properties: {} };
 }
 
-function blank(): ApiEndpoint {
+function blank(groupId?: string): ApiEndpoint {
   return {
     id: "",
     name: "",
     description: "",
-    groupId: undefined,
+    groupId,
     method: "GET",
     url: "",
     headers: [],
@@ -110,8 +111,8 @@ function paramsToSchema(params: FormParam[]): Record<string, unknown> {
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
-export function EndpointEditor({ initial, groups, onCancel, onSave }: EndpointEditorProps) {
-  const [ep, setEp] = useState<ApiEndpoint>(initial ?? blank());
+export function EndpointEditor({ initial, initialGroupId, groups, onCancel, onSave }: EndpointEditorProps) {
+  const [ep, setEp] = useState<ApiEndpoint>(initial ?? blank(initialGroupId));
 
   const initialParams = useMemo(
     () => schemaToParams(initial?.paramsSchema ?? blankSchema()),
@@ -128,7 +129,7 @@ export function EndpointEditor({ initial, groups, onCancel, onSave }: EndpointEd
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const nextEp = initial ?? blank();
+    const nextEp = initial ?? blank(initialGroupId);
     setEp(nextEp);
     const asParams = schemaToParams(nextEp.paramsSchema);
     if (asParams !== null) {
@@ -140,7 +141,7 @@ export function EndpointEditor({ initial, groups, onCancel, onSave }: EndpointEd
     }
     setSchemaText(JSON.stringify(nextEp.paramsSchema ?? blankSchema(), null, 2));
     setSchemaError(null);
-  }, [initial]);
+  }, [initial, initialGroupId]);
 
   const authOverrideEnabled = ep.authOverride != null;
 
