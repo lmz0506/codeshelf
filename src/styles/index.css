@@ -785,15 +785,18 @@ body {
 
 .project-detail-panel {
   position: fixed;
-  inset: 0;
+  inset: 6px;
   z-index: 50;
   background-color: #f9fafb;
   display: flex;
   flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .project-detail-header {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
@@ -963,7 +966,7 @@ body {
 }
 
 .project-detail-sidebar {
-  position: fixed;
+  position: absolute;
   left: 0;
   top: 0;
   bottom: 2.75rem; /* 为页脚留出空间 */
@@ -974,6 +977,10 @@ body {
   flex-direction: column;
   z-index: 10;
   padding-top: 4.5rem;
+}
+
+.project-detail-content {
+  min-height: 0;
 }
 
 .sidebar-scroll-area {
@@ -1013,7 +1020,7 @@ body {
 
 /* 面板底部快速切换页脚 */
 .panel-footer {
-  position: fixed;
+  position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
@@ -1082,7 +1089,7 @@ body {
   background-color: #f9fafb;
   overflow: hidden;
   margin-left: 18rem;
-  height: calc(100vh - 4.5rem);
+  min-height: 0;
   padding-bottom: 2.75rem; /* 为页脚留出空间 */
 }
 

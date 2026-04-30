@@ -688,7 +688,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
       </header>
 
       {/* 主体内容 */}
-      <div className="flex flex-1 pt-[4.5rem]">
+      <div className="project-detail-content flex flex-1 pt-[4.5rem]">
         {/* Sidebar */}
         <aside className="project-detail-sidebar">
           <GitSidebar
