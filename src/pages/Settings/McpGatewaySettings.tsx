@@ -103,10 +103,6 @@ export function McpGatewaySettings() {
       showToast("warning", "请填写有效的监听地址和端口");
       return;
     }
-    if (activeKeys.length === 0) {
-      showToast("warning", "请先创建至少一个未过期的 MCP 密钥");
-      return;
-    }
     setBusy(true);
     try {
       await saveSettings({
@@ -271,7 +267,9 @@ export function McpGatewaySettings() {
           <div className="text-sm font-semibold flex items-center gap-2 text-gray-900">
             <KeyRound size={16} /> 访问密钥
           </div>
-          <span className="text-xs text-gray-500">{activeKeys.length}/{keys.length} 个可用</span>
+          <span className="text-xs text-gray-500">
+            {keys.length === 0 ? "未启用鉴权" : `${activeKeys.length}/${keys.length} 个可用`}
+          </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-[160px_minmax(0,1fr)_120px] gap-2 items-start">
@@ -321,7 +319,7 @@ export function McpGatewaySettings() {
         <div className="space-y-2">
           {keys.length === 0 && (
             <div className="text-xs text-gray-400 border border-dashed border-gray-200 rounded p-3">
-              暂无密钥。启动 MCP Gateway 前需要至少一个未过期密钥。
+              暂无密钥，当前 MCP Gateway 不需要鉴权。添加密钥后，外部客户端必须携带有效密钥。
             </div>
           )}
           {keys.map((entry) => (

@@ -254,14 +254,18 @@ async fn validate_mcp_auth(
     };
 
     let active_keys = active_mcp_keys(&settings.mcp_gateway_keys);
+    if settings.mcp_gateway_keys.is_empty() {
+        return Ok(());
+    }
+
     if active_keys.is_empty() {
         return Err((
             StatusCode::UNAUTHORIZED,
             Json(error_response(
                 request_id.unwrap_or(Value::Null),
                 -32001,
-                "MCP authentication is not configured",
-                Some(json!({ "message": "请先在 CodeShelf 设置页创建至少一个未过期的 MCP 密钥" })),
+                "MCP authentication has no active keys",
+                Some(json!({ "message": "已配置 MCP 密钥，但没有未过期且启用的密钥" })),
             )),
         ));
     }
