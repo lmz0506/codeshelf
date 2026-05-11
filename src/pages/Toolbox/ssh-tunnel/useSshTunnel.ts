@@ -108,12 +108,15 @@ export function useSshTunnel() {
 
   async function handleSelectKey() {
     try {
-      const home = await import("@tauri-apps/api/path").then((m) => m.homeDir());
+      const { homeDir, join } = await import("@tauri-apps/api/path");
+      const home = await homeDir();
+      // 跨平台拼接 — Windows: C:\Users\<user>\.ssh, macOS/Linux: ~/.ssh
+      const sshDir = await join(home, ".ssh");
       const selected = await open({
         directory: false,
         multiple: false,
         title: "选择 SSH 私钥",
-        defaultPath: `${home}/.ssh`,
+        defaultPath: sshDir,
       });
       if (selected) setFormKeyPath(selected as string);
     } catch (err) {
