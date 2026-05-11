@@ -1,0 +1,278 @@
+import { FolderOpen, KeyRound, Lock, Settings2 } from "lucide-react";
+import { Button, Input } from "@/components/ui";
+import type { SshTunnel } from "@/types/toolbox";
+import type { AuthType } from "./types";
+
+interface TunnelFormDialogProps {
+  editing: SshTunnel | null;
+  formName: string;
+  formLocalPort: string;
+  formRemoteHost: string;
+  formRemotePort: string;
+  formSshHost: string;
+  formSshPort: string;
+  formSshUser: string;
+  formAuthType: AuthType;
+  formKeyPath: string;
+  formPassphrase: string;
+  formPassword: string;
+  formHostAlias: string;
+  sshConfigHosts: string[];
+  onFormNameChange: (v: string) => void;
+  onFormLocalPortChange: (v: string) => void;
+  onFormRemoteHostChange: (v: string) => void;
+  onFormRemotePortChange: (v: string) => void;
+  onFormSshHostChange: (v: string) => void;
+  onFormSshPortChange: (v: string) => void;
+  onFormSshUserChange: (v: string) => void;
+  onFormAuthTypeChange: (t: AuthType) => void;
+  onFormKeyPathChange: (v: string) => void;
+  onFormPassphraseChange: (v: string) => void;
+  onFormPasswordChange: (v: string) => void;
+  onFormHostAliasChange: (v: string) => void;
+  onSelectKey: () => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}
+
+const AUTH_OPTIONS: Array<{
+  value: AuthType;
+  label: string;
+  icon: typeof KeyRound;
+}> = [
+  { value: "key", label: "私钥", icon: KeyRound },
+  { value: "password", label: "密码", icon: Lock },
+  { value: "sshConfig", label: "~/.ssh/config", icon: Settings2 },
+];
+
+export function TunnelFormDialog(props: TunnelFormDialogProps) {
+  const {
+    editing,
+    formName,
+    formLocalPort,
+    formRemoteHost,
+    formRemotePort,
+    formSshHost,
+    formSshPort,
+    formSshUser,
+    formAuthType,
+    formKeyPath,
+    formPassphrase,
+    formPassword,
+    formHostAlias,
+    sshConfigHosts,
+    onFormNameChange,
+    onFormLocalPortChange,
+    onFormRemoteHostChange,
+    onFormRemotePortChange,
+    onFormSshHostChange,
+    onFormSshPortChange,
+    onFormSshUserChange,
+    onFormAuthTypeChange,
+    onFormKeyPathChange,
+    onFormPassphraseChange,
+    onFormPasswordChange,
+    onFormHostAliasChange,
+    onSelectKey,
+    onCancel,
+    onSubmit,
+  } = props;
+
+  const isEditing = Boolean(editing);
+  const showSshTarget = formAuthType !== "sshConfig";
+
+  return (
+    <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+          {isEditing ? "编辑 SSH 隧道" : "创建 SSH 隧道"}
+        </h3>
+        <p className="text-xs text-gray-400 mb-4">
+          相当于 <code className="font-mono">ssh -N -L 本地:远程主机:远程端口 用户@SSH主机</code>
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-500 mb-2">名称</label>
+            <Input
+              value={formName}
+              onChange={(e) => onFormNameChange(e.target.value)}
+              placeholder="如: 远程 Redis"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-500 mb-2">本地端口</label>
+              <Input
+                type="number"
+                value={formLocalPort}
+                onChange={(e) => onFormLocalPortChange(e.target.value)}
+                placeholder="如: 16379"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-500 mb-2">远程端口</label>
+              <Input
+                type="number"
+                value={formRemotePort}
+                onChange={(e) => onFormRemotePortChange(e.target.value)}
+                placeholder="如: 6379"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-500 mb-2">
+              远程主机 <span className="text-gray-400 font-normal">(SSH 服务端看到的目标)</span>
+            </label>
+            <Input
+              value={formRemoteHost}
+              onChange={(e) => onFormRemoteHostChange(e.target.value)}
+              placeholder="默认 127.0.0.1"
+            />
+          </div>
+
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <label className="block text-sm font-medium text-gray-500 mb-2">认证方式</label>
+            <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg w-fit mb-4">
+              {AUTH_OPTIONS.map((opt) => {
+                const Icon = opt.icon;
+                const active = formAuthType === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => onFormAuthTypeChange(opt.value)}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                      active
+                        ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                        : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <Icon size={14} />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {showSshTarget && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-[2fr_1fr] gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-2">SSH 主机</label>
+                    <Input
+                      value={formSshHost}
+                      onChange={(e) => onFormSshHostChange(e.target.value)}
+                      placeholder="如: 192.168.1.10 或 example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-2">SSH 端口</label>
+                    <Input
+                      type="number"
+                      value={formSshPort}
+                      onChange={(e) => onFormSshPortChange(e.target.value)}
+                      placeholder="22"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-2">用户</label>
+                  <Input
+                    value={formSshUser}
+                    onChange={(e) => onFormSshUserChange(e.target.value)}
+                    placeholder="如: root、ubuntu"
+                  />
+                </div>
+              </div>
+            )}
+
+            {formAuthType === "key" && (
+              <div className="space-y-3 mt-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-2">私钥路径</label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={formKeyPath}
+                      onChange={(e) => onFormKeyPathChange(e.target.value)}
+                      placeholder="如: ~/.ssh/id_rsa"
+                      className="flex-1"
+                    />
+                    <Button onClick={onSelectKey} variant="secondary">
+                      <FolderOpen size={16} />
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-2">
+                    Passphrase <span className="text-gray-400 font-normal">(可选)</span>
+                  </label>
+                  <Input
+                    type="password"
+                    value={formPassphrase}
+                    onChange={(e) => onFormPassphraseChange(e.target.value)}
+                    placeholder="如果私钥已加密"
+                  />
+                </div>
+              </div>
+            )}
+
+            {formAuthType === "password" && (
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-gray-500 mb-2">密码</label>
+                <Input
+                  type="password"
+                  value={formPassword}
+                  onChange={(e) => onFormPasswordChange(e.target.value)}
+                  placeholder="SSH 登录密码"
+                />
+              </div>
+            )}
+
+            {formAuthType === "sshConfig" && (
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-2">
+                    Host 别名 <span className="text-gray-400 font-normal">(读取 ~/.ssh/config)</span>
+                  </label>
+                  <Input
+                    value={formHostAlias}
+                    onChange={(e) => onFormHostAliasChange(e.target.value)}
+                    placeholder="如: my-server"
+                    list="ssh-config-hosts-datalist"
+                  />
+                  <datalist id="ssh-config-hosts-datalist">
+                    {sshConfigHosts.map((h) => (
+                      <option key={h} value={h} />
+                    ))}
+                  </datalist>
+                  {sshConfigHosts.length > 0 && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      可选: {sshConfigHosts.slice(0, 8).join(", ")}
+                      {sshConfigHosts.length > 8 ? " ..." : ""}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-amber-500 dark:text-amber-400 mt-3">
+              ⚠ 私钥 passphrase、密码本地明文存储；首版未做 known_hosts 校验
+            </p>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <Button onClick={onCancel} variant="secondary">
+            取消
+          </Button>
+          <Button onClick={onSubmit} variant="primary">
+            {isEditing ? "保存" : "创建"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
