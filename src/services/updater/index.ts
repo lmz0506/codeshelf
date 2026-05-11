@@ -2,6 +2,8 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { resolveResource } from "@tauri-apps/api/path";
 import { exists } from "@tauri-apps/plugin-fs";
+import { invoke } from "@tauri-apps/api/core";
+import { open as openUrl } from "@tauri-apps/plugin-shell";
 
 export interface UpdateInfo {
   available: boolean;
@@ -169,4 +171,63 @@ export async function downloadAndInstallUpdate(
   });
   downloadedUpdate = null;
   await relaunch();
+}
+
+// ========== 架构检测（处理 Intel 二进制装在 Apple Silicon 上的更新错配） ==========
+
+export interface ArchStatus {
+  /** 当前 app 二进制的编译架构 "x86_64" / "aarch64" / ... */
+  binaryArch: string;
+  /** 宿主机的真实物理架构（Rosetta 下 binary=x86_64 但 host=aarch64） */
+  hostArch: string;
+  os: string;
+  /** 是否运行在 Rosetta 翻译层下（macOS 专有） */
+  isRosetta: boolean;
+  /** binaryArch !== hostArch 即视为不匹配 */
+  mismatch: boolean;
+}
+
+let cachedArchStatus: ArchStatus | null = null;
+
+export async function getArchStatus(): Promise<ArchStatus> {
+  if (cachedArchStatus) return cachedArchStatus;
+  const status = await invoke<ArchStatus>("get_arch_status");
+  cachedArchStatus = status;
+  return status;
+}
+
+/**
+ * 已知 release 资产的命名规则（来自 tauri-action 默认）：
+ *   macOS aarch64: CodeShelf_<v>_aarch64.dmg
+ *   macOS x86_64 : CodeShelf_<v>_x64.dmg
+ * 拼好 release 页 + 推荐 dmg 链接，用浏览器打开。
+ *
+ * 走浏览器而不是内置自动更新器的原因：
+ * Tauri plugin-updater 按二进制架构匹配 latest.json 中的 platforms key，
+ * 永远拿不到对方架构的链接；只能让浏览器接管下载。
+ */
+export function buildCorrectArchDmgUrl(version: string, targetArch: string): string {
+  // version 形如 "0.1.26"；release tag 当前是 "vX.Y.Z"（参见 release.yml）
+  const tag = version.startsWith("v") ? version : `v${version}`;
+  const archSuffix = targetArch === "aarch64" ? "aarch64" : "x64";
+  return `https://github.com/en-o/codeshelf/releases/download/${tag}/CodeShelf_${version.replace(
+    /^v/,
+    "",
+  )}_${archSuffix}.dmg`;
+}
+
+const RELEASES_PAGE = "https://github.com/en-o/codeshelf/releases/latest";
+
+/**
+ * 用浏览器打开匹配宿主架构的 dmg 直链；同时打开 release 页作为兜底
+ * （命名规则万一变了用户能自己找到对的 asset）。
+ */
+export async function openCorrectArchDownload(version: string, hostArch: string): Promise<void> {
+  try {
+    const dmgUrl = buildCorrectArchDmgUrl(version, hostArch);
+    await openUrl(dmgUrl);
+  } catch (err) {
+    console.warn("打开直链失败，回退到 release 页", err);
+    await openUrl(RELEASES_PAGE);
+  }
 }
