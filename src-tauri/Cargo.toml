@@ -52,6 +52,8 @@ sysinfo = "0.30"
 socket2 = "0.5"
 base64 = "0.22"
 arboard = "3"
+russh = "0.60"
+russh-config = "0.58"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", features = ["NSColor", "NSWindow", "NSResponder", "NSEvent", "NSScreen", "NSGraphics"] }
