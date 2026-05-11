@@ -33,9 +33,17 @@ export function DockerImageTool({
         icon={Box}
         onBack={onBack}
         actions={
-          <Button onClick={actions.refreshDocker} variant="secondary" size="sm">
-            <RefreshCw size={16} className="mr-2" />
-            刷新
+          <Button
+            onClick={actions.refreshDocker}
+            disabled={state.refreshing}
+            variant="secondary"
+            size="sm"
+          >
+            <RefreshCw
+              size={16}
+              className={`mr-2 ${state.refreshing ? "animate-spin" : ""}`}
+            />
+            {state.refreshing ? "刷新中..." : "刷新"}
           </Button>
         }
       />

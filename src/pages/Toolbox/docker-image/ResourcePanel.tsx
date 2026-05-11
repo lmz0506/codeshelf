@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, FolderOpen, Play, RotateCw, Send, Square, Trash2 } from "lucide-react";
+import { FileText, FolderOpen, Play, RefreshCw, RotateCw, Send, Square, Trash2 } from "lucide-react";
 import { openInEditor, openInExplorer } from "@/services/db";
 import type { DockerContainerInfo } from "@/types/toolbox";
 import type { DockerImageToolModel } from "./useDockerImageTool";
@@ -38,7 +38,14 @@ export function ResourcePanel({ model }: ResourcePanelProps) {
               {state.images.length} 个镜像 · {state.containers.length} 个容器
             </div>
           </div>
-          <button onClick={actions.refreshDockerLists} className="text-xs text-blue-500">刷新</button>
+          <button
+            onClick={() => actions.refreshDockerLists()}
+            disabled={state.refreshing}
+            className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 disabled:cursor-not-allowed disabled:text-gray-400"
+          >
+            <RefreshCw size={12} className={state.refreshing ? "animate-spin" : ""} />
+            {state.refreshing ? "刷新中..." : "刷新"}
+          </button>
         </div>
 
         <div className="grid grid-cols-2 rounded-lg bg-gray-100 p-1">

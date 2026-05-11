@@ -67,6 +67,8 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   const [images, setImages] = useState<DockerImageInfo[]>([]);
   const [containers, setContainers] = useState<DockerContainerInfo[]>([]);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [lastResult, setLastResult] = useState<DockerCommandResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState("");
@@ -90,7 +92,7 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   useEffect(() => {
     if (!status?.available) return;
     const interval = setInterval(() => {
-      refreshDockerLists().catch(() => {});
+      refreshDockerLists({ silent: true }).catch(() => {});
     }, 3000);
     return () => clearInterval(interval);
   }, [status?.available]);
@@ -104,14 +106,22 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   }, [options.initialProjectPath]);
 
   async function refreshDocker() {
-    const nextStatus = await dockerCheckAvailable();
-    setStatus(nextStatus);
-    if (nextStatus.available) {
-      await refreshDockerLists();
+    setRefreshing(true);
+    try {
+      const nextStatus = await dockerCheckAvailable();
+      setStatus(nextStatus);
+      if (nextStatus.available) {
+        await refreshDockerLists({ silent: true });
+      }
+      setRefreshTick((t) => t + 1);
+    } finally {
+      // 保证 spinner 至少转一小段时间，否则数据本来就是新的会感觉没反应
+      setTimeout(() => setRefreshing(false), 350);
     }
   }
 
-  async function refreshDockerLists() {
+  async function refreshDockerLists(opts: { silent?: boolean } = {}) {
+    if (!opts.silent) setRefreshing(true);
     try {
       const [nextImages, nextContainers] = await Promise.all([
         dockerListImages(),
@@ -119,8 +129,13 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       ]);
       setImages(nextImages);
       setContainers(nextContainers);
+      if (!opts.silent) setRefreshTick((t) => t + 1);
     } catch (error) {
       console.error("刷新 Docker 列表失败:", error);
+    } finally {
+      if (!opts.silent) {
+        setTimeout(() => setRefreshing(false), 350);
+      }
     }
   }
 
@@ -394,6 +409,8 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       dockerfileContent,
       dockerfilePath,
       dockerfiles,
+      refreshing,
+      refreshTick,
       envText,
       extraArgsText,
       fullImageName,
