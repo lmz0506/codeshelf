@@ -211,6 +211,7 @@ pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
             allowed_tools: None,
             enabled_tools: None,
             allowed_cwd: None,
+            current_compaction_version: None,
         });
         summaries.push(ChatSessionSummary {
             id: session.id,
@@ -274,6 +275,7 @@ pub async fn create_chat_session(input: CreateChatSessionInput) -> Result<ChatSe
         allowed_tools: None,
         enabled_tools: None,
         allowed_cwd: None,
+        current_compaction_version: None,
     };
 
     save_chat_session(session.clone()).await?;
@@ -308,7 +310,142 @@ pub async fn delete_chat_session(session_id: String) -> Result<(), String> {
         fs::remove_file(&path)
             .map_err(|e| format!("删除会话失败: {}", e))?;
     }
+    // 同时清理压缩目录（哪怕 json 缺失也尝试删，避免孤儿）
+    let compaction_dir = session_compaction_dir(&dir, &session_id);
+    if compaction_dir.exists() {
+        if let Err(e) = fs::remove_dir_all(&compaction_dir) {
+            log::warn!("删除压缩目录失败 {:?}: {}", compaction_dir, e);
+        }
+    }
     Ok(())
+}
+
+// ============== 上下文压缩 ==============
+
+use crate::storage::{CompactionIndex, CompactionMeta};
+
+fn session_compaction_dir(history_dir: &Path, session_id: &str) -> PathBuf {
+    history_dir.join(session_id).join("compactions")
+}
+
+fn read_compaction_index(dir: &Path) -> CompactionIndex {
+    let path = dir.join("index.json");
+    if !path.exists() {
+        return CompactionIndex::default();
+    }
+    let content = match fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("读取压缩索引失败 {:?}: {}", path, e);
+            return CompactionIndex::default();
+        }
+    };
+    serde_json::from_str(&content).unwrap_or_else(|e| {
+        log::warn!("解析压缩索引失败 {:?}: {}", path, e);
+        CompactionIndex::default()
+    })
+}
+
+fn write_compaction_index(dir: &Path, index: &CompactionIndex) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|e| format!("创建压缩目录失败: {}", e))?;
+    let content = serde_json::to_string_pretty(index)
+        .map_err(|e| format!("序列化压缩索引失败: {}", e))?;
+    fs::write(dir.join("index.json"), content)
+        .map_err(|e| format!("写入压缩索引失败: {}", e))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveCompactionInput {
+    pub session_id: String,
+    pub content: String,
+    pub source_message_count: usize,
+    pub tail_kept: usize,
+    pub model: Option<String>,
+}
+
+#[tauri::command]
+pub async fn save_compaction(input: SaveCompactionInput) -> Result<CompactionMeta, String> {
+    if input.content.trim().is_empty() {
+        return Err("压缩内容为空".to_string());
+    }
+    let dir = resolve_chat_history_dir()?;
+    let compaction_dir = session_compaction_dir(&dir, &input.session_id);
+    fs::create_dir_all(&compaction_dir).map_err(|e| format!("创建压缩目录失败: {}", e))?;
+
+    let mut index = read_compaction_index(&compaction_dir);
+    let next_n = index.versions.iter()
+        .filter_map(|v| v.version.strip_prefix('v').and_then(|s| s.parse::<u32>().ok()))
+        .max()
+        .unwrap_or(0)
+        + 1;
+    let version = format!("v{}", next_n);
+
+    let md_path = compaction_dir.join(format!("{}.md", version));
+    fs::write(&md_path, &input.content)
+        .map_err(|e| format!("写入压缩文件失败: {}", e))?;
+
+    let meta = CompactionMeta {
+        version: version.clone(),
+        created_at: current_iso_time(),
+        source_message_count: input.source_message_count,
+        tail_kept: input.tail_kept,
+        char_count: input.content.chars().count(),
+        model: input.model,
+    };
+
+    index.versions.push(meta.clone());
+    index.current = Some(version);
+    write_compaction_index(&compaction_dir, &index)?;
+
+    Ok(meta)
+}
+
+#[tauri::command]
+pub async fn list_compactions(session_id: String) -> Result<CompactionIndex, String> {
+    let dir = resolve_chat_history_dir()?;
+    let compaction_dir = session_compaction_dir(&dir, &session_id);
+    if !compaction_dir.exists() {
+        return Ok(CompactionIndex::default());
+    }
+    Ok(read_compaction_index(&compaction_dir))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionContent {
+    pub version: String,
+    pub content: String,
+    pub meta: Option<CompactionMeta>,
+}
+
+#[tauri::command]
+pub async fn get_compaction(
+    session_id: String,
+    version: Option<String>,
+) -> Result<Option<CompactionContent>, String> {
+    let dir = resolve_chat_history_dir()?;
+    let compaction_dir = session_compaction_dir(&dir, &session_id);
+    if !compaction_dir.exists() {
+        return Ok(None);
+    }
+    let index = read_compaction_index(&compaction_dir);
+    let target = match version.or(index.current.clone()) {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+    let md_path = compaction_dir.join(format!("{}.md", target));
+    if !md_path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(&md_path)
+        .map_err(|e| format!("读取压缩文件失败: {}", e))?;
+    let meta = index.versions.iter().find(|m| m.version == target).cloned();
+    Ok(Some(CompactionContent {
+        version: target,
+        content,
+        meta,
+    }))
 }
 
 #[tauri::command]

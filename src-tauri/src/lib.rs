@@ -445,6 +445,9 @@ pub fn run() {
             chat::save_chat_session,
             chat::rename_chat_session,
             chat::delete_chat_session,
+            chat::save_compaction,
+            chat::list_compactions,
+            chat::get_compaction,
             chat::chat_stream,
             chat::chat_cancel,
             // ApiChat: Groups / Endpoints / Sessions / LLM bridge
