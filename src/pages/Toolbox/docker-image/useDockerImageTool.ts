@@ -14,7 +14,9 @@ import {
   dockerReadDockerfile,
   dockerRemoveContainer,
   dockerRemoveImage,
+  dockerRestartContainer,
   dockerRunImage,
+  dockerStartContainer,
   dockerStopContainer,
   dockerWriteDockerfile,
   getCurrentPlatform,
@@ -83,6 +85,15 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
     refreshDocker();
     getCurrentPlatform().then(setPlatform).catch(() => setPlatform(""));
   }, []);
+
+  // Docker 状态自动刷新（每 3 秒拉一次容器/镜像列表，前提是 docker 可用）
+  useEffect(() => {
+    if (!status?.available) return;
+    const interval = setInterval(() => {
+      refreshDockerLists().catch(() => {});
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [status?.available]);
 
   useEffect(() => {
     if (!options.initialProjectPath) return;
@@ -312,6 +323,30 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
     });
   }
 
+  async function startContainer(id: string) {
+    try {
+      const result = await dockerStartContainer(id);
+      setLastResult(result);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      await refreshDockerLists();
+    }
+  }
+
+  function restartContainer(id: string) {
+    requestConfirm({
+      title: "重启容器",
+      message: `确定重启容器 ${id} 吗？`,
+      confirmLabel: "确认重启",
+      onConfirm: async () => {
+        const result = await dockerRestartContainer(id);
+        setLastResult(result);
+        await refreshDockerLists();
+      },
+    });
+  }
+
   function removeContainer(id: string) {
     requestConfirm({
       title: "删除容器",
@@ -426,10 +461,12 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       refreshDockerLists,
       removeContainer,
       removeImage,
+      restartContainer,
       runSelectedImage,
       saveDockerfile,
       scanDockerfiles,
       selectProject,
+      startContainer,
       stopContainer,
     },
   };

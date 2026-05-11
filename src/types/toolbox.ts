@@ -248,6 +248,8 @@ export interface DockerContainerInfo {
   image: string;
   names: string;
   status: string;
+  /** docker ps 的 State：running / exited / paused / created / restarting / dead / removing / unknown */
+  state: string;
   ports: string;
   composeProject?: string;
   composeService?: string;

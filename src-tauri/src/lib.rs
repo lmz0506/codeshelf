@@ -384,6 +384,8 @@ pub fn run() {
             toolbox::docker::docker_list_containers,
             toolbox::docker::docker_inspect_container_yaml,
             toolbox::docker::docker_stop_container,
+            toolbox::docker::docker_start_container,
+            toolbox::docker::docker_restart_container,
             toolbox::docker::docker_remove_container,
             toolbox::docker::docker_push_image,
             // Toolbox - Claude Code commands

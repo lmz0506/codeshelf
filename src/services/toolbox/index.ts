@@ -320,6 +320,14 @@ export async function dockerStopContainer(container: string): Promise<DockerComm
   return invoke("docker_stop_container", { container });
 }
 
+export async function dockerStartContainer(container: string): Promise<DockerCommandResult> {
+  return invoke("docker_start_container", { container });
+}
+
+export async function dockerRestartContainer(container: string): Promise<DockerCommandResult> {
+  return invoke("docker_restart_container", { container });
+}
+
 export async function dockerRemoveContainer(container: string, force?: boolean): Promise<DockerCommandResult> {
   return invoke("docker_remove_container", { container, force });
 }
