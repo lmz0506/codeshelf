@@ -72,6 +72,49 @@ export async function deleteChatSession(sessionId: string): Promise<void> {
   return invoke("delete_chat_session", { sessionId });
 }
 
+// ========== 上下文压缩 ==========
+
+export interface CompactionMeta {
+  version: string;
+  createdAt: string;
+  sourceMessageCount: number;
+  tailKept: number;
+  charCount: number;
+  model?: string;
+}
+
+export interface CompactionIndex {
+  current?: string;
+  versions: CompactionMeta[];
+}
+
+export interface CompactionContent {
+  version: string;
+  content: string;
+  meta?: CompactionMeta;
+}
+
+export async function saveCompaction(input: {
+  sessionId: string;
+  content: string;
+  sourceMessageCount: number;
+  tailKept: number;
+  model?: string;
+}): Promise<CompactionMeta> {
+  return invoke("save_compaction", { input });
+}
+
+export async function listCompactions(sessionId: string): Promise<CompactionIndex> {
+  return invoke("list_compactions", { sessionId });
+}
+
+export async function getCompaction(
+  sessionId: string,
+  version?: string,
+): Promise<CompactionContent | null> {
+  return invoke("get_compaction", { sessionId, version });
+}
+
 export async function chatStream(request: ChatStreamRequest): Promise<void> {
   return invoke("chat_stream", { request });
 }
