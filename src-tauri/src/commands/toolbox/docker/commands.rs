@@ -257,11 +257,19 @@ pub async fn docker_list_containers() -> Result<Vec<DockerContainerInfo>, String
             let id = v["ID"].as_str().unwrap_or_default().to_string();
             let (compose_project, compose_service, compose_working_dir, compose_config_files) =
                 compose_meta(&id);
+            // 优先用 docker 给的 State 字段（running / exited / paused / ...）
+            // 老版本 docker 没有 State，则从 Status 字符串推断
+            let status_str = v["Status"].as_str().unwrap_or_default().to_string();
+            let state = v["State"]
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| infer_state_from_status(&status_str));
             out.push(DockerContainerInfo {
                 id,
                 image: v["Image"].as_str().unwrap_or_default().to_string(),
                 names: v["Names"].as_str().unwrap_or_default().to_string(),
-                status: v["Status"].as_str().unwrap_or_default().to_string(),
+                status: status_str,
+                state,
                 ports: v["Ports"].as_str().unwrap_or_default().to_string(),
                 compose_project,
                 compose_service,
@@ -273,9 +281,41 @@ pub async fn docker_list_containers() -> Result<Vec<DockerContainerInfo>, String
     Ok(out)
 }
 
+/// 当 docker 版本太老不返回 State 时的兜底
+fn infer_state_from_status(status: &str) -> String {
+    let lower = status.to_lowercase();
+    if lower.starts_with("up") {
+        if lower.contains("paused") {
+            "paused".to_string()
+        } else {
+            "running".to_string()
+        }
+    } else if lower.starts_with("exited") {
+        "exited".to_string()
+    } else if lower.starts_with("created") {
+        "created".to_string()
+    } else if lower.starts_with("restarting") {
+        "restarting".to_string()
+    } else if lower.starts_with("dead") {
+        "dead".to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
 #[tauri::command]
 pub async fn docker_stop_container(container: String) -> Result<DockerCommandResult, String> {
     Ok(run_docker(&["stop", container.as_str()], None))
+}
+
+#[tauri::command]
+pub async fn docker_start_container(container: String) -> Result<DockerCommandResult, String> {
+    Ok(run_docker(&["start", container.as_str()], None))
+}
+
+#[tauri::command]
+pub async fn docker_restart_container(container: String) -> Result<DockerCommandResult, String> {
+    Ok(run_docker(&["restart", container.as_str()], None))
 }
 
 #[tauri::command]

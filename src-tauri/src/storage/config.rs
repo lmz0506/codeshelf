@@ -102,6 +102,10 @@ impl StorageConfig {
         self.data_dir.join("forward_rules.json")
     }
 
+    pub fn ssh_tunnels_file(&self) -> PathBuf {
+        self.data_dir.join("ssh_tunnels.json")
+    }
+
     pub fn server_configs_file(&self) -> PathBuf {
         self.data_dir.join("server_configs.json")
     }

@@ -301,6 +301,39 @@ pub struct ChatSession {
     /// 工具（Read/Write/Bash 等）允许操作的根目录；缺省则禁止写入/执行类工具
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_cwd: Option<String>,
+    /// 当前生效的上下文压缩版本号（如 "v2"）。None 表示从未压缩
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_compaction_version: Option<String>,
+}
+
+// ============== 上下文压缩 ==============
+
+/// 单次压缩的元数据；正文 markdown 单独存放在 <sessionId>/compactions/<version>.md
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionMeta {
+    /// 版本号，如 "v1"、"v2"
+    pub version: String,
+    pub created_at: String,
+    /// 压缩时摘要覆盖的原始消息条数（即被压缩的早期消息条数）
+    pub source_message_count: usize,
+    /// 压缩时保留的尾部条数
+    pub tail_kept: usize,
+    /// 摘要字符数
+    pub char_count: usize,
+    /// 生成摘要使用的模型（可选，便于排查）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+/// 压缩目录的索引文件 <sessionId>/compactions/index.json
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionIndex {
+    /// 当前生效版本号；None 表示无版本（不会出现在已写过的索引里）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current: Option<String>,
+    pub versions: Vec<CompactionMeta>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

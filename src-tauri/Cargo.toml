@@ -52,6 +52,10 @@ sysinfo = "0.30"
 socket2 = "0.5"
 base64 = "0.22"
 arboard = "3"
+# 显式禁用默认 aws-lc-rs 后端，改用 ring：项目内 reqwest/rustls 已经在用 ring，
+# 这样 Windows 开发机不需要额外安装 NASM/CMake，CI 也少编一个加密栈。
+russh = { version = "0.60", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-config = "0.58"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", features = ["NSColor", "NSWindow", "NSResponder", "NSEvent", "NSScreen", "NSGraphics"] }

@@ -9,6 +9,7 @@ import {
   deleteChatSession,
   executeTool,
   getChatSession,
+  getCompaction,
   listChatSessions,
   listTools,
   renameChatSession,
@@ -438,7 +439,14 @@ export function ChatPage() {
 
 
   /** 将 ChatSession.messages 转为 OpenAI 协议消息（含 tool_calls / tool 结果） */
-  function toStreamMessages(session: ChatSession): ChatStreamMessage[] {
+  /**
+   * 把 session 转成发给 LLM 的消息数组。
+   * 若提供 compaction，则把 session.messages 的前 sourceMessageCount 条替换为一条 system 摘要。
+   */
+  function toStreamMessages(
+    session: ChatSession,
+    compaction?: { summary: string; sourceMessageCount: number; version: string },
+  ): ChatStreamMessage[] {
     const out: ChatStreamMessage[] = [];
     const sysParts: string[] = [];
     if (globalMemory.trim()) sysParts.push(`[全局记忆 MEMORY.md]\n${globalMemory.trim()}`);
@@ -453,8 +461,16 @@ export function ChatPage() {
     }
     if (session.systemPrompt?.trim()) sysParts.push(session.systemPrompt.trim());
     if (mentionContextRef.current.trim()) sysParts.push(mentionContextRef.current.trim());
+    if (compaction) {
+      sysParts.push(
+        `[上下文压缩 ${compaction.version}] 以下是早期 ${compaction.sourceMessageCount} 条对话的摘要：\n\n${compaction.summary}`,
+      );
+    }
     if (sysParts.length) out.push({ role: "system", content: sysParts.join("\n\n---\n\n") });
-    for (const m of session.messages) {
+    // 压缩生效时跳过前 sourceMessageCount 条原始消息，避免重复发送
+    const skip = compaction ? Math.min(compaction.sourceMessageCount, session.messages.length) : 0;
+    const messagesToSend = skip > 0 ? session.messages.slice(skip) : session.messages;
+    for (const m of messagesToSend) {
       if (m.role === "assistant") {
         const hasToolCalls = (m.toolCalls?.length ?? 0) > 0;
         if (!hasToolCalls && (!m.content || !m.content.trim())) continue;
@@ -519,6 +535,55 @@ export function ChatPage() {
 
   const MAX_TOOL_ROUNDS = 10;
 
+  /** 自动压缩阈值：消息数超过此值且未在 streaming 时，发送前自动压缩 */
+  const AUTO_COMPACT_THRESHOLD = 40;
+  /** 自动压缩时保留尾部消息条数 */
+  const COMPACT_KEEP = 4;
+  /** 防止并发触发自动压缩 */
+  const autoCompactingRef = useRef(false);
+
+  /**
+   * 自动压缩：当未压缩的消息数超过阈值时，触发一次压缩并把版本号写回 session。
+   * 仅在非 streaming 场景调用；失败仅打 toast，不阻塞发送。
+   */
+  async function maybeAutoCompact(session: ChatSession): Promise<ChatSession> {
+    if (autoCompactingRef.current) return session;
+    if (!selected) return session;
+    let activeRange = 0;
+    if (session.currentCompactionVersion) {
+      try {
+        const c = await getCompaction(session.id, session.currentCompactionVersion);
+        const compactedCount = c?.meta?.sourceMessageCount ?? 0;
+        activeRange = Math.max(0, session.messages.length - compactedCount);
+      } catch {
+        activeRange = session.messages.length;
+      }
+    } else {
+      activeRange = session.messages.length;
+    }
+    if (activeRange <= AUTO_COMPACT_THRESHOLD) return session;
+    autoCompactingRef.current = true;
+    try {
+      const res = await compactMessages({
+        session,
+        providerId: selected.providerId,
+        model: selected.model.model,
+        baseUrl: selected.baseUrl,
+        apiKey: selected.apiKey,
+        keep: COMPACT_KEEP,
+      });
+      const next: ChatSession = { ...session, currentCompactionVersion: res.version };
+      const saved = await persistSession(next);
+      showToast("success", `已自动压缩到 ${res.version}（覆盖 ${res.sourceMessageCount} 条）`);
+      return saved;
+    } catch (err) {
+      showToast("warning", `自动压缩失败：${err instanceof Error ? err.message : "未知错误"}`);
+      return session;
+    } finally {
+      autoCompactingRef.current = false;
+    }
+  }
+
   /** 扫最近一条 user 消息是否以 `[使用 NAME 工具]` 开头，若是返回工具名 */
   function detectForcedTool(session: ChatSession): string | null {
     const last = [...session.messages].reverse().find((m) => m.role === "user");
@@ -533,6 +598,29 @@ export function ChatPage() {
       showToast("warning", `已达到最大工具循环轮次（${MAX_TOOL_ROUNDS}），请检查`);
       return;
     }
+
+    // 仅在第 0 轮做自动压缩；工具循环中的 round > 0 复用第 0 轮的 session
+    if (round === 0) {
+      session = await maybeAutoCompact(session);
+    }
+
+    // 预加载压缩摘要（如有）
+    let compaction: { summary: string; sourceMessageCount: number; version: string } | undefined;
+    if (session.currentCompactionVersion) {
+      try {
+        const c = await getCompaction(session.id, session.currentCompactionVersion);
+        if (c && c.meta) {
+          compaction = {
+            summary: c.content,
+            sourceMessageCount: c.meta.sourceMessageCount,
+            version: c.version,
+          };
+        }
+      } catch (err) {
+        console.warn("加载压缩摘要失败", err);
+      }
+    }
+
     let tools = activeTools(session);
     let toolChoice: { type: "function"; function: { name: string } } | undefined;
 
@@ -569,7 +657,7 @@ export function ChatPage() {
           topP: session.topP,
           frequencyPenalty: session.frequencyPenalty,
           presencePenalty: session.presencePenalty,
-          messages: toStreamMessages(session),
+          messages: toStreamMessages(session, compaction),
           tools,
           toolChoice,
         },
@@ -871,16 +959,16 @@ export function ChatPage() {
     }
     setLoading(true);
     try {
-      const newMessages = await compactMessages({
+      const res = await compactMessages({
         session: activeSession,
         providerId: selected.providerId,
         model: selected.model.model,
         baseUrl: selected.baseUrl,
         apiKey: selected.apiKey,
       });
-      const next: ChatSession = { ...activeSession, messages: newMessages };
+      const next: ChatSession = { ...activeSession, currentCompactionVersion: res.version };
       await persistSession(next);
-      showToast("success", "已压缩");
+      showToast("success", `已压缩到 ${res.version}（覆盖 ${res.sourceMessageCount} 条早期消息）`);
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "压缩失败");
     } finally {
@@ -1116,6 +1204,14 @@ export function ChatPage() {
                         <button className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50" onClick={() => { setMenuOpen(false); setSkillsOpen(true); }}>📚 Skills</button>
                         <button className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 flex items-center justify-center gap-1" onClick={() => { setMenuOpen(false); setTaskPanelOpen((v) => !v); }} title="LLM 可通过 TaskCreate/Update/List 工具维护本会话的待办清单">
                           <ListChecks size={12} /> 任务
+                        </button>
+                        <button
+                          className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 flex items-center justify-center gap-1 disabled:opacity-50"
+                          disabled={streaming || loading || !activeSession || activeSession.messages.length < 6}
+                          onClick={() => { setMenuOpen(false); handleCompact(); }}
+                          title="将早期对话压缩为摘要，落盘为新版本 md；旧消息保留，发送时自动用最新摘要替换"
+                        >
+                          🗜 压缩{activeSession?.currentCompactionVersion ? `（当前 ${activeSession.currentCompactionVersion}）` : ""}
                         </button>
                         <button className="col-span-2 px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 flex items-center justify-center gap-1" onClick={() => { setMenuOpen(false); setConfigFocus(undefined); setConfigOpen(true); }}>
                           <Settings size={12} /> 会话设置

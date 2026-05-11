@@ -99,11 +99,12 @@ pub fn run() {
             let tool_netcat = MenuItem::with_id(app, "tool_netcat", "Netcat", true, None::<&str>)?;
             let tool_shortcuts = MenuItem::with_id(app, "tool_shortcuts", "快捷键备忘", true, None::<&str>)?;
             let tool_clipboard = MenuItem::with_id(app, "tool_clipboard", "剪贴板历史", true, None::<&str>)?;
+            let tool_ssh_tunnel = MenuItem::with_id(app, "tool_sshTunnel", "SSH 隧道", true, None::<&str>)?;
             let toolbox_submenu = Submenu::with_items(
                 app,
                 "工具箱",
                 true,
-                &[&tool_monitor, &tool_downloader, &tool_server, &tool_claude, &tool_netcat, &tool_shortcuts, &tool_clipboard],
+                &[&tool_monitor, &tool_downloader, &tool_server, &tool_claude, &tool_netcat, &tool_shortcuts, &tool_clipboard, &tool_ssh_tunnel],
             )?;
 
             let sep1 = PredefinedMenuItem::separator(app)?;
@@ -317,6 +318,7 @@ pub fn run() {
             system::get_app_paths,
             system::clear_logs,
             system::get_cursor_position,
+            system::get_arch_status,
             // Toolbox - Scanner commands
             toolbox::scanner::scan_ports,
             toolbox::scanner::stop_scan,
@@ -348,6 +350,18 @@ pub fn run() {
             toolbox::forwarder::get_forward_rule,
             toolbox::forwarder::get_forward_stats,
             toolbox::forwarder::update_forward_rule,
+            // Toolbox - SSH Tunnel commands
+            toolbox::ssh_tunnel::add_ssh_tunnel,
+            toolbox::ssh_tunnel::update_ssh_tunnel,
+            toolbox::ssh_tunnel::remove_ssh_tunnel,
+            toolbox::ssh_tunnel::start_ssh_tunnel,
+            toolbox::ssh_tunnel::stop_ssh_tunnel,
+            toolbox::ssh_tunnel::get_ssh_tunnels,
+            toolbox::ssh_tunnel::get_ssh_tunnel,
+            toolbox::ssh_tunnel::get_ssh_tunnel_stats,
+            toolbox::ssh_tunnel::list_ssh_config_hosts,
+            toolbox::ssh_tunnel::test_ssh_tunnel,
+            toolbox::ssh_tunnel::test_local_port,
             // Toolbox - Server commands
             toolbox::server::create_server,
             toolbox::server::start_server,
@@ -371,6 +385,8 @@ pub fn run() {
             toolbox::docker::docker_list_containers,
             toolbox::docker::docker_inspect_container_yaml,
             toolbox::docker::docker_stop_container,
+            toolbox::docker::docker_start_container,
+            toolbox::docker::docker_restart_container,
             toolbox::docker::docker_remove_container,
             toolbox::docker::docker_push_image,
             // Toolbox - Claude Code commands
@@ -430,6 +446,9 @@ pub fn run() {
             chat::save_chat_session,
             chat::rename_chat_session,
             chat::delete_chat_session,
+            chat::save_compaction,
+            chat::list_compactions,
+            chat::get_compaction,
             chat::chat_stream,
             chat::chat_cancel,
             // ApiChat: Groups / Endpoints / Sessions / LLM bridge

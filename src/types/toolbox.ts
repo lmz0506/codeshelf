@@ -128,6 +128,58 @@ export interface ForwardStats {
   bytesOut: number;
 }
 
+// ============== SSH 隧道 ==============
+
+export type SshAuthMethod =
+  | { type: "key"; keyPath: string; passphrase?: string }
+  | { type: "password"; password: string }
+  | { type: "sshConfig"; hostAlias: string };
+
+export interface SshTunnel {
+  id: string;
+  name: string;
+  localPort: number;
+  remoteHost: string;
+  remotePort: number;
+  sshHost: string;
+  sshPort: number;
+  sshUser: string;
+  auth: SshAuthMethod;
+  status: "running" | "stopped";
+  connections: number;
+  bytesIn: number;
+  bytesOut: number;
+  lastError?: string | null;
+  createdAt: string;
+}
+
+export interface SshTunnelInput {
+  name: string;
+  localPort: number;
+  remoteHost: string;
+  remotePort: number;
+  sshHost: string;
+  sshPort?: number;
+  sshUser?: string;
+  auth: SshAuthMethod;
+}
+
+export interface SshTunnelStats {
+  tunnelId: string;
+  connections: number;
+  bytesIn: number;
+  bytesOut: number;
+}
+
+export interface TestPortResult {
+  success: boolean;
+  /** 命令输出（stdout/stderr 拼接） */
+  output: string;
+  /** 检测方式："nc" / "Test-NetConnection" / "tcp" */
+  method: string;
+  durationMs: number;
+}
+
 // ============== 静态服务 ==============
 
 export interface ProxyConfig {
@@ -196,6 +248,8 @@ export interface DockerContainerInfo {
   image: string;
   names: string;
   status: string;
+  /** docker ps 的 State：running / exited / paused / created / restarting / dead / removing / unknown */
+  state: string;
   ports: string;
   composeProject?: string;
   composeService?: string;
@@ -284,7 +338,7 @@ export interface ConfigProfile {
 
 // ============== 工具箱页面状态 ==============
 
-export type ToolType = "monitor" | "downloader" | "server" | "docker" | "claude" | "netcat" | "shortcuts" | "clipboard" | "resume";
+export type ToolType = "monitor" | "downloader" | "server" | "docker" | "claude" | "netcat" | "shortcuts" | "clipboard" | "resume" | "sshTunnel";
 
 export interface ToolInfo {
   id: ToolType;

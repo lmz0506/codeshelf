@@ -183,6 +183,8 @@ export interface ChatSession {
   allowedTools?: string[];
   enabledTools?: string[];
   allowedCwd?: string;
+  /** 当前生效的上下文压缩版本号（如 "v2"）；缺省表示从未压缩 */
+  currentCompactionVersion?: string;
 }
 
 export interface ChatSessionSummary {

@@ -1,6 +1,7 @@
 use std::process::Command;
 
 use crate::storage;
+use serde::Serialize;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -804,5 +805,67 @@ pub fn get_cursor_position() -> Result<CursorPosition, String> {
     #[cfg(target_os = "linux")]
     {
         Err("Linux 暂不支持获取光标位置".to_string())
+    }
+}
+
+// ============== 架构检测（更新器使用） ==============
+
+/// 当前 app 二进制 + 实际宿主机的架构状态
+///
+/// macOS 关键场景：Intel 二进制跑在 Apple Silicon 上时（Rosetta 翻译），
+/// 编译时的 ARCH = "x86_64" 但宿主其实是 "aarch64"。Tauri 更新器只会
+/// 按二进制架构去 latest.json 里查链接，永远拿不到匹配宿主的那一份。
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchStatus {
+    /// 当前进程的编译目标架构（rust target arch）："x86_64" / "aarch64" / ...
+    pub binary_arch: String,
+    /// 宿主机的真实物理架构
+    pub host_arch: String,
+    /// 操作系统："macos" / "windows" / "linux"
+    pub os: String,
+    /// 是否运行在 Rosetta 翻译层下（macOS 专有；其他平台恒 false）
+    pub is_rosetta: bool,
+    /// binary_arch != host_arch 即视为不匹配
+    pub mismatch: bool,
+}
+
+#[tauri::command]
+pub async fn get_arch_status() -> Result<ArchStatus, String> {
+    let binary_arch = std::env::consts::ARCH.to_string();
+    let os = std::env::consts::OS.to_string();
+
+    #[cfg(target_os = "macos")]
+    let is_rosetta = is_running_under_rosetta();
+    #[cfg(not(target_os = "macos"))]
+    let is_rosetta = false;
+
+    let host_arch = if is_rosetta {
+        // Rosetta：x86_64 二进制 / aarch64 宿主
+        "aarch64".to_string()
+    } else {
+        binary_arch.clone()
+    };
+
+    let mismatch = host_arch != binary_arch;
+
+    Ok(ArchStatus {
+        binary_arch,
+        host_arch,
+        os,
+        is_rosetta,
+        mismatch,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn is_running_under_rosetta() -> bool {
+    // sysctl.proc_translated == 1 表示当前进程在 Rosetta 下运行
+    match Command::new("sysctl")
+        .args(["-in", "sysctl.proc_translated"])
+        .output()
+    {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).trim() == "1",
+        Err(_) => false,
     }
 }

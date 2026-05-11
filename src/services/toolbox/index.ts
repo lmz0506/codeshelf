@@ -23,6 +23,10 @@ import type {
   DockerRunInput,
   DockerAiGenerateInput,
   DockerAiGenerateOutput,
+  SshTunnel,
+  SshTunnelInput,
+  SshTunnelStats,
+  TestPortResult,
 } from "@/types/toolbox";
 
 // ============== 端口扫描服务 ==============
@@ -163,6 +167,55 @@ export async function updateForwardRule(
   return invoke("update_forward_rule", { ruleId, input });
 }
 
+// ============== SSH 隧道服务 ==============
+
+export async function addSshTunnel(input: SshTunnelInput): Promise<SshTunnel> {
+  return invoke("add_ssh_tunnel", { input });
+}
+
+export async function updateSshTunnel(
+  tunnelId: string,
+  input: SshTunnelInput
+): Promise<SshTunnel> {
+  return invoke("update_ssh_tunnel", { tunnelId, input });
+}
+
+export async function removeSshTunnel(tunnelId: string): Promise<void> {
+  return invoke("remove_ssh_tunnel", { tunnelId });
+}
+
+export async function startSshTunnel(tunnelId: string): Promise<void> {
+  return invoke("start_ssh_tunnel", { tunnelId });
+}
+
+export async function stopSshTunnel(tunnelId: string): Promise<void> {
+  return invoke("stop_ssh_tunnel", { tunnelId });
+}
+
+export async function getSshTunnels(): Promise<SshTunnel[]> {
+  return invoke("get_ssh_tunnels");
+}
+
+export async function getSshTunnel(tunnelId: string): Promise<SshTunnel | null> {
+  return invoke("get_ssh_tunnel", { tunnelId });
+}
+
+export async function getSshTunnelStats(tunnelId: string): Promise<SshTunnelStats> {
+  return invoke("get_ssh_tunnel_stats", { tunnelId });
+}
+
+export async function listSshConfigHosts(): Promise<string[]> {
+  return invoke("list_ssh_config_hosts");
+}
+
+export async function testSshTunnel(tunnelId: string): Promise<TestPortResult> {
+  return invoke("test_ssh_tunnel", { tunnelId });
+}
+
+export async function testLocalPort(port: number): Promise<TestPortResult> {
+  return invoke("test_local_port", { port });
+}
+
 // ============== 静态服务 ==============
 
 export async function createServer(
@@ -265,6 +318,14 @@ export async function dockerInspectContainerYaml(container: string): Promise<str
 
 export async function dockerStopContainer(container: string): Promise<DockerCommandResult> {
   return invoke("docker_stop_container", { container });
+}
+
+export async function dockerStartContainer(container: string): Promise<DockerCommandResult> {
+  return invoke("docker_start_container", { container });
+}
+
+export async function dockerRestartContainer(container: string): Promise<DockerCommandResult> {
+  return invoke("docker_restart_container", { container });
 }
 
 export async function dockerRemoveContainer(container: string, force?: boolean): Promise<DockerCommandResult> {

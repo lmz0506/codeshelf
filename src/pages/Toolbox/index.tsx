@@ -10,6 +10,7 @@ import {
   Keyboard,
   ClipboardList,
   Box,
+  Network,
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
@@ -24,6 +25,7 @@ import NetcatTool from "./netcat";
 import { ShortcutsMemo } from "./ShortcutsMemo";
 import { ClipboardManager } from "./ClipboardManager";
 import { DockerImageTool } from "./DockerImageTool";
+import { SshTunnel } from "./SshTunnel";
 
 const tools = [
   {
@@ -83,6 +85,14 @@ const tools = [
     icon: ClipboardList,
     color: "bg-teal-500",
   },
+  {
+    id: "sshTunnel" as ToolType,
+    name: "SSH 隧道",
+    description: "通过 SSH 将远程内网端口映射到本地，例如远程 Redis/MySQL/管理面板",
+    icon: Network,
+    color: "bg-emerald-500",
+    beta: true,
+  },
 ];
 
 export function ToolboxPage() {
@@ -139,6 +149,8 @@ export function ToolboxPage() {
         return <ShortcutsMemo onBack={() => setActiveTool(null)} />;
       case "clipboard":
         return <ClipboardManager onBack={() => setActiveTool(null)} />;
+      case "sshTunnel":
+        return <SshTunnel onBack={() => setActiveTool(null)} />;
       default:
         return null;
     }

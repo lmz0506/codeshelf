@@ -34,6 +34,8 @@ pub struct DockerContainerInfo {
     pub image: String,
     pub names: String,
     pub status: String,
+    /// docker ps 的 State 字段：running / exited / paused / created / restarting / dead / removing
+    pub state: String,
     pub ports: String,
     pub compose_project: Option<String>,
     pub compose_service: Option<String>,

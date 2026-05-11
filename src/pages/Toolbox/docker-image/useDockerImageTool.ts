@@ -14,7 +14,9 @@ import {
   dockerReadDockerfile,
   dockerRemoveContainer,
   dockerRemoveImage,
+  dockerRestartContainer,
   dockerRunImage,
+  dockerStartContainer,
   dockerStopContainer,
   dockerWriteDockerfile,
   getCurrentPlatform,
@@ -65,6 +67,8 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   const [images, setImages] = useState<DockerImageInfo[]>([]);
   const [containers, setContainers] = useState<DockerContainerInfo[]>([]);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [lastResult, setLastResult] = useState<DockerCommandResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState("");
@@ -84,6 +88,15 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
     getCurrentPlatform().then(setPlatform).catch(() => setPlatform(""));
   }, []);
 
+  // Docker 状态自动刷新（每 3 秒拉一次容器/镜像列表，前提是 docker 可用）
+  useEffect(() => {
+    if (!status?.available) return;
+    const interval = setInterval(() => {
+      refreshDockerLists({ silent: true }).catch(() => {});
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [status?.available]);
+
   useEffect(() => {
     if (!options.initialProjectPath) return;
     setProjectPath(options.initialProjectPath);
@@ -93,14 +106,22 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
   }, [options.initialProjectPath]);
 
   async function refreshDocker() {
-    const nextStatus = await dockerCheckAvailable();
-    setStatus(nextStatus);
-    if (nextStatus.available) {
-      await refreshDockerLists();
+    setRefreshing(true);
+    try {
+      const nextStatus = await dockerCheckAvailable();
+      setStatus(nextStatus);
+      if (nextStatus.available) {
+        await refreshDockerLists({ silent: true });
+      }
+      setRefreshTick((t) => t + 1);
+    } finally {
+      // 保证 spinner 至少转一小段时间，否则数据本来就是新的会感觉没反应
+      setTimeout(() => setRefreshing(false), 350);
     }
   }
 
-  async function refreshDockerLists() {
+  async function refreshDockerLists(opts: { silent?: boolean } = {}) {
+    if (!opts.silent) setRefreshing(true);
     try {
       const [nextImages, nextContainers] = await Promise.all([
         dockerListImages(),
@@ -108,8 +129,13 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       ]);
       setImages(nextImages);
       setContainers(nextContainers);
+      if (!opts.silent) setRefreshTick((t) => t + 1);
     } catch (error) {
       console.error("刷新 Docker 列表失败:", error);
+    } finally {
+      if (!opts.silent) {
+        setTimeout(() => setRefreshing(false), 350);
+      }
     }
   }
 
@@ -312,6 +338,30 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
     });
   }
 
+  async function startContainer(id: string) {
+    try {
+      const result = await dockerStartContainer(id);
+      setLastResult(result);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      await refreshDockerLists();
+    }
+  }
+
+  function restartContainer(id: string) {
+    requestConfirm({
+      title: "重启容器",
+      message: `确定重启容器 ${id} 吗？`,
+      confirmLabel: "确认重启",
+      onConfirm: async () => {
+        const result = await dockerRestartContainer(id);
+        setLastResult(result);
+        await refreshDockerLists();
+      },
+    });
+  }
+
   function removeContainer(id: string) {
     requestConfirm({
       title: "删除容器",
@@ -359,6 +409,8 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       dockerfileContent,
       dockerfilePath,
       dockerfiles,
+      refreshing,
+      refreshTick,
       envText,
       extraArgsText,
       fullImageName,
@@ -426,10 +478,12 @@ export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
       refreshDockerLists,
       removeContainer,
       removeImage,
+      restartContainer,
       runSelectedImage,
       saveDockerfile,
       scanDockerfiles,
       selectProject,
+      startContainer,
       stopContainer,
     },
   };

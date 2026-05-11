@@ -10,6 +10,7 @@ pub mod netcat;
 pub mod shortcuts;
 pub mod clipboard;
 pub mod docker;
+pub mod ssh_tunnel;
 
 use serde::{Deserialize, Serialize};
 
@@ -176,6 +177,101 @@ pub struct ForwardStats {
     pub connections: u32,
     pub bytes_in: u64,
     pub bytes_out: u64,
+}
+
+// ============== SSH 隧道相关结构 ==============
+
+/// SSH 认证方式（前端 tag 区分：key / password / sshConfig）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SshAuthMethod {
+    /// 私钥文件（含可选 passphrase）
+    #[serde(rename_all = "camelCase")]
+    Key {
+        key_path: String,
+        passphrase: Option<String>,
+    },
+    /// 密码
+    #[serde(rename_all = "camelCase")]
+    Password { password: String },
+    /// 读取 ~/.ssh/config 的 Host 别名
+    #[serde(rename_all = "camelCase")]
+    SshConfig { host_alias: String },
+}
+
+/// SSH 隧道规则
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTunnel {
+    pub id: String,
+    pub name: String,
+    /// 本地监听端口
+    pub local_port: u16,
+    /// 远程目标主机（SSH 服务端看到的目标）
+    pub remote_host: String,
+    /// 远程目标端口
+    pub remote_port: u16,
+    /// SSH 服务器地址
+    pub ssh_host: String,
+    /// SSH 服务器端口，默认 22
+    #[serde(default = "default_ssh_port")]
+    pub ssh_port: u16,
+    /// SSH 登录用户（使用 SshConfig 时可为空，从配置文件读取）
+    #[serde(default)]
+    pub ssh_user: String,
+    /// 认证方式
+    pub auth: SshAuthMethod,
+    #[serde(default = "default_stopped")]
+    pub status: String,
+    #[serde(default)]
+    pub connections: u32,
+    #[serde(default)]
+    pub bytes_in: u64,
+    #[serde(default)]
+    pub bytes_out: u64,
+    #[serde(default)]
+    pub last_error: Option<String>,
+    pub created_at: String,
+}
+
+/// 创建/更新 SSH 隧道的输入
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTunnelInput {
+    pub name: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+    pub ssh_host: String,
+    pub ssh_port: Option<u16>,
+    pub ssh_user: Option<String>,
+    pub auth: SshAuthMethod,
+}
+
+/// SSH 隧道统计
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTunnelStats {
+    pub tunnel_id: String,
+    pub connections: u32,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
+}
+
+/// 端口连通性测试结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestPortResult {
+    pub success: bool,
+    /// 命令输出（包含 stdout/stderr 的拼接）
+    pub output: String,
+    /// 检测方式："nc" / "Test-NetConnection" / "tcp"
+    pub method: String,
+    pub duration_ms: u64,
+}
+
+fn default_ssh_port() -> u16 {
+    22
 }
 
 // ============== 静态服务相关结构 ==============
