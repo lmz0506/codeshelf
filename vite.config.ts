@@ -3,9 +3,34 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
+const TAURI_UA_TOKEN = "CodeShelf-Tauri-Webview/1.0";
+
+// 仅允许 Tauri webview 访问 dev server，浏览器直连返回 403
+const restrictToTauri = () => ({
+  name: "restrict-to-tauri",
+  configureServer(server: any) {
+    server.middlewares.use((req: any, res: any, next: any) => {
+      const ua = req.headers["user-agent"] || "";
+      if (ua.includes(TAURI_UA_TOKEN)) return next();
+      res.statusCode = 403;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end("403 Forbidden: this dev server is only accessible from the Tauri webview.");
+    });
+  },
+  configurePreviewServer(server: any) {
+    server.middlewares.use((req: any, res: any, next: any) => {
+      const ua = req.headers["user-agent"] || "";
+      if (ua.includes(TAURI_UA_TOKEN)) return next();
+      res.statusCode = 403;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end("403 Forbidden");
+    });
+  },
+});
+
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), restrictToTauri()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

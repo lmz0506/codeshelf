@@ -24,7 +24,8 @@
         "decorations": false,
         "transparent": true,
         "visible": true,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "userAgent": "CodeShelf-Tauri-Webview/1.0"
       }
     ],
     "security": {
