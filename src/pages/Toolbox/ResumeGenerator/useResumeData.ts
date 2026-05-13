@@ -282,10 +282,14 @@ export function analyzeCommits(commits: import("@/types").CommitInfo[]): {
   totalInsertions: number;
   totalDeletions: number;
   keyCommits: KeyCommit[];
+  typeCounts: { feat: number; fix: number; perf: number; refactor: number; other: number };
+  issueRefsCount: number;
 } {
   let totalInsertions = 0;
   let totalDeletions = 0;
   const keyCommits: KeyCommit[] = [];
+  const typeCounts = { feat: 0, fix: 0, perf: 0, refactor: 0, other: 0 };
+  const issueSet = new Set<string>();
 
   commits.forEach((commit) => {
     // 统计代码量
@@ -298,6 +302,8 @@ export function analyzeCommits(commits: import("@/types").CommitInfo[]): {
     // 提取关键提交
     const type = analyzeCommitType(sanitizedMessage);
     const issueRefs = extractIssueRefs(sanitizedMessage);
+    typeCounts[type] += 1;
+    issueRefs.forEach((ref) => issueSet.add(ref));
 
     // 优先保留 feat/fix/perf/refactor 类型的提交
     if (type !== "other" || issueRefs.length > 0 || (commit.insertions || 0) > 100) {
@@ -337,6 +343,8 @@ export function analyzeCommits(commits: import("@/types").CommitInfo[]): {
     totalInsertions,
     totalDeletions,
     keyCommits: sortedKeyCommits,
+    typeCounts,
+    issueRefsCount: issueSet.size,
   };
 }
 

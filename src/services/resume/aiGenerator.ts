@@ -99,6 +99,23 @@ export async function generateSingleExperience(
     .map((c) => `- [${c.type}] ${c.message} (+${c.insertions}/-${c.deletions})`)
     .join("\n");
 
+  // 计算持续月数
+  const activeMonths = computeActiveMonths(project.timeRange.start, project.timeRange.end);
+
+  // 量化贡献明细（来自真实 git 数据）
+  const tc = project.commitStats.typeCounts ?? { feat: 0, fix: 0, perf: 0, refactor: 0, other: 0 };
+  const issueRefsCount = project.commitStats.issueRefsCount ?? 0;
+  const quantitativeLines = [
+    `- 持续时长：${activeMonths} 个月`,
+    `- 累计提交：${project.commitStats.totalCommits} 次`,
+    `- 代码变更：+${project.commitStats.totalInsertions} / -${project.commitStats.totalDeletions} 行`,
+    `- 功能开发：${tc.feat} 次（feat 类提交）`,
+    `- 问题修复：${tc.fix} 次（fix 类提交）`,
+    `- 性能优化：${tc.perf} 次（perf 类提交）`,
+    `- 重构治理：${tc.refactor} 次（refactor 类提交）`,
+    `- 关联工单：${issueRefsCount} 个（commit 中引用的 issue）`,
+  ].join("\n");
+
   // 构建 Prompt
   const prompt = `${direction.promptTemplate.replace("{techStack}", techStack)}
 
@@ -108,7 +125,9 @@ export async function generateSingleExperience(
 - 技术栈：${techStack}
 - 项目架构：${project.dependencyAnalysis?.architectureHints.join(", ") || "未检测"}
 - 时间跨度：${formatDate(project.timeRange.start)} - ${formatDate(project.timeRange.end)}
-- 提交统计：${project.commitStats.totalCommits} 次提交，+${project.commitStats.totalInsertions}/-${project.commitStats.totalDeletions} 行代码
+
+【量化贡献（来自真实 git 数据，不可改写）】
+${quantitativeLines}
 
 【关键提交记录】
 ${keyCommitsDesc}
@@ -122,11 +141,12 @@ ${keyCommitsDesc}
   "result": "量化结果描述..."
 }
 
-注意：
-1. 必须使用给定的技术栈术语，禁止编造
-2. 结果部分尽量使用量化指标（如性能提升X%、效率提高X倍）
-3. 如果 commit 信息中没有具体数据，可以合理推测，但要符合后端/前端/全栈开发场景
-4. 每个字段控制在 100-200 字之间`;
+【准确性规则（必须遵守）】
+1. result 字段必须直接引用上方【量化贡献】中的真实数字，至少包含其中 2 项（例如"在 ${activeMonths} 个月内累计提交 ${project.commitStats.totalCommits} 次、修复 ${tc.fix} 个问题"）。
+2. **禁止编造业务指标的具体数值**：QPS、TPS、响应时间 ms 数、转化率、用户量、收入、可用性 9 数、性能提升百分比等业务数字，除非项目数据中明确出现，否则不得出现在输出中。可使用定性描述（"显著降低响应时间"、"持续完善稳定性"），不可附具体百分比。
+3. action 字段必须使用【技术术语】中列出的术语，禁止编造未出现的库/框架名。
+4. situation/task 不要重复【量化贡献】，把量化部分留给 result 承担。
+5. 每个字段控制在 100-200 字之间。`;
 
   // 调用 AI
   const requestId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -196,6 +216,13 @@ function generateSkillsSummary(dataSource: ResumeDataSource): string[] {
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function computeActiveMonths(start: string, end: string): number {
+  const s = new Date(start);
+  const e = new Date(end);
+  const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+  return Math.max(1, months);
 }
 
 // 绑定到主函数
