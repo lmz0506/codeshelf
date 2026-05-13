@@ -246,41 +246,19 @@ export function useApiChatOrchestration() {
   }
 
   async function regenerate(args: RunArgs, targetMessageId: string): Promise<void> {
-    const { session, llm, onSession, onError } = args;
-    currentSessionRef.current = session;
-    onSessionRef.current = onSession;
-    onErrorRef.current = onError;
-    const idx = session.messages.findIndex((m) => m.id === targetMessageId);
+    const idx = args.session.messages.findIndex((m) => m.id === targetMessageId);
     if (idx < 0) return;
-    const truncated = session.messages.slice(0, idx);
-    const next: ApiChatSession = { ...session, messages: truncated };
-    setLoading(true);
-    try {
-      const saved = await persist(next);
-      await runRequest(saved, llm);
-    } finally {
-      setLoading(false);
-    }
+    const prevUser = [...args.session.messages.slice(0, idx)].reverse().find((m) => m.role === "user");
+    if (!prevUser) return;
+    await send(args, prevUser.content);
   }
 
   async function retryUser(args: RunArgs, targetMessageId: string): Promise<void> {
-    const { session, llm, onSession, onError } = args;
-    currentSessionRef.current = session;
-    onSessionRef.current = onSession;
-    onErrorRef.current = onError;
-    const idx = session.messages.findIndex((m) => m.id === targetMessageId);
+    const idx = args.session.messages.findIndex((m) => m.id === targetMessageId);
     if (idx < 0) return;
-    if (session.messages[idx].role !== "user") return;
-    // 保留到并包含该用户消息，裁掉其后的助手/工具回复
-    const truncated = session.messages.slice(0, idx + 1);
-    const next: ApiChatSession = { ...session, messages: truncated };
-    setLoading(true);
-    try {
-      const saved = await persist(next);
-      await runRequest(saved, llm);
-    } finally {
-      setLoading(false);
-    }
+    const target = args.session.messages[idx];
+    if (target.role !== "user") return;
+    await send(args, target.content);
   }
 
   async function stopAll() {

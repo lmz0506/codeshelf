@@ -44,6 +44,8 @@ export interface ProjectExperience {
     totalInsertions: number;
     totalDeletions: number;
     keyCommits: KeyCommit[];
+    typeCounts?: { feat: number; fix: number; perf: number; refactor: number; other: number };
+    issueRefsCount?: number;
   };
   starExperience?: STARExperience;
   // 可编辑字段
@@ -130,10 +132,10 @@ export const JOB_DIRECTIONS: JobDirectionConfig[] = [
 使用以下术语，禁止编造：{techStack}
 
 【STAR结构要求】
-- S: 项目背景，在什么场景下（如日均百万请求、千人团队）
+- S: 项目背景，在什么场景下（如内部系统、对外平台、技术中台）
 - T: 承担的后端职责和技术挑战
-- A: 采取的技术方案（具体到框架/中间件）
-- R: 量化结果（性能提升%、成本降低%、可用性达到X个9）
+- A: 采取的技术方案（具体到框架/中间件，限定在【技术术语】范围内）
+- R: 量化结果（**必须直接引用下方"量化贡献"中的真实数字**，如累计提交数、修复数、功能数、活跃月数；禁止编造 QPS / 响应时间 / 可用性 9 数等业务指标的具体数值）
 `,
   },
   {
@@ -155,9 +157,9 @@ export const JOB_DIRECTIONS: JobDirectionConfig[] = [
 
 【STAR结构要求】
 - S: 项目背景，面向什么用户、什么业务场景
-- T: 前端技术挑战（如首屏<1s、支持IE11）
-- A: 采取的技术方案（具体到库/工具）
-- R: 量化结果（性能提升%、用户满意度、开发效率提升）
+- T: 前端技术挑战（结合项目类型，避免无依据的指标承诺）
+- A: 采取的技术方案（具体到库/工具，限定在【技术术语】范围内）
+- R: 量化结果（**必须直接引用下方"量化贡献"中的真实数字**，如累计提交数、修复数、功能数、活跃月数；禁止编造首屏时间 / 用户满意度 / 转化率等业务指标的具体数值）
 `,
   },
   {
@@ -180,8 +182,8 @@ export const JOB_DIRECTIONS: JobDirectionConfig[] = [
 【STAR结构要求】
 - S: 项目背景，完整业务场景描述
 - T: 全栈技术挑战（如独立负责、从0到1）
-- A: 前后端及部署完整技术方案
-- R: 量化结果（交付效率、系统稳定性、团队协作提升）
+- A: 前后端及部署完整技术方案（限定在【技术术语】范围内）
+- R: 量化结果（**必须直接引用下方"量化贡献"中的真实数字**，如累计提交数、修复数、功能数、活跃月数；禁止编造交付周期 / 系统可用性 / 性能提升百分比等业务指标的具体数值）
 `,
   },
 ];

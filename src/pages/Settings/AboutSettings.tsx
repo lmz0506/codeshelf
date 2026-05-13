@@ -308,7 +308,7 @@ export function AboutSettings(_props: AboutSettingsProps) {
           {pathItems.map((item) => (
             <div
               key={item.label}
-              className="re-card p-3 flex items-center justify-between group"
+              className="bg-white rounded-2xl border border-gray-200 shadow-sm p-3 flex items-center justify-between"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">

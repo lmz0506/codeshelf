@@ -912,11 +912,12 @@ export function ChatPage() {
     if (!activeSession || !selected || streaming) return;
     const idx = activeSession.messages.findIndex((m) => m.id === msg.id);
     if (idx < 0) return;
-    const truncated = activeSession.messages.slice(0, idx);
-    const edited: ChatMessage = { ...msg, content: newContent, edited: true, createdAt: new Date().toISOString() };
+    const appended = makeMessage("user", newContent, {
+      attachments: msg.attachments,
+    });
     const nextSession: ChatSession = {
       ...activeSession,
-      messages: [...truncated, edited],
+      messages: [...activeSession.messages, appended],
     };
     const saved = await persistSession(nextSession);
     await runChatRequest(saved);
@@ -926,8 +927,15 @@ export function ChatPage() {
     if (!activeSession || !selected || streaming) return;
     const idx = activeSession.messages.findIndex((m) => m.id === msg.id);
     if (idx < 0) return;
-    const truncated = activeSession.messages.slice(0, idx);
-    const nextSession: ChatSession = { ...activeSession, messages: truncated };
+    const prevUser = [...activeSession.messages.slice(0, idx)].reverse().find((m) => m.role === "user");
+    if (!prevUser) return;
+    const appended = makeMessage("user", prevUser.content, {
+      attachments: prevUser.attachments,
+    });
+    const nextSession: ChatSession = {
+      ...activeSession,
+      messages: [...activeSession.messages, appended],
+    };
     const saved = await persistSession(nextSession);
     await runChatRequest(saved);
   }
@@ -937,9 +945,13 @@ export function ChatPage() {
     if (msg.role !== "user") return;
     const idx = activeSession.messages.findIndex((m) => m.id === msg.id);
     if (idx < 0) return;
-    // 保留到并包含该用户消息，裁掉其后的助手/工具回复
-    const truncated = activeSession.messages.slice(0, idx + 1);
-    const nextSession: ChatSession = { ...activeSession, messages: truncated };
+    const appended = makeMessage("user", msg.content, {
+      attachments: msg.attachments,
+    });
+    const nextSession: ChatSession = {
+      ...activeSession,
+      messages: [...activeSession.messages, appended],
+    };
     const saved = await persistSession(nextSession);
     await runChatRequest(saved);
   }
