@@ -131,6 +131,37 @@ pub struct ToolSchema {
 }
 
 pub fn all_tools() -> Vec<ToolSchema> {
+    // 当前 OS 提示，让 LLM 选用正确的 shell 命令与路径风格
+    let os_label = if cfg!(target_os = "windows") {
+        "Windows"
+    } else if cfg!(target_os = "macos") {
+        "macOS"
+    } else {
+        "Linux/Unix"
+    };
+    let bash_extra = if cfg!(target_os = "windows") {
+        "。当前系统：Windows，底层用 cmd /C 执行，请使用 dir / type / findstr / del / copy 等 Windows 命令，禁用 ls / cat / grep / rm 等 Unix 命令"
+    } else {
+        "。当前系统：Unix-like（macOS/Linux），底层用 /bin/sh -c"
+    };
+    let bash_desc = format!("在 allowedCwd 中执行 shell 命令，返回 stdout/stderr 合并截断结果{}", bash_extra);
+    let path_style_hint = if cfg!(target_os = "windows") {
+        "Windows 路径如 C:\\\\Users\\\\name\\\\Documents 或 C:/Users/name/Documents"
+    } else {
+        "Unix 路径如 /Users/name 或 /home/name"
+    };
+    let editor_examples = if cfg!(target_os = "windows") {
+        "可执行路径如 C:\\\\Program Files\\\\Microsoft VS Code\\\\Code.exe 或 cursor.exe"
+    } else if cfg!(target_os = "macos") {
+        "可执行路径如 /usr/local/bin/cursor 或 macOS 应用包路径如 /Applications/Sublime Text.app"
+    } else {
+        "可执行路径如 /usr/bin/code 或 /usr/bin/cursor"
+    };
+    let editor_desc = format!(
+        "在代码编辑器中打开指定文件或目录，默认 VS Code。editor 可传 {}",
+        editor_examples,
+    );
+    let _ = (os_label, path_style_hint); // 备用：以后若想在 Read/Write 描述里也注入路径风格提示
     vec![
         ToolSchema {
             name: "Read".into(),
@@ -198,7 +229,7 @@ pub fn all_tools() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "Bash".into(),
-            description: "在 allowedCwd 中执行 shell 命令，返回 stdout/stderr 合并截断结果".into(),
+            description: bash_desc,
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -274,7 +305,7 @@ pub fn all_tools() -> Vec<ToolSchema> {
         },
         ToolSchema {
             name: "OpenInEditor".into(),
-            description: "在代码编辑器中打开指定文件或目录，默认 VS Code。editor 可传可执行路径（如 /usr/local/bin/cursor）或 macOS 应用包路径（如 /Applications/Sublime Text.app）。".into(),
+            description: editor_desc,
             parameters: json!({
                 "type": "object",
                 "properties": {
