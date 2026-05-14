@@ -19,6 +19,7 @@ import { getGlobalMemory, saveGlobalMemory, readMentionFile, listDirEntries } fr
 import type { ChatStreamMessage, ToolSchema } from "@/services/chat";
 import { mcpClient } from "@/services/mcp/client";
 import { buildMcpFunctionTools, extractApiToolMetadata } from "@/services/mcp/toolLoop";
+import { useMcpEndpointLookup } from "@/hooks/useMcpEndpointLookup";
 import type { AiModelConfig, AiProviderConfig, ChatAttachment, ChatMessage, ChatSession, ChatSessionSummary, ToolCall } from "@/types";
 
 import { SessionSidebar } from "./components/SessionSidebar";
@@ -180,6 +181,9 @@ export function ChatPage() {
   const modelSelectRef = useRef<HTMLSelectElement>(null);
 
   const { streaming, thinkingBuffer, start: startStream, stop: stopStream } = useChatStream();
+
+  // 让 ToolCallBubble 在 MCP gateway 工具调用时能显示接口 METHOD/URL
+  const endpointLookup = useMcpEndpointLookup();
 
   const normalized = useMemo(() => ensureAiDefaultProvider(aiProviders), [aiProviders, ensureAiDefaultProvider]);
   const modelOptions = useMemo(() => buildModelOptions(normalized), [normalized]);
@@ -1380,6 +1384,7 @@ export function ChatPage() {
                 onRegenerateAssistant={handleRegenerateAssistant}
                 onRetryUser={handleRetryUserMessage}
                 onDelete={handleDeleteMessage}
+                endpointLookup={endpointLookup}
               />
               <ChatInput
                 value={input}

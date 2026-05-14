@@ -22,7 +22,7 @@ import {
   renameApiChatSession,
   saveApiChatSession,
 } from "@/services/api_chat";
-import { mcpClient } from "@/services/mcp/client";
+import { useMcpEndpointLookup } from "@/hooks/useMcpEndpointLookup";
 import { MessageList } from "@/pages/Chat/components/MessageList";
 import { RenameDialog } from "@/pages/Chat/components/RenameDialog";
 import { ApiSessionSidebar } from "./components/ApiSessionSidebar";
@@ -89,15 +89,6 @@ function summarizeTitle(messages: ChatMessage[]): string | null {
   return trimmed.slice(0, 20) + (trimmed.length > 20 ? "..." : "");
 }
 
-/// 与后端 src-tauri/src/commands/api_chat.rs 的 sanitize_tool_name 保持一致
-function sanitizeToolName(endpointId: string): string {
-  const raw = `ep_${endpointId}`;
-  const cleaned = Array.from(raw)
-    .map((c) => (/[A-Za-z0-9_\-]/.test(c) ? c : "_"))
-    .join("");
-  return cleaned.length <= 60 ? cleaned : cleaned.slice(0, 60);
-}
-
 export function ApiChatPage() {
   const { aiProviders, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed, setCurrentPage } = useAppStore();
 
@@ -119,34 +110,8 @@ export function ApiChatPage() {
       return false;
     }
   });
-  const [mcpToolToEndpoint, setMcpToolToEndpoint] = useState<Map<string, string>>(new Map());
 
-  // MCP gateway 暴露的工具名是 api_<method>_<path>_<hash>，需要拿到 _meta.codeshelfEndpointId
-  // 才能在 ToolCallBubble 里显示 METHOD/URL。这里在端点列表变化或 gateway 状态变化时拉一次
-  useEffect(() => {
-    if (endpoints.length === 0) {
-      setMcpToolToEndpoint(new Map());
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        if (!(await mcpClient.isAvailable())) return;
-        const tools = await mcpClient.listTools();
-        const m = new Map<string, string>();
-        for (const t of tools) {
-          const epId = t._meta?.codeshelfEndpointId;
-          if (typeof epId === "string") m.set(t.name, epId);
-        }
-        if (!cancelled) setMcpToolToEndpoint(m);
-      } catch {
-        /* gateway 没启或别的异常都不影响主流程 */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [endpoints]);
+  const endpointLookup = useMcpEndpointLookup(endpoints);
 
   const { streaming, thinkingBuffer, send, regenerate, retryUser, stop } = useApiChatOrchestration();
 
@@ -156,25 +121,6 @@ export function ApiChatPage() {
   const effectiveKey = modelOptions.find((o) => o.key === selectedModelKey) ? selectedModelKey : defaultKey;
   const selected = modelOptions.find((o) => o.key === effectiveKey) ?? null;
   const isConfigured = Boolean(selected);
-
-  const endpointLookup = useMemo(() => {
-    const byToolName = new Map<string, ApiEndpoint>();
-    for (const ep of endpoints) {
-      byToolName.set(sanitizeToolName(ep.id), ep);
-    }
-    return (toolName: string) => {
-      // 先按 ep_<id> 直接命中（兜底兼容旧会话）
-      const direct = byToolName.get(toolName);
-      if (direct) return { method: direct.method, url: direct.url, name: direct.name };
-      // MCP gateway 给出的现代工具名（api_xxx_<hash>）→ 通过运行时 map 查 endpointId
-      const epId = mcpToolToEndpoint.get(toolName);
-      if (epId) {
-        const ep = endpoints.find((e) => e.id === epId);
-        if (ep) return { method: ep.method, url: ep.url, name: ep.name };
-      }
-      return null;
-    };
-  }, [endpoints, mcpToolToEndpoint]);
 
   async function reloadLibrary() {
     try {
