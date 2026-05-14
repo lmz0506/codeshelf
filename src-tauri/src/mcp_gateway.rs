@@ -30,6 +30,16 @@ pub struct McpGatewayStatus {
     pub started_at: Option<String>,
 }
 
+/// 供前端"以 MCP 客户端身份"调用本地网关时使用：
+/// - url：HTTP 端点（含 scheme/host/port），如果网关未运行则不返回
+/// - api_key：从 mcp_gateway_keys 里挑第一个有效 key。若 keys 为空（网关无鉴权）则为 None
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpGatewayInternalEndpoint {
+    pub url: String,
+    pub api_key: Option<String>,
+}
+
 struct AppHttpGateway {
     host: String,
     port: u16,
@@ -96,6 +106,27 @@ fn http_router() -> Router {
 pub async fn mcp_gateway_status() -> Result<McpGatewayStatus, String> {
     let guard = APP_HTTP_GATEWAY.lock().await;
     Ok(status_from_gateway(guard.as_ref()))
+}
+
+#[tauri::command]
+pub async fn mcp_gateway_internal_endpoint() -> Result<Option<McpGatewayInternalEndpoint>, String> {
+    let status = {
+        let guard = APP_HTTP_GATEWAY.lock().await;
+        status_from_gateway(guard.as_ref())
+    };
+    if !status.running {
+        return Ok(None);
+    }
+    let url = match status.url {
+        Some(u) => u,
+        None => return Ok(None),
+    };
+    let settings = crate::commands::settings::get_app_settings().await?;
+    // keys 为空时，网关本身不鉴权（validate_mcp_auth 直接放行），api_key 返回 None
+    let api_key = active_mcp_keys(&settings.mcp_gateway_keys)
+        .first()
+        .map(|k| k.key.clone());
+    Ok(Some(McpGatewayInternalEndpoint { url, api_key }))
 }
 
 pub async fn apply_settings_from_storage() -> Result<McpGatewayStatus, String> {

@@ -17,6 +17,8 @@ import {
 } from "@/services/chat";
 import { getGlobalMemory, saveGlobalMemory, readMentionFile, listDirEntries } from "@/services/chat";
 import type { ChatStreamMessage, ToolSchema } from "@/services/chat";
+import { mcpClient } from "@/services/mcp/client";
+import { buildMcpFunctionTools, extractApiToolMetadata } from "@/services/mcp/toolLoop";
 import type { AiModelConfig, AiProviderConfig, ChatAttachment, ChatMessage, ChatSession, ChatSessionSummary, ToolCall } from "@/types";
 
 import { SessionSidebar } from "./components/SessionSidebar";
@@ -533,6 +535,17 @@ export function ChatPage() {
     }));
   }
 
+  /** 拉取本会话适用的 MCP gateway 工具（接口工具）。gateway 未启动或会话已禁用则返回空数组 */
+  async function activeMcpTools(session: ChatSession) {
+    if (!toolsEnabled) return [];
+    if (session.useMcpGatewayTools === false) return [];
+    try {
+      return await buildMcpFunctionTools();
+    } catch {
+      return [];
+    }
+  }
+
   const MAX_TOOL_ROUNDS = 10;
 
   /** 自动压缩阈值：消息数超过此值且未在 streaming 时，发送前自动压缩 */
@@ -621,7 +634,12 @@ export function ChatPage() {
       }
     }
 
-    let tools = activeTools(session);
+    let tools: Array<{ type: "function"; function: { name: string; description?: string; parameters: object } }> | undefined =
+      activeTools(session);
+    const mcpTools = await activeMcpTools(session);
+    if (mcpTools.length > 0) {
+      tools = tools ? [...tools, ...mcpTools] : mcpTools;
+    }
     let toolChoice: { type: "function"; function: { name: string } } | undefined;
 
     // 仅在第 0 轮做 soft-force：后续工具循环按常规 auto
@@ -733,46 +751,78 @@ export function ChatPage() {
     let session = sessionAfterAssistant;
     // 加载一次最新 allowedTools（可能用户在之前回合勾选了"始终允许"）
     let allowedTools = new Set<string>(session.allowedTools ?? []);
+    const localToolNames = new Set(toolSchemas.map((t) => t.name));
 
     for (const call of calls) {
-      let approved: "once" | "always" | "reject";
-      if (allowedTools.has(call.name)) {
-        approved = "once";
-      } else {
-        approved = await requestApproval(call);
-      }
-      if (approved === "always") {
-        allowedTools.add(call.name);
-        session = { ...session, allowedTools: Array.from(allowedTools) };
-        try {
-          const saved = await saveChatSession(session);
-          setActiveSession(saved);
-          syncSummary(saved);
-          session = saved;
-        } catch {
-          /* ignore */
-        }
-      }
+      const isLocalTool = localToolNames.has(call.name);
 
       let resultContent: string;
-      if (approved === "reject") {
-        resultContent = "（用户拒绝执行此工具）";
+      let toolExtra: Partial<ChatMessage> = {
+        toolCallId: call.id,
+        toolName: call.name,
+      };
+
+      if (isLocalTool) {
+        let approved: "once" | "always" | "reject";
+        if (allowedTools.has(call.name)) {
+          approved = "once";
+        } else {
+          approved = await requestApproval(call);
+        }
+        if (approved === "always") {
+          allowedTools.add(call.name);
+          session = { ...session, allowedTools: Array.from(allowedTools) };
+          try {
+            const saved = await saveChatSession(session);
+            setActiveSession(saved);
+            syncSummary(saved);
+            session = saved;
+          } catch {
+            /* ignore */
+          }
+        }
+
+        if (approved === "reject") {
+          resultContent = "（用户拒绝执行此工具）";
+        } else {
+          try {
+            resultContent = await executeTool({
+              sessionId: session.id,
+              toolName: call.name,
+              argumentsJson: call.arguments || "{}",
+            });
+          } catch (err) {
+            resultContent = `执行失败: ${err instanceof Error ? err.message : String(err)}`;
+          }
+        }
       } else {
+        // MCP gateway 工具：通过本地 gateway HTTP 调
         try {
-          resultContent = await executeTool({
-            sessionId: session.id,
-            toolName: call.name,
-            argumentsJson: call.arguments || "{}",
-          });
+          let args: unknown = {};
+          try {
+            args = call.arguments ? JSON.parse(call.arguments) : {};
+          } catch {
+            args = {};
+          }
+          const mcpResult = await mcpClient.callTool(call.name, args);
+          const meta = extractApiToolMetadata(mcpResult.structuredContent);
+          if (meta) {
+            if (meta.status !== undefined) toolExtra.toolStatus = meta.status;
+            if (meta.method !== undefined) toolExtra.toolMethod = meta.method;
+            if (meta.url !== undefined) toolExtra.toolUrl = meta.url;
+            if (meta.elapsedMs !== undefined) toolExtra.toolElapsedMs = meta.elapsedMs;
+            if (meta.totalBytes !== undefined) toolExtra.toolBodyBytes = meta.totalBytes;
+            if (meta.truncated !== undefined) toolExtra.toolTruncated = meta.truncated;
+            resultContent = meta.body ? `HTTP ${meta.status ?? "-"}\n\n${meta.body}` : mcpResult.content?.[0]?.text ?? "";
+          } else {
+            resultContent = mcpResult.content?.[0]?.text ?? (mcpResult.isError ? "MCP 工具执行错误" : "无内容");
+          }
         } catch (err) {
-          resultContent = `执行失败: ${err instanceof Error ? err.message : String(err)}`;
+          resultContent = `MCP 工具执行失败: ${err instanceof Error ? err.message : String(err)}`;
         }
       }
 
-      const toolMessage: ChatMessage = makeMessage("tool", resultContent, {
-        toolCallId: call.id,
-        toolName: call.name,
-      });
+      const toolMessage: ChatMessage = makeMessage("tool", resultContent, toolExtra);
       session = { ...session, messages: [...session.messages, toolMessage] };
       try {
         const saved = await saveChatSession(session);
@@ -1122,7 +1172,10 @@ export function ChatPage() {
                 {activeSession.allowedCwd ? `📁 ${activeSession.allowedCwd.split("/").pop()}` : "未选目录（普通对话）"}
               </span>
               {toolsEnabled && (
-                <span className="text-[11px] text-blue-600" title="工具已启用">🛠 工具</span>
+                <span className="text-[11px] text-blue-600" title="本地沙箱工具已启用">🛠 本地</span>
+              )}
+              {activeSession.useMcpGatewayTools !== false && (
+                <span className="text-[11px] text-emerald-600" title="MCP gateway 工具：启动后自动可调">🌐 MCP</span>
               )}
               <div className="relative">
                 <button
@@ -1172,6 +1225,29 @@ export function ChatPage() {
                             })}
                           </div>
                         )}
+                      </div>
+
+                      {/* MCP gateway 工具 */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-semibold text-gray-700">🌐 MCP 接口工具</span>
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={activeSession.useMcpGatewayTools !== false}
+                              onChange={async (e) => {
+                                await persistSession({ ...activeSession, useMcpGatewayTools: e.target.checked });
+                              }}
+                              disabled={streaming}
+                            />
+                            <span className={activeSession.useMcpGatewayTools !== false ? "text-blue-600" : "text-gray-500"}>
+                              {activeSession.useMcpGatewayTools !== false ? "已启用" : "未启用"}
+                            </span>
+                          </label>
+                        </div>
+                        <div className="text-[10px] text-gray-500 leading-tight">
+                          启用后，本会话可调用 MCP gateway 暴露的接口工具（来自"接口"中已注册的端点）。需要在设置中先启动 MCP gateway。
+                        </div>
                       </div>
 
                       {/* 目录 */}

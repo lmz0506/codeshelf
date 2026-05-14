@@ -6,5 +6,6 @@ export { KeyManagerSection } from "./KeyManagerSection";
 export { ConfigBlock } from "./ConfigBlock";
 export { ClientAuthGuide } from "./ClientAuthGuide";
 export { KeyUsageExamples } from "./KeyUsageExamples";
+export { InternalUsageCard } from "./InternalUsageCard";
 export * from "./types";
 export * from "./utils";

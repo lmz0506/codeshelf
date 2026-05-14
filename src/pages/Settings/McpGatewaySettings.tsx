@@ -6,6 +6,7 @@ import {
   ConfigBlock,
   GatewayListenerForm,
   GatewayStatusCard,
+  InternalUsageCard,
   KeyManagerSection,
   KeyUsageExamples,
   SecurityNotice,
@@ -91,6 +92,8 @@ export function McpGatewaySettings() {
         onRefresh={() => refresh(true)}
         onCopy={(url) => copy(url, "网关地址")}
       />
+
+      <InternalUsageCard running={!!status?.running} />
 
       <SecurityNotice status={status} host={host} keys={keys} />
 

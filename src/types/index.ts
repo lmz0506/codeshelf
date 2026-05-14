@@ -183,6 +183,8 @@ export interface ChatSession {
   allowedTools?: string[];
   enabledTools?: string[];
   allowedCwd?: string;
+  /** 是否在本会话里启用 MCP gateway 工具（接口工具）。缺省 true。仅当 MCP gateway 已启动时实际生效 */
+  useMcpGatewayTools?: boolean;
   /** 当前生效的上下文压缩版本号（如 "v2"）；缺省表示从未压缩 */
   currentCompactionVersion?: string;
 }

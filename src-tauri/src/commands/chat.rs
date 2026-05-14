@@ -211,6 +211,7 @@ pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
             allowed_tools: None,
             enabled_tools: None,
             allowed_cwd: None,
+            use_mcp_gateway_tools: None,
             current_compaction_version: None,
         });
         summaries.push(ChatSessionSummary {
@@ -275,6 +276,7 @@ pub async fn create_chat_session(input: CreateChatSessionInput) -> Result<ChatSe
         allowed_tools: None,
         enabled_tools: None,
         allowed_cwd: None,
+        use_mcp_gateway_tools: None,
         current_compaction_version: None,
     };
 
@@ -457,27 +459,26 @@ pub async fn chat_cancel(request_id: String) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(), String> {
-    let request_id = request.request_id.clone();
+fn build_chat_payload(
+    request: &ChatStreamRequest,
+    use_stream: bool,
+) -> Result<(String, reqwest::header::HeaderMap, serde_json::Value), String> {
     let base_url = request.base_url.trim_end_matches('/');
     let url = format!("{}/chat/completions", base_url);
 
-    let client = reqwest::Client::new();
     let mut headers = reqwest::header::HeaderMap::new();
-    if let Some(key) = request.api_key.clone() {
+    if let Some(key) = request.api_key.as_ref() {
         if !key.is_empty() {
             let auth_value = format!("Bearer {}", key);
             headers.insert(
                 reqwest::header::AUTHORIZATION,
-                auth_value.parse().map_err(|e| format!("无效 API Key: {}", e))?,
+                auth_value
+                    .parse()
+                    .map_err(|e| format!("无效 API Key: {}", e))?,
             );
         }
     }
 
-    let use_stream = request.stream.unwrap_or(true);
-
-    // 过滤空 assistant 消息避免 API 400（content 可能是 string 或数组）
     let filtered_messages: Vec<&ChatStreamMessage> = request
         .messages
         .iter()
@@ -485,7 +486,6 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
             if m.role != "assistant" {
                 return true;
             }
-            // 若有 tool_calls 则保留，哪怕 content 为空
             if m.tool_calls.as_ref().map_or(false, |t| !t.is_empty()) {
                 return true;
             }
@@ -533,7 +533,47 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(
         }
     }
 
-    let body = payload;
+    Ok((url, headers, payload))
+}
+
+#[tauri::command]
+pub async fn chat_complete(request: ChatStreamRequest) -> Result<String, String> {
+    let (url, headers, body) = build_chat_payload(&request, false)?;
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .headers(headers)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("HTTP {}: {}", status, text));
+    }
+    let parsed: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+    let content = parsed
+        .get("choices")
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("message"))
+        .and_then(|v| v.get("content"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "AI 返回无 content".to_string())?
+        .to_string();
+    Ok(content)
+}
+
+#[tauri::command]
+pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(), String> {
+    let request_id = request.request_id.clone();
+    let use_stream = request.stream.unwrap_or(true);
+    let (url, headers, body) = build_chat_payload(&request, use_stream)?;
+
+    let client = reqwest::Client::new();
 
     let app_handle = app.clone();
     let handle = tokio::spawn(async move {

@@ -22,6 +22,7 @@ import {
   renameApiChatSession,
   saveApiChatSession,
 } from "@/services/api_chat";
+import { mcpClient } from "@/services/mcp/client";
 import { MessageList } from "@/pages/Chat/components/MessageList";
 import { RenameDialog } from "@/pages/Chat/components/RenameDialog";
 import { ApiSessionSidebar } from "./components/ApiSessionSidebar";
@@ -118,6 +119,34 @@ export function ApiChatPage() {
       return false;
     }
   });
+  const [mcpToolToEndpoint, setMcpToolToEndpoint] = useState<Map<string, string>>(new Map());
+
+  // MCP gateway 暴露的工具名是 api_<method>_<path>_<hash>，需要拿到 _meta.codeshelfEndpointId
+  // 才能在 ToolCallBubble 里显示 METHOD/URL。这里在端点列表变化或 gateway 状态变化时拉一次
+  useEffect(() => {
+    if (endpoints.length === 0) {
+      setMcpToolToEndpoint(new Map());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!(await mcpClient.isAvailable())) return;
+        const tools = await mcpClient.listTools();
+        const m = new Map<string, string>();
+        for (const t of tools) {
+          const epId = t._meta?.codeshelfEndpointId;
+          if (typeof epId === "string") m.set(t.name, epId);
+        }
+        if (!cancelled) setMcpToolToEndpoint(m);
+      } catch {
+        /* gateway 没启或别的异常都不影响主流程 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [endpoints]);
 
   const { streaming, thinkingBuffer, send, regenerate, retryUser, stop } = useApiChatOrchestration();
 
@@ -134,11 +163,18 @@ export function ApiChatPage() {
       byToolName.set(sanitizeToolName(ep.id), ep);
     }
     return (toolName: string) => {
-      const ep = byToolName.get(toolName);
-      if (!ep) return null;
-      return { method: ep.method, url: ep.url, name: ep.name };
+      // 先按 ep_<id> 直接命中（兜底兼容旧会话）
+      const direct = byToolName.get(toolName);
+      if (direct) return { method: direct.method, url: direct.url, name: direct.name };
+      // MCP gateway 给出的现代工具名（api_xxx_<hash>）→ 通过运行时 map 查 endpointId
+      const epId = mcpToolToEndpoint.get(toolName);
+      if (epId) {
+        const ep = endpoints.find((e) => e.id === epId);
+        if (ep) return { method: ep.method, url: ep.url, name: ep.name };
+      }
+      return null;
     };
-  }, [endpoints]);
+  }, [endpoints, mcpToolToEndpoint]);
 
   async function reloadLibrary() {
     try {

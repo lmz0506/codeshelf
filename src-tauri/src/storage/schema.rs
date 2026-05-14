@@ -301,6 +301,10 @@ pub struct ChatSession {
     /// 工具（Read/Write/Bash 等）允许操作的根目录；缺省则禁止写入/执行类工具
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_cwd: Option<String>,
+    /// 是否在本会话里启用 MCP gateway 工具（从已注册的接口里取）。缺省 true。
+    /// 仅当 MCP gateway 已启动时实际生效。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_mcp_gateway_tools: Option<bool>,
     /// 当前生效的上下文压缩版本号（如 "v2"）。None 表示从未压缩
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_compaction_version: Option<String>,

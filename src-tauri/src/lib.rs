@@ -450,6 +450,7 @@ pub fn run() {
             chat::list_compactions,
             chat::get_compaction,
             chat::chat_stream,
+            chat::chat_complete,
             chat::chat_cancel,
             // ApiChat: Groups / Endpoints / Sessions / LLM bridge
             api_chat::list_api_groups,
@@ -469,6 +470,7 @@ pub fn run() {
             api_chat::fetch_api_document_url,
             // MCP gateway
             mcp_gateway::mcp_gateway_status,
+            mcp_gateway::mcp_gateway_internal_endpoint,
             // Chat tools / tasks
             tools::chat_list_tools,
             tools::chat_execute_tool,

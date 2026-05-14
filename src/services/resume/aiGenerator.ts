@@ -159,7 +159,6 @@ ${keyCommitsDesc}
       baseUrl: provider.baseUrl,
       apiKey: provider.apiKey,
       thinking: defaultModel.thinking,
-      stream: false,
       messages: [
         {
           role: "user",

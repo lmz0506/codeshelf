@@ -1,10 +1,15 @@
 import { useRef, useState } from "react";
 import { useChatStream } from "@/pages/Chat/hooks/useChatStream";
 import type { ChatStreamMessage } from "@/services/chat";
-import { buildApiTools, executeApiEndpoint, saveApiChatSession } from "@/services/api_chat";
-import type { ApiChatSession, ChatMessage, ToolCall } from "@/types";
-
-const MAX_TOOL_ROUNDS = 10;
+import { saveApiChatSession } from "@/services/api_chat";
+import {
+  buildMcpFunctionTools,
+  dispatchViaMcp,
+  extractApiToolMetadata,
+  runToolLoop,
+} from "@/services/mcp/toolLoop";
+import { mcpClient } from "@/services/mcp/client";
+import type { ApiChatSession, ChatMessage } from "@/types";
 
 interface LlmContext {
   providerId: string;
@@ -83,145 +88,110 @@ export function useApiChatOrchestration() {
     return saved;
   }
 
-  async function runRequest(session: ApiChatSession, llm: LlmContext, round = 0): Promise<void> {
-    if (round >= MAX_TOOL_ROUNDS) {
-      onErrorRef.current?.(`已达最大工具循环轮次 ${MAX_TOOL_ROUNDS}`);
+  async function runLoop(session: ApiChatSession, llm: LlmContext): Promise<void> {
+    if (session.selectedEndpointIds.length > 0 && !(await mcpClient.isAvailable())) {
+      onErrorRef.current?.("MCP Gateway 未启动，请先在设置中开启后再调用接口工具");
       return;
     }
-    let tools: unknown[] = [];
-    let toolNameMap: Record<string, string> = {};
-    if (session.selectedEndpointIds.length > 0) {
-      const bundle = await buildApiTools(session.selectedEndpointIds);
-      tools = bundle.tools;
-      toolNameMap = bundle.toolNameMap;
-    }
-
     try {
-      await start(
-        {
+      await runToolLoop({
+        startStream: start,
+        provider: {
           providerId: llm.providerId,
           model: llm.model,
           baseUrl: llm.baseUrl,
           apiKey: llm.apiKey,
           thinking: llm.thinking,
-          stream: llm.stream !== false,
+        },
+        generation: {
           temperature: session.temperature,
           maxTokens: session.maxTokens,
           topP: session.topP,
           frequencyPenalty: session.frequencyPenalty,
           presencePenalty: session.presencePenalty,
-          messages: toStreamMessages(session),
-          tools: tools.length > 0 ? (tools as never) : undefined,
         },
-        {
-          onDelta: (full, thinking) => {
-            const cur = currentSessionRef.current;
-            if (!cur) return;
-            const messages = [...cur.messages];
-            const last = messages[messages.length - 1];
-            if (last?.role === "assistant" && !last.toolCalls) {
-              messages[messages.length - 1] = {
-                ...last,
-                content: full,
-                thinkingContent: thinking || last.thinkingContent,
-              };
-            } else {
-              messages.push(makeMessage("assistant", full, { thinkingContent: thinking || undefined }));
-            }
-            const next = { ...cur, messages };
-            currentSessionRef.current = next;
-            onSessionRef.current?.(next);
-          },
-          onThinking: () => {},
-          onToolCallDelta: () => {},
-          onDone: async (finalContent, finalThinking, toolCalls, finishReason) => {
-            const cur = currentSessionRef.current;
-            if (!cur) return;
-
-            const assistantMsg = makeMessage("assistant", finalContent, {
-              thinkingContent: finalThinking || undefined,
-              toolCalls:
-                toolCalls.length > 0
-                  ? toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments }))
-                  : undefined,
-            });
-            const lastIdx = cur.messages.length - 1;
-            const last = cur.messages[lastIdx];
-            let nextMessages: ChatMessage[];
-            if (last?.role === "assistant" && !last.toolCalls) {
-              nextMessages = [...cur.messages];
-              nextMessages[lastIdx] = { ...last, ...assistantMsg, id: last.id, createdAt: last.createdAt };
-            } else {
-              nextMessages = [...cur.messages, assistantMsg];
-            }
-            let updated: ApiChatSession = { ...cur, messages: nextMessages };
-            try {
-              updated = await persist(updated);
-            } catch {
-              /* ignore */
-            }
-
-            if (finishReason === "tool_calls" && toolCalls.length > 0) {
-              await executeAndContinue(
-                updated,
-                toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments })),
-                toolNameMap,
-                llm,
-                round,
-              );
-            }
-          },
-          onError: (msg) => onErrorRef.current?.(msg),
+        initialMessages: toStreamMessages(session),
+        toolsBuilder: () =>
+          session.selectedEndpointIds.length > 0
+            ? buildMcpFunctionTools({ endpointIds: session.selectedEndpointIds })
+            : Promise.resolve([]),
+        dispatch: dispatchViaMcp,
+        onAssistantDelta: (full, thinking) => {
+          const cur = currentSessionRef.current;
+          if (!cur) return;
+          const messages = [...cur.messages];
+          const last = messages[messages.length - 1];
+          if (last?.role === "assistant" && !last.toolCalls) {
+            messages[messages.length - 1] = {
+              ...last,
+              content: full,
+              thinkingContent: thinking || last.thinkingContent,
+            };
+          } else {
+            messages.push(makeMessage("assistant", full, { thinkingContent: thinking || undefined }));
+          }
+          const next = { ...cur, messages };
+          currentSessionRef.current = next;
+          onSessionRef.current?.(next);
         },
-      );
+        onAssistantFinal: async ({ content, thinking, toolCalls }) => {
+          const cur = currentSessionRef.current;
+          if (!cur) return;
+          const assistantMsg = makeMessage("assistant", content, {
+            thinkingContent: thinking || undefined,
+            toolCalls:
+              toolCalls.length > 0
+                ? toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments }))
+                : undefined,
+          });
+          const lastIdx = cur.messages.length - 1;
+          const last = cur.messages[lastIdx];
+          let nextMessages: ChatMessage[];
+          if (last?.role === "assistant" && !last.toolCalls) {
+            nextMessages = [...cur.messages];
+            nextMessages[lastIdx] = { ...last, ...assistantMsg, id: last.id, createdAt: last.createdAt };
+          } else {
+            nextMessages = [...cur.messages, assistantMsg];
+          }
+          const updated: ApiChatSession = { ...cur, messages: nextMessages };
+          try {
+            await persist(updated);
+          } catch {
+            /* ignore */
+          }
+        },
+        onToolExecuted: async ({ call, result }) => {
+          const cur = currentSessionRef.current;
+          if (!cur) return;
+          const extra: Partial<ChatMessage> = {
+            toolCallId: call.id,
+            toolName: call.name,
+          };
+          const meta = extractApiToolMetadata(result.structuredContent);
+          if (meta) {
+            if (meta.status !== undefined) extra.toolStatus = meta.status;
+            if (meta.method !== undefined) extra.toolMethod = meta.method;
+            if (meta.url !== undefined) extra.toolUrl = meta.url;
+            if (meta.elapsedMs !== undefined) extra.toolElapsedMs = meta.elapsedMs;
+            if (meta.totalBytes !== undefined) extra.toolBodyBytes = meta.totalBytes;
+            if (meta.truncated !== undefined) extra.toolTruncated = meta.truncated;
+          }
+          const content = meta?.body
+            ? `HTTP ${meta.status ?? "-"}\n\n${meta.body}`
+            : result.content;
+          const toolMessage = makeMessage("tool", content, extra);
+          const updated: ApiChatSession = { ...cur, messages: [...cur.messages, toolMessage] };
+          try {
+            await persist(updated);
+          } catch {
+            /* ignore */
+          }
+        },
+        onError: (msg) => onErrorRef.current?.(msg),
+      });
     } catch (err) {
       onErrorRef.current?.(err instanceof Error ? err.message : String(err));
     }
-  }
-
-  async function executeAndContinue(
-    sessionAfterAssistant: ApiChatSession,
-    calls: ToolCall[],
-    toolNameMap: Record<string, string>,
-    llm: LlmContext,
-    round: number,
-  ) {
-    let session = sessionAfterAssistant;
-    for (const call of calls) {
-      const endpointId = toolNameMap[call.name];
-      let toolExtra: Partial<ChatMessage> = {
-        toolCallId: call.id,
-        toolName: call.name,
-      };
-      let resultContent: string;
-      if (!endpointId) {
-        resultContent = `（未找到工具 ${call.name} 对应的接口）`;
-      } else {
-        try {
-          const result = await executeApiEndpoint(endpointId, call.arguments || "{}");
-          resultContent = `HTTP ${result.status}\n\n${result.body}`;
-          toolExtra = {
-            ...toolExtra,
-            toolStatus: result.status,
-            toolMethod: result.method,
-            toolUrl: result.url,
-            toolElapsedMs: result.elapsedMs,
-            toolBodyBytes: result.totalBytes,
-            toolTruncated: result.truncated,
-          };
-        } catch (err) {
-          resultContent = `执行失败: ${err instanceof Error ? err.message : String(err)}`;
-        }
-      }
-      const toolMessage = makeMessage("tool", resultContent, toolExtra);
-      session = { ...session, messages: [...session.messages, toolMessage] };
-      try {
-        session = await persist(session);
-      } catch {
-        /* ignore */
-      }
-    }
-    await runRequest(session, llm, round + 1);
   }
 
   async function send(args: RunArgs, userText: string): Promise<void> {
@@ -239,7 +209,7 @@ export function useApiChatOrchestration() {
     setLoading(true);
     try {
       const saved = await persist(next);
-      await runRequest(saved, llm);
+      await runLoop(saved, llm);
     } finally {
       setLoading(false);
     }
