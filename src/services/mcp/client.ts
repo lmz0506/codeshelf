@@ -92,7 +92,8 @@ class McpGatewayClient {
     const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
     let resp: Response;
     try {
-      resp = await fetch(`${ep.url.replace(/\/$/, "")}/mcp`, {
+      // ep.url 已是完整端点（来自 mcp_gateway_status，形如 http://host:port/mcp），直接 POST
+      resp = await fetch(ep.url, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
