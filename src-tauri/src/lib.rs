@@ -474,10 +474,10 @@ pub fn run() {
             // Chat tools / tasks
             tools::chat_list_tools,
             tools::chat_execute_tool,
-            tools::list_chat_tasks,
-            tools::create_chat_task,
-            tools::update_chat_task,
-            tools::delete_chat_task,
+            tools::tasks::list_chat_tasks,
+            tools::tasks::create_chat_task,
+            tools::tasks::update_chat_task,
+            tools::tasks::delete_chat_task,
             // Memory / Skills / Mention
             extras::get_global_memory,
             extras::save_global_memory,
