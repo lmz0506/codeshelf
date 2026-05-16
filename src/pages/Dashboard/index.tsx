@@ -10,7 +10,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { CommitHeatmap } from "@/components/ui";
-import { EmptyState } from "@/components/common";
+import { EmptyState, PageHeader } from "@/components/common";
 import { useAppStore } from "@/stores/appStore";
 import {
   initStatsCache,
@@ -20,7 +20,6 @@ import {
   type RecentCommit,
 } from "@/services/stats";
 import type { DashboardStats, DailyActivity } from "@/types";
-import { MacWindowControls } from "@/components/layout/MacWindowControls";
 
 export function DashboardPage() {
   const { projects, sidebarCollapsed, setSidebarCollapsed, navigateToProject } = useAppStore();
@@ -171,20 +170,11 @@ export function DashboardPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header with Title and Integrated Window Controls */}
-      <header className="re-header flex-shrink-0" data-tauri-drag-region>
-        <span
-          className="toggle"
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        >
-          ☰
-        </span>
-
-        <div className="flex-1 flex items-center gap-3" data-tauri-drag-region>
-          <span className="text-lg font-semibold ml-2">📊 数据统计</span>
-        </div>
-
-        <div className="re-actions flex items-center">
-          {/* Refresh Button */}
+      <PageHeader
+        title="📊 数据统计"
+        sticky={false}
+        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+        actions={
           <button
             onClick={handleRefreshStats}
             disabled={refreshing || loading}
@@ -194,10 +184,8 @@ export function DashboardPage() {
             <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
             <span>{refreshing ? '刷新中...' : '刷新'}</span>
           </button>
-
-          <MacWindowControls />
-        </div>
-      </header>
+        }
+      />
 
       {loading ? (
         <div className="flex-1 flex flex-col items-center justify-center text-gray-400">

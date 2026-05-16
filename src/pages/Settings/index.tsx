@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
 import { Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard, Link2, Server } from "lucide-react";
-import { MacWindowControls } from "@/components/layout/MacWindowControls";
+import { PageHeader } from "@/components/common";
 import { getVersion } from "@tauri-apps/api/app";
 import { EditorSettings } from "./EditorSettings";
 import { TerminalSettings } from "./TerminalSettings";
@@ -139,22 +139,10 @@ export function SettingsPage() {
   return (
     <div className="flex flex-col min-h-full">
       {/* Header with Title and Integrated Window Controls */}
-      <header className="re-header sticky top-0 z-20" data-tauri-drag-region>
-        <span
-          className="toggle"
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        >
-          ☰
-        </span>
-
-        <div className="flex-1 flex items-center gap-3" data-tauri-drag-region>
-          <span className="text-lg font-semibold ml-2">⚙️ 设置</span>
-        </div>
-
-        <div className="re-actions flex items-center">
-          <MacWindowControls />
-        </div>
-      </header>
+      <PageHeader
+        title="⚙️ 设置"
+        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
 
       <div className="p-5" style={{ marginTop: "40px" }}>
         {/* Settings Cards Grid */}

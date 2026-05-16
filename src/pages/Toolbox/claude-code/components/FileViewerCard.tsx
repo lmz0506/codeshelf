@@ -1,4 +1,5 @@
 import { BookOpen, Edit3, FileText, Info, Loader2, Lock, Save } from "lucide-react";
+import { LoadingSpinner } from "@/components/common";
 import type { ConfigFileInfo } from "@/types/toolbox";
 import { CONFIG_REFERENCES, EDITABLE_FILES, READONLY_FILES } from "../constants";
 
@@ -100,7 +101,7 @@ export function FileViewerCard({
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center text-gray-400">
-          <Loader2 size={24} className="animate-spin" />
+          <LoadingSpinner size={24} />
         </div>
       ) : isEditing ? (
         <textarea

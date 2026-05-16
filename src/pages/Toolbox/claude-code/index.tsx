@@ -5,7 +5,6 @@ import { useState, useEffect } from "react";
 import {
   Terminal,
   RefreshCw,
-  Loader2,
   FolderOpen,
   FileText,
   AlertCircle,
@@ -15,6 +14,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
 import { ToolPanelHeader } from "../index";
 import { Button } from "@/components/ui";
+import { LoadingSpinner } from "@/components/common";
 import {
   checkAllClaudeInstallations,
   checkClaudeByPath,
@@ -709,10 +709,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
 
       <div className="flex-1 overflow-hidden p-4">
         {loading ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400">
-            <Loader2 size={32} className="animate-spin mb-4" />
-            <p>检测 Claude Code 安装...</p>
-          </div>
+          <LoadingSpinner size={32} label="检测 Claude Code 安装..." className="h-full" />
         ) : error ? (
           <div className="re-card p-6 text-center">
             <AlertCircle size={48} className="mx-auto mb-4 text-red-500" />

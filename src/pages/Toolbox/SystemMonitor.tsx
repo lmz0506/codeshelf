@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { ToolPanelHeader } from "./index";
 import { Input, Button } from "@/components/ui";
-import { EmptyState } from "@/components/common";
+import { EmptyState, LoadingSpinner } from "@/components/common";
 import {
   scanPorts,
   stopScan,
@@ -380,10 +380,7 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
               </div>
 
               {loadingOccupation ? (
-                <div className="flex flex-col items-center justify-center py-10 text-gray-400">
-                  <Loader2 size={32} className="animate-spin mb-4" />
-                  <p>加载中...</p>
-                </div>
+                <LoadingSpinner size={32} label="加载中..." className="py-10" />
               ) : filteredOccupations.length === 0 ? (
                 <EmptyState icon={Network} title={occupationFilter ? "未找到匹配的端口" : "暂无端口占用信息"} className="py-10" />
               ) : (
@@ -776,10 +773,7 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
               {/* 进程列表 */}
               <div className="re-card overflow-hidden">
                 {loadingProcesses ? (
-                  <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                    <Loader2 size={32} className="animate-spin mb-4" />
-                    <p>加载中...</p>
-                  </div>
+                  <LoadingSpinner size={32} label="加载中..." className="py-20" />
                 ) : filteredProcesses.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                     <ListTree size={48} className="mb-4 opacity-50" />

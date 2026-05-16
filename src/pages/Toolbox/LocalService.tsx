@@ -1,5 +1,6 @@
-import { FileCode, Globe, Loader2, Plus, RefreshCw } from "lucide-react";
+import { FileCode, Globe, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui";
+import { LoadingSpinner } from "@/components/common";
 import { ToolPanelHeader } from "./index";
 import { DeleteConfirmDialog } from "./local-service/DeleteConfirmDialog";
 import { NginxConfigDialog } from "./local-service/NginxConfigDialog";
@@ -72,10 +73,7 @@ export function LocalService({ onBack }: LocalServiceProps) {
           </div>
 
           {service.loading && service.servers.length === 0 && service.forwardRules.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-              <Loader2 size={32} className="animate-spin mb-4" />
-              <p>加载中...</p>
-            </div>
+            <LoadingSpinner size={32} label="加载中..." className="py-20" />
           ) : service.filteredServers.length === 0 && service.filteredRules.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
               <Globe size={48} className="mb-4 opacity-50" />

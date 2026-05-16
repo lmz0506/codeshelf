@@ -1,5 +1,6 @@
-import { Loader2, Network, Plus, RefreshCw } from "lucide-react";
+import { Network, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui";
+import { LoadingSpinner } from "@/components/common";
 import { ToolPanelHeader } from "./index";
 import { DeleteConfirmDialog } from "./ssh-tunnel/DeleteConfirmDialog";
 import { TestResultDialog } from "./ssh-tunnel/TestResultDialog";
@@ -37,10 +38,7 @@ export function SshTunnel({ onBack }: SshTunnelProps) {
       <div className="flex-1 p-6">
         <div className="max-w-4xl mx-auto space-y-4">
           {tunnel.loading && tunnel.tunnels.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-              <Loader2 size={32} className="animate-spin mb-4" />
-              <p>加载中...</p>
-            </div>
+            <LoadingSpinner size={32} label="加载中..." className="py-20" />
           ) : tunnel.tunnels.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
               <Network size={48} className="mb-4 opacity-50" />
