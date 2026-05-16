@@ -1,5 +1,7 @@
-import { AlertCircle, BookOpen, Check, Copy, Loader2, Power, Trash2, X } from "lucide-react";
+import { BookOpen, Check, Copy, Power, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { Modal } from "@/components/common/Modal";
 import { CONFIG_REFERENCES } from "../constants";
 import type { ConfigProfile } from "@/types/toolbox";
 
@@ -12,42 +14,32 @@ interface ActivateConfirmDialogProps {
 
 export function ActivateConfirmDialog({ profile, activating, onCancel, onConfirm }: ActivateConfirmDialogProps) {
   return (
-    <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-full">
-            <Power size={20} className="text-green-500" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">确认启用</h3>
-        </div>
-
-        <p className="text-gray-600 dark:text-gray-400 mb-2">
-          确定要启用配置档案 <span className="font-medium text-gray-900 dark:text-white">"{profile.name}"</span> 吗？
-        </p>
-        <p className="text-xs text-gray-500 mb-3">
-          这将把该档案的配置写入到当前环境的 settings.json 文件中。
-        </p>
-        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg mb-4">
-          <p className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
-            <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
-            <span>
-              <strong>注意：</strong>配置修改后需要重启 Claude Code 才能生效。
-              请退出当前会话后重新运行 <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">claude</code> 命令。
-            </span>
+    <ConfirmDialog
+      open={true}
+      title="确认启用"
+      icon={Power}
+      variant="primary"
+      confirmLabel={activating ? "启用中..." : "启用"}
+      loading={activating}
+      description={
+        <>
+          <p className="mb-2">
+            确定要启用配置档案 <span className="font-medium text-gray-900 dark:text-white">"{profile.name}"</span> 吗？
           </p>
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <Button onClick={onCancel} variant="secondary" disabled={activating}>
-            取消
-          </Button>
-          <Button onClick={onConfirm} disabled={activating} variant="primary">
-            {activating ? <Loader2 size={14} className="animate-spin mr-1" /> : <Power size={14} className="mr-1" />}
-            {activating ? "启用中..." : "启用"}
-          </Button>
-        </div>
-      </div>
-    </div>
+          <p className="text-xs text-gray-500">
+            这将把该档案的配置写入到当前环境的 settings.json 文件中。
+          </p>
+        </>
+      }
+      notice={
+        <span>
+          <strong>注意：</strong>配置修改后需要重启 Claude Code 才能生效。
+          请退出当前会话后重新运行 <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">claude</code> 命令。
+        </span>
+      }
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }
 
@@ -59,28 +51,20 @@ interface DeleteConfirmDialogProps {
 
 export function DeleteConfirmDialog({ profile, onCancel, onConfirm }: DeleteConfirmDialogProps) {
   return (
-    <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-full">
-            <Trash2 size={20} className="text-red-500" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">确认删除</h3>
-        </div>
-
-        <p className="text-gray-600 dark:text-gray-400 mb-6">
+    <ConfirmDialog
+      open={true}
+      title="确认删除"
+      icon={Trash2}
+      variant="danger"
+      confirmLabel="删除"
+      description={
+        <>
           确定要删除配置档案 <span className="font-medium text-gray-900 dark:text-white">"{profile.name}"</span> 吗？此操作无法撤销。
-        </p>
-
-        <div className="flex justify-end gap-2">
-          <Button onClick={onCancel} variant="secondary">取消</Button>
-          <Button onClick={onConfirm} className="bg-red-500 hover:bg-red-600 text-white">
-            <Trash2 size={14} className="mr-1" />
-            删除
-          </Button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }
 
@@ -95,8 +79,8 @@ export function ConfigReferenceDialog({ fileName, copiedText, onCopy, onClose }:
   const ref = CONFIG_REFERENCES[fileName];
   if (!ref) return null;
   return (
-    <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+    <Modal open={true} onClose={onClose} size="xl">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl flex flex-col max-h-[80vh]">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
             <BookOpen size={20} />
@@ -143,6 +127,6 @@ export function ConfigReferenceDialog({ fileName, copiedText, onCopy, onClose }:
           <Button onClick={onClose} variant="secondary">关闭</Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

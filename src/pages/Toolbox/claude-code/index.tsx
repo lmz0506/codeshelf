@@ -725,13 +725,11 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
               <EnvironmentCard
                 installations={installations}
                 selectedEnv={selectedEnv}
-                copiedText={copiedText}
                 onSelectEnv={(env) => {
                   setSelectedEnv(env);
                   setProfiles([]);
                   setActiveProfileId(null);
                 }}
-                onCopy={copyToClipboard}
                 onSelectClaudePath={handleSelectClaudePath}
                 onOpenFindHelp={() => setShowFindClaudeHelp(true)}
                 onEditConfigDir={(current) => {

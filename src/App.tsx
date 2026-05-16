@@ -12,6 +12,7 @@ import { ChatPage } from "@/pages/Chat";
 import { WorkflowsPage } from "@/pages/Workflows";
 import { ApiChatPage } from "@/pages/ApiChat";
 import { ToastContainer, UpdateNotification, ShortcutQuickLookup, ClipboardQuickAccess } from "@/components/ui";
+import { ConfirmHost } from "@/components/common/useConfirm";
 import { useAppStore } from "@/stores/appStore";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import type { Project, Notification, AppShortcutBinding, AiProviderConfig } from "@/types";
@@ -191,6 +192,7 @@ function AppContent() {
       <UpdateNotification />
       <ShortcutQuickLookup />
       <ClipboardQuickAccess />
+      <ConfirmHost />
     </>
   );
 }

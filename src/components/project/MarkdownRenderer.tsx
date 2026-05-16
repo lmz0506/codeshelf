@@ -6,6 +6,7 @@ import rehypeRaw from 'rehype-raw';
 import { Check, Copy } from 'lucide-react';
 import 'highlight.js/styles/github.css';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 
 interface MarkdownRendererProps {
   content: string;
@@ -13,22 +14,15 @@ interface MarkdownRendererProps {
 }
 
 function CodeBlockCopyButton({ getText }: { getText: () => string }) {
-  const [copied, setCopied] = useState(false);
+  const { copy, copiedLabel } = useCopyToClipboard();
+  const copied = copiedLabel === "code";
   return (
     <button
       type="button"
       className={`absolute top-2 right-2 px-1.5 py-0.5 text-[11px] rounded border flex items-center gap-1 transition-opacity opacity-0 group-hover:opacity-100 ${
         copied ? "bg-green-50 border-green-200 text-green-600" : "bg-white border-gray-200 text-gray-500 hover:text-blue-500"
       }`}
-      onClick={() => {
-        try {
-          navigator.clipboard.writeText(getText());
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch {
-          // ignore
-        }
-      }}
+      onClick={() => copy(getText(), "code")}
       title={copied ? "已复制" : "复制代码"}
     >
       {copied ? <Check size={11} /> : <Copy size={11} />}

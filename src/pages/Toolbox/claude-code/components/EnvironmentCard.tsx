@@ -1,12 +1,11 @@
-import { Check, CheckCircle, Copy, Edit3, HelpCircle, X } from "lucide-react";
+import { CheckCircle, Edit3, HelpCircle, X } from "lucide-react";
+import { CopyButton } from "@/components/common";
 import type { ClaudeCodeInfo } from "@/types/toolbox";
 
 interface EnvironmentCardProps {
   installations: ClaudeCodeInfo[];
   selectedEnv: ClaudeCodeInfo;
-  copiedText: string | null;
   onSelectEnv: (env: ClaudeCodeInfo) => void;
-  onCopy: (text: string, label: string) => void;
   onSelectClaudePath: () => void;
   onOpenFindHelp: () => void;
   onEditConfigDir: (current: string) => void;
@@ -15,9 +14,7 @@ interface EnvironmentCardProps {
 export function EnvironmentCard({
   installations,
   selectedEnv,
-  copiedText,
   onSelectEnv,
-  onCopy,
   onSelectClaudePath,
   onOpenFindHelp,
   onEditConfigDir,
@@ -64,13 +61,7 @@ export function EnvironmentCard({
           {selectedEnv.version ? (
             <>
               <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs">{selectedEnv.version}</code>
-              <button
-                onClick={() => onCopy(selectedEnv.version!, "version")}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0"
-                title="复制版本"
-              >
-                {copiedText === "version" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
-              </button>
+              <CopyButton text={selectedEnv.version} label="env-version" size={12} title="复制版本" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0" />
             </>
           ) : (
             <span className="text-gray-300">-</span>
@@ -83,13 +74,7 @@ export function EnvironmentCard({
               <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs truncate flex-1" title={selectedEnv.path}>
                 {selectedEnv.path}
               </code>
-              <button
-                onClick={() => onCopy(selectedEnv.path!, "path")}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0"
-                title="复制路径"
-              >
-                {copiedText === "path" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
-              </button>
+              <CopyButton text={selectedEnv.path} label="env-path" size={12} title="复制路径" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0" />
               {selectedEnv.envType === "wsl" && (
                 <button
                   onClick={onSelectClaudePath}
@@ -126,13 +111,7 @@ export function EnvironmentCard({
               <code className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs truncate flex-1" title={selectedEnv.configDir}>
                 {selectedEnv.configDir}
               </code>
-              <button
-                onClick={() => onCopy(selectedEnv.configDir!, "configDir")}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0"
-                title="复制配置目录"
-              >
-                {copiedText === "configDir" ? <Check size={12} className="text-green-500" /> : <Copy size={12} className="text-gray-400" />}
-              </button>
+              <CopyButton text={selectedEnv.configDir} label="env-configDir" size={12} title="复制配置目录" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0" />
               <button
                 onClick={() => onEditConfigDir(selectedEnv.configDir || "")}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0"
