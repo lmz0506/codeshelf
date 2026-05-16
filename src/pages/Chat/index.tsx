@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { Trash2 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
+import { useConfirm } from "@/components/common";
 import {
   createChatSession,
   deleteChatSession,
@@ -99,6 +101,7 @@ export function ChatPage() {
   const { streaming, thinkingBuffer, start: startStream, stop: stopStream } = useChatStream();
 
   const endpointLookup = useMcpEndpointLookup();
+  const confirmDialog = useConfirm();
 
   const normalized = useMemo(() => ensureAiDefaultProvider(aiProviders), [aiProviders, ensureAiDefaultProvider]);
   const modelOptions = useMemo(() => buildModelOptions(normalized), [normalized]);
@@ -284,8 +287,14 @@ export function ChatPage() {
   }
 
   async function handleDeleteSession(target: ChatSessionSummary) {
-    const confirmed = confirm(`确认删除会话「${target.title}」？`);
-    if (!confirmed) return;
+    const ok = await confirmDialog({
+      title: "确认删除会话",
+      description: <>确认删除会话「<span className="font-medium text-gray-900 dark:text-white">{target.title}</span>」？</>,
+      variant: "danger",
+      icon: Trash2,
+      confirmLabel: "删除",
+    });
+    if (!ok) return;
     try {
       await deleteChatSession(target.id);
       setSessions((prev) => prev.filter((s) => s.id !== target.id));

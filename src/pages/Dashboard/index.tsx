@@ -10,6 +10,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { CommitHeatmap } from "@/components/ui";
+import { EmptyState } from "@/components/common";
 import { useAppStore } from "@/stores/appStore";
 import {
   initStatsCache,
@@ -304,10 +305,7 @@ export function DashboardPage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                  <GitCommit size={28} className="mb-2 opacity-50" />
-                  <p className="text-sm">暂无提交记录</p>
-                </div>
+                <EmptyState icon={GitCommit} title="暂无提交记录" className="flex-1 flex flex-col items-center justify-center" />
               )}
             </div>
           </div>

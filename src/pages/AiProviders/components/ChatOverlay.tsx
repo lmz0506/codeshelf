@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { X } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { showToast } from "@/components/ui";
+import { useConfirm } from "@/components/common";
 import {
   chatCancel,
   chatStream,
@@ -67,6 +68,7 @@ export function ChatOverlay({ providers, onClose }: ChatOverlayProps) {
   const effectiveKey = modelOptions.find((o) => o.key === selectedModelKey) ? selectedModelKey : defaultKey;
   const selected = modelOptions.find((o) => o.key === effectiveKey) ?? null;
   const isConfigured = Boolean(selected);
+  const confirmDialog = useConfirm();
 
   useEffect(() => {
     setShowChatFull(true);
@@ -277,8 +279,14 @@ export function ChatOverlay({ providers, onClose }: ChatOverlayProps) {
   }
 
   async function handleDeleteSession(target: ChatSessionSummary) {
-    const confirmed = confirm(`确认删除会话「${target.title}」？`);
-    if (!confirmed) return;
+    const ok = await confirmDialog({
+      title: "确认删除会话",
+      description: <>确认删除会话「<span className="font-medium text-gray-900 dark:text-white">{target.title}</span>」？</>,
+      variant: "danger",
+      icon: Trash2,
+      confirmLabel: "删除",
+    });
+    if (!ok) return;
     try {
       await deleteChatSession(target.id);
       setSessions((prev) => {

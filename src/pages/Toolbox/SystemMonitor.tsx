@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { ToolPanelHeader } from "./index";
 import { Input, Button } from "@/components/ui";
+import { EmptyState } from "@/components/common";
 import {
   scanPorts,
   stopScan,
@@ -384,10 +385,7 @@ export function SystemMonitor({ onBack }: SystemMonitorProps) {
                   <p>加载中...</p>
                 </div>
               ) : filteredOccupations.length === 0 ? (
-                <div className="text-center py-10 text-gray-400">
-                  <Network size={48} className="mx-auto mb-4 opacity-50" />
-                  <p>{occupationFilter ? "未找到匹配的端口" : "暂无端口占用信息"}</p>
-                </div>
+                <EmptyState icon={Network} title={occupationFilter ? "未找到匹配的端口" : "暂无端口占用信息"} className="py-10" />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">

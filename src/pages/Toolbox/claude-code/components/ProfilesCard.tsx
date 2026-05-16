@@ -15,6 +15,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { EmptyState } from "@/components/common";
 import type { ConfigProfile } from "@/types/toolbox";
 
 interface ProfilesCardProps {
@@ -129,11 +130,7 @@ export function ProfilesCard({
 
         <div className="flex-1 overflow-y-auto min-h-0">
           {profiles.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
-              <Copy size={32} className="mx-auto mb-2 opacity-50" />
-              <p className="text-sm">暂无配置档案</p>
-              <p className="text-xs mt-1">点击"新建"创建第一个配置档案</p>
-            </div>
+            <EmptyState icon={Copy} title="暂无配置档案" description='点击"新建"创建第一个配置档案' />
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
               {profiles.map((profile) => {
