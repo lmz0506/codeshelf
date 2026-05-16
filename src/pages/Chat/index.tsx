@@ -1,52 +1,41 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Settings, ListChecks, Brain } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "@/stores/appStore";
 import { showToast } from "@/components/ui";
-import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import {
   createChatSession,
   deleteChatSession,
-  executeTool,
   getChatSession,
-  getCompaction,
+  getGlobalMemory,
   listChatSessions,
   listTools,
   renameChatSession,
   saveChatSession,
 } from "@/services/chat";
-import { getGlobalMemory, readMentionFile, listDirEntries } from "@/services/chat";
-import type { ChatStreamMessage, ToolSchema } from "@/services/chat";
-import { mcpClient } from "@/services/mcp/client";
-import { buildMcpFunctionTools, extractApiToolMetadata } from "@/services/mcp/toolLoop";
+import type { ToolSchema } from "@/services/chat";
 import { useMcpEndpointLookup } from "@/hooks/useMcpEndpointLookup";
 import type { ChatAttachment, ChatMessage, ChatSession, ChatSessionSummary, ToolCall } from "@/types";
 
 import { SessionSidebar } from "./components/SessionSidebar";
 import { MessageList } from "./components/MessageList";
 import { ChatInput } from "./components/ChatInput";
-import { RenameDialog } from "./components/RenameDialog";
-import { SessionConfigPanel, type SessionConfigValues } from "./components/SessionConfigPanel";
-import { ToolApprovalDialog, type PendingApproval } from "./components/ToolApprovalDialog";
-import { TaskPanel } from "./components/TaskPanel";
-import { SkillsPicker } from "./components/SkillsPicker";
-import { ToolPicker } from "./components/ToolPicker";
-import { AtMentionPicker } from "./components/AtMentionPicker";
-import { ModelManagerDialog } from "./components/ModelManagerDialog";
-import { MemoryEditorDialog } from "./components/MemoryEditorDialog";
+import type { SessionConfigValues } from "./components/SessionConfigPanel";
+import type { PendingApproval } from "./components/ToolApprovalDialog";
+import { ChatHeader } from "./components/ChatHeader";
+import { ChatDialogsHost } from "./components/ChatDialogsHost";
+import { AttachmentsPreview } from "./components/AttachmentsPreview";
 import { useChatStream } from "./hooks/useChatStream";
+import { useProjectContext } from "./hooks/useProjectContext";
+import { useChatRunner } from "./hooks/useChatRunner";
 import { exportSessionAsJson, exportSessionAsMarkdown, importSessionFromJson } from "./utils/exportSession";
-import { sessionTokens } from "./utils/tokens";
 import { compactMessages } from "./utils/compact";
 import { type SlashCommandId } from "./utils/slashCommands";
+import { resolveMentions, resolveUrls } from "./utils/resolveContext";
 import {
   buildModelOptions,
   formatMentionPath,
   getDefaultOptionKey,
   makeMessage,
-  summarizeTitle,
-  trimMentionPunctuation,
-  unescapeMentionPath,
 } from "./utils/chatHelpers";
 
 export function ChatPage() {
@@ -85,7 +74,6 @@ export function ChatPage() {
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [modelManagerOpen, setModelManagerOpen] = useState(false);
   const [modelManagerInitialProviderId, setModelManagerInitialProviderId] = useState<string>("");
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
@@ -106,10 +94,10 @@ export function ChatPage() {
   const activeSessionRef = useRef<ChatSession | null>(null);
   activeSessionRef.current = activeSession;
   const modelSelectRef = useRef<HTMLSelectElement>(null);
+  const mentionContextRef = useRef<string>("");
 
   const { streaming, thinkingBuffer, start: startStream, stop: stopStream } = useChatStream();
 
-  // 让 ToolCallBubble 在 MCP gateway 工具调用时能显示接口 METHOD/URL
   const endpointLookup = useMcpEndpointLookup();
 
   const normalized = useMemo(() => ensureAiDefaultProvider(aiProviders), [aiProviders, ensureAiDefaultProvider]);
@@ -127,6 +115,62 @@ export function ChatPage() {
       .map((m) => m.content)
       .reverse();
   }, [activeSession]);
+
+  const projectContextRef = useProjectContext(activeSession?.id, activeSession?.allowedCwd);
+
+  function syncSummary(session: ChatSession) {
+    setSessions((prev) => {
+      const exists = prev.find((s) => s.id === session.id);
+      const summary: ChatSessionSummary = {
+        id: session.id,
+        title: session.title,
+        providerId: session.providerId,
+        modelId: session.modelId,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        messageCount: session.messages.length,
+        pinned: session.pinned,
+      };
+      if (exists) return prev.map((s) => (s.id === session.id ? summary : s));
+      return [summary, ...prev];
+    });
+  }
+
+  async function persistSession(session: ChatSession): Promise<ChatSession> {
+    const saved = await saveChatSession(session);
+    setActiveSession(saved);
+    syncSummary(saved);
+    return saved;
+  }
+
+  function requestApproval(call: ToolCall): Promise<"once" | "always" | "reject"> {
+    return new Promise((resolve) => {
+      approvalResolverRef.current = resolve;
+      setPendingApproval({ id: call.id, name: call.name, argumentsJson: call.arguments });
+    });
+  }
+
+  function handleApprovalDecision(decision: "once" | "always" | "reject") {
+    const fn = approvalResolverRef.current;
+    approvalResolverRef.current = null;
+    setPendingApproval(null);
+    fn?.(decision);
+  }
+
+  const { runChatRequest } = useChatRunner({
+    toolSchemas,
+    toolsEnabled,
+    globalMemory,
+    editors,
+    selected,
+    projectContextRef,
+    mentionContextRef,
+    activeSessionRef,
+    setActiveSession,
+    syncSummary,
+    startStream,
+    requestApproval,
+  });
 
   // 加载会话列表
   useEffect(() => {
@@ -183,31 +227,6 @@ export function ChatPage() {
       }
     };
   }, []);
-
-  function syncSummary(session: ChatSession) {
-    setSessions((prev) => {
-      const exists = prev.find((s) => s.id === session.id);
-      const summary: ChatSessionSummary = {
-        id: session.id,
-        title: session.title,
-        providerId: session.providerId,
-        modelId: session.modelId,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-        messageCount: session.messages.length,
-        pinned: session.pinned,
-      };
-      if (exists) return prev.map((s) => (s.id === session.id ? summary : s));
-      return [summary, ...prev];
-    });
-  }
-
-  async function persistSession(session: ChatSession): Promise<ChatSession> {
-    const saved = await saveChatSession(session);
-    setActiveSession(saved);
-    syncSummary(saved);
-    return saved;
-  }
 
   async function handleCreateSession() {
     if (!selected) {
@@ -312,507 +331,6 @@ export function ChatPage() {
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "导入失败");
     }
-  }
-
-  function requestApproval(call: ToolCall): Promise<"once" | "always" | "reject"> {
-    return new Promise((resolve) => {
-      approvalResolverRef.current = resolve;
-      setPendingApproval({ id: call.id, name: call.name, argumentsJson: call.arguments });
-    });
-  }
-
-  function handleApprovalDecision(decision: "once" | "always" | "reject") {
-    const fn = approvalResolverRef.current;
-    approvalResolverRef.current = null;
-    setPendingApproval(null);
-    fn?.(decision);
-  }
-
-  const mentionContextRef = useRef<string>("");
-  const projectContextRef = useRef<string>("");
-
-  // 构建项目上下文（目录路径 + 浅层文件树 + CLAUDE.md/README.md 摘要），注入 system
-  useEffect(() => {
-    const cwd = activeSession?.allowedCwd;
-    if (!cwd) {
-      projectContextRef.current = "";
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const parts: string[] = [`[项目上下文]\n项目根目录: ${cwd}`];
-      try {
-        const entries = await listDirEntries(cwd, 200);
-        if (entries.length > 0) {
-          const lines = entries
-            .slice(0, 120)
-            .map((e) => (e.isDir ? `${e.path}/` : e.path));
-          const more = entries.length > 120 ? `\n…（共 ${entries.length} 项，已截断）` : "";
-          parts.push(`## 文件树（浅层，隐藏文件与 node_modules/target/dist 已过滤）\n${lines.join("\n")}${more}`);
-        }
-      } catch { /* ignore */ }
-
-      const docCandidates = ["CLAUDE.md", "AGENTS.md", "README.md", "README"];
-      for (const name of docCandidates) {
-        try {
-          const content = await readMentionFile(cwd, name);
-          if (content && content.trim()) {
-            const MAX = 8000;
-            const trimmed = content.length > MAX ? content.slice(0, MAX) + "\n…（已截断）" : content;
-            parts.push(`## ${name}\n${trimmed}`);
-            break;
-          }
-        } catch { /* next */ }
-      }
-
-      if (!cancelled) projectContextRef.current = parts.join("\n\n");
-    })();
-    return () => { cancelled = true; };
-  }, [activeSession?.id, activeSession?.allowedCwd]);
-
-
-  /** 将 ChatSession.messages 转为 OpenAI 协议消息（含 tool_calls / tool 结果） */
-  /**
-   * 把 session 转成发给 LLM 的消息数组。
-   * 若提供 compaction，则把 session.messages 的前 sourceMessageCount 条替换为一条 system 摘要。
-   */
-  function toStreamMessages(
-    session: ChatSession,
-    compaction?: { summary: string; sourceMessageCount: number; version: string },
-  ): ChatStreamMessage[] {
-    const out: ChatStreamMessage[] = [];
-    const sysParts: string[] = [];
-    if (globalMemory.trim()) sysParts.push(`[全局记忆 MEMORY.md]\n${globalMemory.trim()}`);
-    if (projectContextRef.current.trim()) sysParts.push(projectContextRef.current.trim());
-    if (editors.length > 0) {
-      const lines = editors
-        .map((e) => `- ${e.name}${e.is_default ? "（默认）" : ""}: ${e.path}`)
-        .join("\n");
-      sysParts.push(
-        `[可用编辑器]\n调用 OpenInEditor 工具时 editor 参数优先从下列用户已配置的真实路径中选；若用户未指明哪个编辑器，用带"（默认）"那一个。\n${lines}`
-      );
-    }
-    if (session.systemPrompt?.trim()) sysParts.push(session.systemPrompt.trim());
-    if (mentionContextRef.current.trim()) sysParts.push(mentionContextRef.current.trim());
-    if (compaction) {
-      sysParts.push(
-        `[上下文压缩 ${compaction.version}] 以下是早期 ${compaction.sourceMessageCount} 条对话的摘要：\n\n${compaction.summary}`,
-      );
-    }
-    if (sysParts.length) out.push({ role: "system", content: sysParts.join("\n\n---\n\n") });
-    // 压缩生效时跳过前 sourceMessageCount 条原始消息，避免重复发送
-    const skip = compaction ? Math.min(compaction.sourceMessageCount, session.messages.length) : 0;
-    const messagesToSend = skip > 0 ? session.messages.slice(skip) : session.messages;
-    for (const m of messagesToSend) {
-      if (m.role === "assistant") {
-        const hasToolCalls = (m.toolCalls?.length ?? 0) > 0;
-        if (!hasToolCalls && (!m.content || !m.content.trim())) continue;
-        out.push({
-          role: "assistant",
-          content: m.content ?? "",
-          toolCalls: hasToolCalls
-            ? m.toolCalls!.map((tc) => ({
-                id: tc.id,
-                type: "function" as const,
-                function: { name: tc.name, arguments: tc.arguments || "{}" },
-              }))
-            : undefined,
-        });
-      } else if (m.role === "tool") {
-        out.push({
-          role: "tool",
-          content: m.content,
-          toolCallId: m.toolCallId,
-          name: m.toolName,
-        });
-      } else if (m.role === "user" && m.attachments?.some((a) => a.kind === "image") && selected?.model.vision) {
-        const parts: Array<
-          | { type: "text"; text: string }
-          | { type: "image_url"; image_url: { url: string } }
-        > = [];
-        const textAtts = m.attachments.filter((a) => a.kind === "text") as Array<{ kind: "text"; name: string; content: string }>;
-        const textPrefix = textAtts.length
-          ? textAtts.map((a) => `### ${a.name}\n\`\`\`\n${a.content}\n\`\`\``).join("\n\n") + "\n\n"
-          : "";
-        const combined = textPrefix + (m.content.trim() ? m.content : "");
-        if (combined.trim()) parts.push({ type: "text", text: combined });
-        for (const a of m.attachments) {
-          if (a.kind === "image") parts.push({ type: "image_url", image_url: { url: a.dataUrl } });
-        }
-        out.push({ role: "user", content: parts });
-      } else if (m.role === "user" && m.attachments && m.attachments.length > 0) {
-        // 非视觉模型或仅文本附件：文本附件拼进 content，图片附件降级为占位
-        const textAtts = m.attachments.filter((a) => a.kind === "text") as Array<{ kind: "text"; name: string; content: string }>;
-        const imgCount = m.attachments.filter((a) => a.kind === "image").length;
-        const prefix = textAtts.map((a) => `### ${a.name}\n\`\`\`\n${a.content}\n\`\`\``).join("\n\n");
-        const imgHint = imgCount > 0 && !selected?.model.vision ? `\n\n（当前模型未开启视觉，已跳过 ${imgCount} 张图片）` : "";
-        out.push({ role: "user", content: `${prefix}${imgHint}\n\n${m.content}`.trim() });
-      } else {
-        out.push({ role: m.role, content: m.content });
-      }
-    }
-    return out;
-  }
-
-  /** 构建 OpenAI tools 参数；仅在 toolsEnabled 时返回 */
-  function activeTools(session: ChatSession) {
-    if (!toolsEnabled) return undefined;
-    const enabled = session.enabledTools ?? toolSchemas.map((t) => t.name);
-    const list = toolSchemas.filter((t) => enabled.includes(t.name));
-    if (list.length === 0) return undefined;
-    return list.map((t) => ({
-      type: "function" as const,
-      function: { name: t.name, description: t.description, parameters: t.parameters },
-    }));
-  }
-
-  /** 拉取本会话适用的 MCP gateway 工具（接口工具）。gateway 未启动或会话已禁用则返回空数组 */
-  async function activeMcpTools(session: ChatSession) {
-    if (!toolsEnabled) return [];
-    if (session.useMcpGatewayTools === false) return [];
-    try {
-      return await buildMcpFunctionTools();
-    } catch {
-      return [];
-    }
-  }
-
-  const MAX_TOOL_ROUNDS = 10;
-
-  /** 自动压缩阈值：消息数超过此值且未在 streaming 时，发送前自动压缩 */
-  const AUTO_COMPACT_THRESHOLD = 40;
-  /** 自动压缩时保留尾部消息条数 */
-  const COMPACT_KEEP = 4;
-  /** 防止并发触发自动压缩 */
-  const autoCompactingRef = useRef(false);
-
-  /**
-   * 自动压缩：当未压缩的消息数超过阈值时，触发一次压缩并把版本号写回 session。
-   * 仅在非 streaming 场景调用；失败仅打 toast，不阻塞发送。
-   */
-  async function maybeAutoCompact(session: ChatSession): Promise<ChatSession> {
-    if (autoCompactingRef.current) return session;
-    if (!selected) return session;
-    let activeRange = 0;
-    if (session.currentCompactionVersion) {
-      try {
-        const c = await getCompaction(session.id, session.currentCompactionVersion);
-        const compactedCount = c?.meta?.sourceMessageCount ?? 0;
-        activeRange = Math.max(0, session.messages.length - compactedCount);
-      } catch {
-        activeRange = session.messages.length;
-      }
-    } else {
-      activeRange = session.messages.length;
-    }
-    if (activeRange <= AUTO_COMPACT_THRESHOLD) return session;
-    autoCompactingRef.current = true;
-    try {
-      const res = await compactMessages({
-        session,
-        providerId: selected.providerId,
-        model: selected.model.model,
-        baseUrl: selected.baseUrl,
-        apiKey: selected.apiKey,
-        keep: COMPACT_KEEP,
-      });
-      const next: ChatSession = { ...session, currentCompactionVersion: res.version };
-      const saved = await persistSession(next);
-      showToast("success", `已自动压缩到 ${res.version}（覆盖 ${res.sourceMessageCount} 条）`);
-      return saved;
-    } catch (err) {
-      showToast("warning", `自动压缩失败：${err instanceof Error ? err.message : "未知错误"}`);
-      return session;
-    } finally {
-      autoCompactingRef.current = false;
-    }
-  }
-
-  /** 扫最近一条 user 消息是否以 `[使用 NAME 工具]` 开头，若是返回工具名 */
-  function detectForcedTool(session: ChatSession): string | null {
-    const last = [...session.messages].reverse().find((m) => m.role === "user");
-    if (!last) return null;
-    const m = last.content.match(/^\s*\[使用\s+([A-Za-z_][A-Za-z0-9_]*)\s+工具\]/);
-    return m ? m[1] : null;
-  }
-
-  async function runChatRequest(session: ChatSession, round: number = 0): Promise<void> {
-    if (!selected) return;
-    if (round >= MAX_TOOL_ROUNDS) {
-      showToast("warning", `已达到最大工具循环轮次（${MAX_TOOL_ROUNDS}），请检查`);
-      return;
-    }
-
-    // 仅在第 0 轮做自动压缩；工具循环中的 round > 0 复用第 0 轮的 session
-    if (round === 0) {
-      session = await maybeAutoCompact(session);
-    }
-
-    // 预加载压缩摘要（如有）
-    let compaction: { summary: string; sourceMessageCount: number; version: string } | undefined;
-    if (session.currentCompactionVersion) {
-      try {
-        const c = await getCompaction(session.id, session.currentCompactionVersion);
-        if (c && c.meta) {
-          compaction = {
-            summary: c.content,
-            sourceMessageCount: c.meta.sourceMessageCount,
-            version: c.version,
-          };
-        }
-      } catch (err) {
-        console.warn("加载压缩摘要失败", err);
-      }
-    }
-
-    let tools: Array<{ type: "function"; function: { name: string; description?: string; parameters: object } }> | undefined =
-      activeTools(session);
-    const mcpTools = await activeMcpTools(session);
-    if (mcpTools.length > 0) {
-      tools = tools ? [...tools, ...mcpTools] : mcpTools;
-    }
-    let toolChoice: { type: "function"; function: { name: string } } | undefined;
-
-    // 仅在第 0 轮做 soft-force：后续工具循环按常规 auto
-    if (round === 0) {
-      const forced = detectForcedTool(session);
-      if (forced) {
-        const schema = toolSchemas.find((t) => t.name === forced);
-        if (!schema) {
-          showToast("warning", `未找到工具 ${forced}，已退回普通对话`);
-        } else {
-          tools = [
-            {
-              type: "function" as const,
-              function: { name: schema.name, description: schema.description, parameters: schema.parameters },
-            },
-          ];
-          toolChoice = { type: "function", function: { name: schema.name } };
-        }
-      }
-    }
-
-    try {
-      await startStream(
-        {
-          providerId: selected.providerId,
-          model: selected.model.model,
-          baseUrl: selected.baseUrl,
-          apiKey: selected.apiKey,
-          thinking: selected.model.thinking,
-          stream: selected.model.stream !== false,
-          temperature: session.temperature,
-          maxTokens: session.maxTokens,
-          topP: session.topP,
-          frequencyPenalty: session.frequencyPenalty,
-          presencePenalty: session.presencePenalty,
-          messages: toStreamMessages(session, compaction),
-          tools,
-          toolChoice,
-        },
-        {
-          onDelta: (full, thinking) => {
-            setActiveSession((prev) => {
-              if (!prev) return prev;
-              const messages = [...prev.messages];
-              const last = messages[messages.length - 1];
-              if (last?.role === "assistant" && !last.toolCalls) {
-                messages[messages.length - 1] = {
-                  ...last,
-                  content: full,
-                  thinkingContent: thinking || last.thinkingContent,
-                };
-              } else {
-                messages.push(makeMessage("assistant", full, { thinkingContent: thinking || undefined }));
-              }
-              return { ...prev, messages };
-            });
-          },
-          onThinking: () => {},
-          onToolCallDelta: () => {},
-          onDone: async (finalContent, finalThinking, toolCalls, finishReason) => {
-            const current = activeSessionRef.current;
-            if (!current) return;
-
-            // 写入 assistant 消息（含 toolCalls）
-            const assistantMsg: ChatMessage = makeMessage("assistant", finalContent, {
-              thinkingContent: finalThinking || undefined,
-              toolCalls: toolCalls.length > 0 ? toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments })) : undefined,
-            });
-            const lastIdx = current.messages.length - 1;
-            const last = current.messages[lastIdx];
-            let nextMessages: ChatMessage[];
-            if (last?.role === "assistant" && !last.toolCalls) {
-              // 流式过程中已占位的消息，合并字段
-              nextMessages = [...current.messages];
-              nextMessages[lastIdx] = { ...last, ...assistantMsg, id: last.id, createdAt: last.createdAt };
-            } else {
-              nextMessages = [...current.messages, assistantMsg];
-            }
-            let updatedSession: ChatSession = { ...current, messages: nextMessages };
-            if ((updatedSession.title === "新会话" || !updatedSession.title.trim()) && updatedSession.messages.length >= 2) {
-              const generated = summarizeTitle(updatedSession.messages);
-              if (generated) updatedSession = { ...updatedSession, title: generated };
-            }
-            try {
-              const saved = await saveChatSession(updatedSession);
-              setActiveSession(saved);
-              syncSummary(saved);
-              updatedSession = saved;
-            } catch {
-              /* ignore */
-            }
-
-            // 若本轮因 tool_calls 结束，走工具循环
-            if (finishReason === "tool_calls" && toolCalls.length > 0) {
-              await executeAndContinue(updatedSession, toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments })), round);
-            }
-          },
-          onError: (msg) => {
-            showToast("error", msg);
-          },
-        }
-      );
-    } catch {
-      showToast("error", "发送失败");
-    }
-  }
-
-  async function executeAndContinue(sessionAfterAssistant: ChatSession, calls: ToolCall[], round: number) {
-    let session = sessionAfterAssistant;
-    // 加载一次最新 allowedTools（可能用户在之前回合勾选了"始终允许"）
-    let allowedTools = new Set<string>(session.allowedTools ?? []);
-    const localToolNames = new Set(toolSchemas.map((t) => t.name));
-
-    for (const call of calls) {
-      const isLocalTool = localToolNames.has(call.name);
-
-      let resultContent: string;
-      let toolExtra: Partial<ChatMessage> = {
-        toolCallId: call.id,
-        toolName: call.name,
-      };
-
-      if (isLocalTool) {
-        let approved: "once" | "always" | "reject";
-        if (allowedTools.has(call.name)) {
-          approved = "once";
-        } else {
-          approved = await requestApproval(call);
-        }
-        if (approved === "always") {
-          allowedTools.add(call.name);
-          session = { ...session, allowedTools: Array.from(allowedTools) };
-          try {
-            const saved = await saveChatSession(session);
-            setActiveSession(saved);
-            syncSummary(saved);
-            session = saved;
-          } catch {
-            /* ignore */
-          }
-        }
-
-        if (approved === "reject") {
-          resultContent = "（用户拒绝执行此工具）";
-        } else {
-          try {
-            resultContent = await executeTool({
-              sessionId: session.id,
-              toolName: call.name,
-              argumentsJson: call.arguments || "{}",
-            });
-          } catch (err) {
-            resultContent = `执行失败: ${err instanceof Error ? err.message : String(err)}`;
-          }
-        }
-      } else {
-        // MCP gateway 工具：通过本地 gateway HTTP 调
-        try {
-          let args: unknown = {};
-          try {
-            args = call.arguments ? JSON.parse(call.arguments) : {};
-          } catch {
-            args = {};
-          }
-          const mcpResult = await mcpClient.callTool(call.name, args);
-          const meta = extractApiToolMetadata(mcpResult.structuredContent);
-          if (meta) {
-            if (meta.status !== undefined) toolExtra.toolStatus = meta.status;
-            if (meta.method !== undefined) toolExtra.toolMethod = meta.method;
-            if (meta.url !== undefined) toolExtra.toolUrl = meta.url;
-            if (meta.elapsedMs !== undefined) toolExtra.toolElapsedMs = meta.elapsedMs;
-            if (meta.totalBytes !== undefined) toolExtra.toolBodyBytes = meta.totalBytes;
-            if (meta.truncated !== undefined) toolExtra.toolTruncated = meta.truncated;
-            resultContent = meta.body ? `HTTP ${meta.status ?? "-"}\n\n${meta.body}` : mcpResult.content?.[0]?.text ?? "";
-          } else {
-            resultContent = mcpResult.content?.[0]?.text ?? (mcpResult.isError ? "MCP 工具执行错误" : "无内容");
-          }
-        } catch (err) {
-          resultContent = `MCP 工具执行失败: ${err instanceof Error ? err.message : String(err)}`;
-        }
-      }
-
-      const toolMessage: ChatMessage = makeMessage("tool", resultContent, toolExtra);
-      session = { ...session, messages: [...session.messages, toolMessage] };
-      try {
-        const saved = await saveChatSession(session);
-        setActiveSession(saved);
-        syncSummary(saved);
-        session = saved;
-      } catch {
-        /* ignore */
-      }
-    }
-
-    // 全部工具已处理，递归进入下一轮
-    await runChatRequest(session, round + 1);
-  }
-
-  async function resolveMentions(text: string, root: string | undefined): Promise<string> {
-    if (!root) return "";
-    const re = /(?:^|[\s(（[{])@(?:"((?:\\.|[^"\\])*)"|([^\s@]+))/gu;
-    const paths = new Set<string>();
-    for (const m of text.matchAll(re)) {
-      const raw = m[1] ? unescapeMentionPath(m[1]) : trimMentionPunctuation(m[2] ?? "");
-      if (raw) paths.add(raw);
-    }
-    if (paths.size === 0) return "";
-    const parts: string[] = ["[引用文件]"];
-    for (const p of paths) {
-      try {
-        const content = await readMentionFile(root, p);
-        if (content.startsWith("[引用目录]")) {
-          parts.push(`\n### ${p}\n${content}`);
-        } else {
-          parts.push(`\n### ${p}\n\`\`\`\`\n${content}\n\`\`\`\``);
-        }
-      } catch {
-        /* 跳过无法读取的 */
-      }
-    }
-    return parts.length > 1 ? parts.join("\n") : "";
-  }
-
-  /** 从文本里识别 http(s) URL，预抓取内容并拼成 system 片段。 */
-  async function resolveUrls(text: string, sessionId: string): Promise<string> {
-    const re = /\bhttps?:\/\/[^\s<>"'）)）】」>]+/gi;
-    const urls = Array.from(new Set(text.match(re) ?? []));
-    if (urls.length === 0) return "";
-    const parts: string[] = ["[抓取的网页内容]"];
-    for (const url of urls.slice(0, 5)) {
-      try {
-        const result = await executeTool({
-          sessionId,
-          toolName: "WebFetch",
-          argumentsJson: JSON.stringify({ url, max_bytes: 400000 }),
-        });
-        parts.push(`\n### ${url}\n${result}`);
-      } catch (err) {
-        parts.push(`\n### ${url}\n抓取失败：${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-    return parts.length > 1 ? parts.join("\n") : "";
   }
 
   async function handleSend() {
@@ -969,7 +487,7 @@ export function ChatPage() {
     }
   }
 
-  async function handleSaveConfig(values: SessionConfigValues) {
+  function handleSaveConfig(values: SessionConfigValues) {
     if (!activeSession) return;
     const nextSession: ChatSession = {
       ...activeSession,
@@ -980,9 +498,12 @@ export function ChatPage() {
       frequencyPenalty: values.frequencyPenalty ?? undefined,
       presencePenalty: values.presencePenalty ?? undefined,
     };
-    await persistSession(nextSession);
-    setConfigOpen(false);
-    showToast("success", "设置已保存");
+    persistSession(nextSession)
+      .then(() => {
+        setConfigOpen(false);
+        showToast("success", "设置已保存");
+      })
+      .catch(() => showToast("error", "保存失败"));
   }
 
   async function handleSlashCommand(id: SlashCommandId) {
@@ -1050,7 +571,7 @@ export function ChatPage() {
       case "help":
         showToast(
           "info",
-          "/clear 清空 · /new 新会话 · /export 导出 md · /system 系统提示 · /config 参数 · /regen 重生成 · /tool 选工具"
+          "/clear 清空 · /new 新会话 · /export 导出 md · /system 系统提示 · /config 参数 · /regen 重生成 · /tool 选工具",
         );
         break;
     }
@@ -1058,195 +579,33 @@ export function ChatPage() {
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
-      <header className="re-header sticky top-0 z-20" data-tauri-drag-region>
-        <span className="toggle" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
-          ☰
-        </span>
-
-        <div className="flex-1 flex items-center gap-3" data-tauri-drag-region>
-          <span className="text-lg font-semibold ml-2">💬 对话</span>
-          {activeSession && (
-            <span className="text-[11px] text-gray-400" title="估算 tokens（char/4 近似）">
-              ~{sessionTokens(activeSession.messages).toLocaleString()} tokens
-            </span>
-          )}
-          {modelOptions.length > 0 && (
-            <select
-              ref={modelSelectRef}
-              className="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white text-gray-700 max-w-[240px]"
-              value={effectiveKey ?? ""}
-              onChange={(e) => setSelectedModelKey(e.target.value)}
-              disabled={streaming}
-            >
-              {modelOptions.map((opt) => (
-                <option key={opt.key} value={opt.key}>
-                  {opt.providerName} / {opt.model.model}
-                  {opt.key === defaultKey ? "（默认）" : ""}
-                </option>
-              ))}
-            </select>
-          )}
-          <button
-            className="px-2 py-1 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
-            onClick={() => {
-              setModelManagerInitialProviderId(normalized.filter((p) => p.enabled)[0]?.id ?? "");
-              setModelManagerOpen(true);
-            }}
-            title="管理模型"
-          >
-            模型…
-          </button>
-          {activeSession && (
-            <>
-              <span className="text-[11px] text-gray-400 truncate max-w-[220px]" title={activeSession.allowedCwd || "未选目录"}>
-                {activeSession.allowedCwd ? `📁 ${activeSession.allowedCwd.split("/").pop()}` : "未选目录（普通对话）"}
-              </span>
-              {toolsEnabled && (
-                <span className="text-[11px] text-blue-600" title="本地沙箱工具已启用">🛠 本地</span>
-              )}
-              {activeSession.useMcpGatewayTools !== false && (
-                <span className="text-[11px] text-emerald-600" title="MCP gateway 工具：启动后自动可调">🌐 MCP</span>
-              )}
-              <div className="relative">
-                <button
-                  className="px-2 py-1 text-xs border border-gray-200 rounded-lg flex items-center gap-1 text-gray-600 hover:bg-gray-50"
-                  onClick={() => setMenuOpen((v) => !v)}
-                  title="会话工具"
-                >
-                  <Settings size={12} /> 会话
-                </button>
-                {menuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1 w-[320px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-3 space-y-3 text-xs">
-                      {/* 工具 */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold text-gray-700">🛠 工具</span>
-                          <label className="flex items-center gap-1 cursor-pointer">
-                            <input type="checkbox" checked={toolsEnabled} onChange={(e) => setToolsEnabled(e.target.checked)} disabled={streaming} />
-                            <span className={toolsEnabled ? "text-blue-600" : "text-gray-500"}>{toolsEnabled ? "已启用" : "未启用"}</span>
-                          </label>
-                        </div>
-                        {toolsEnabled && (
-                          <div className="border border-gray-100 rounded p-2 max-h-[180px] overflow-y-auto space-y-1">
-                            {toolSchemas.map((t) => {
-                              const enabled = (activeSession.enabledTools ?? toolSchemas.map((x) => x.name)).includes(t.name);
-                              return (
-                                <label key={t.name} className="flex items-start gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
-                                  <input
-                                    type="checkbox"
-                                    className="mt-0.5"
-                                    checked={enabled}
-                                    onChange={async (e) => {
-                                      const current = new Set(activeSession.enabledTools ?? toolSchemas.map((x) => x.name));
-                                      if (e.target.checked) current.add(t.name);
-                                      else current.delete(t.name);
-                                      await persistSession({ ...activeSession, enabledTools: Array.from(current) });
-                                    }}
-                                    disabled={streaming}
-                                  />
-                                  <div>
-                                    <div className="font-mono text-gray-800">{t.name}</div>
-                                    <div className="text-[10px] text-gray-500 leading-tight">{t.description}</div>
-                                  </div>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* MCP gateway 工具 */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold text-gray-700">🌐 MCP 接口工具</span>
-                          <label className="flex items-center gap-1 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={activeSession.useMcpGatewayTools !== false}
-                              onChange={async (e) => {
-                                await persistSession({ ...activeSession, useMcpGatewayTools: e.target.checked });
-                              }}
-                              disabled={streaming}
-                            />
-                            <span className={activeSession.useMcpGatewayTools !== false ? "text-blue-600" : "text-gray-500"}>
-                              {activeSession.useMcpGatewayTools !== false ? "已启用" : "未启用"}
-                            </span>
-                          </label>
-                        </div>
-                        <div className="text-[10px] text-gray-500 leading-tight">
-                          启用后，本会话可调用 MCP gateway 暴露的接口工具（来自"接口"中已注册的端点）。需要在设置中先启动 MCP gateway。
-                        </div>
-                      </div>
-
-                      {/* 目录 */}
-                      <div>
-                        <div className="font-semibold text-gray-700 mb-1">📁 目录（选了才会把项目上下文注入 system）</div>
-                        <select
-                          className="w-full px-2 py-1 border border-gray-200 rounded"
-                          value={
-                            activeSession.allowedCwd && projects.find((p) => p.path === activeSession.allowedCwd)
-                              ? `project:${activeSession.allowedCwd}`
-                              : activeSession.allowedCwd ? "custom" : ""
-                          }
-                          onChange={async (e) => {
-                            const v = e.target.value;
-                            if (v === "") {
-                              await persistSession({ ...activeSession, allowedCwd: undefined });
-                              return;
-                            }
-                            if (v === "custom") { await handlePickAllowedCwd(); return; }
-                            if (v.startsWith("project:")) {
-                              const path = v.slice("project:".length);
-                              await persistSession({ ...activeSession, allowedCwd: path });
-                              showToast("success", "已绑定项目目录");
-                            }
-                          }}
-                          disabled={streaming}
-                        >
-                          <option value="">未选（普通对话）</option>
-                          {projects.length > 0 && (
-                            <optgroup label="📚 书架项目">
-                              {projects.map((p) => (<option key={p.id} value={`project:${p.path}`}>{p.name}</option>))}
-                            </optgroup>
-                          )}
-                          <option value="custom">自定义目录…</option>
-                        </select>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <button className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 flex items-center justify-center gap-1" onClick={() => { setMenuOpen(false); setMemoryDraft(globalMemory); setMemoryEditorOpen(true); }}>
-                          <Brain size={12} /> 记忆
-                        </button>
-                        <button className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50" onClick={() => { setMenuOpen(false); setSkillsOpen(true); }}>📚 Skills</button>
-                        <button className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 flex items-center justify-center gap-1" onClick={() => { setMenuOpen(false); setTaskPanelOpen((v) => !v); }} title="LLM 可通过 TaskCreate/Update/List 工具维护本会话的待办清单">
-                          <ListChecks size={12} /> 任务
-                        </button>
-                        <button
-                          className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 flex items-center justify-center gap-1 disabled:opacity-50"
-                          disabled={streaming || loading || !activeSession || activeSession.messages.length < 6}
-                          onClick={() => { setMenuOpen(false); handleCompact(); }}
-                          title="将早期对话压缩为摘要，落盘为新版本 md；旧消息保留，发送时自动用最新摘要替换"
-                        >
-                          🗜 压缩{activeSession?.currentCompactionVersion ? `（当前 ${activeSession.currentCompactionVersion}）` : ""}
-                        </button>
-                        <button className="col-span-2 px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 flex items-center justify-center gap-1" onClick={() => { setMenuOpen(false); setConfigFocus(undefined); setConfigOpen(true); }}>
-                          <Settings size={12} /> 会话设置
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="re-actions flex items-center">
-          <MacWindowControls />
-        </div>
-      </header>
+      <ChatHeader
+        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+        activeSession={activeSession}
+        modelOptions={modelOptions}
+        defaultKey={defaultKey}
+        effectiveKey={effectiveKey}
+        streaming={streaming}
+        loading={loading}
+        toolsEnabled={toolsEnabled}
+        toolSchemas={toolSchemas}
+        projects={projects}
+        globalMemory={globalMemory}
+        modelSelectRef={modelSelectRef}
+        onSelectModel={setSelectedModelKey}
+        onOpenModelManager={() => {
+          setModelManagerInitialProviderId(normalized.filter((p) => p.enabled)[0]?.id ?? "");
+          setModelManagerOpen(true);
+        }}
+        onSetToolsEnabled={setToolsEnabled}
+        onPersistSession={persistSession}
+        onPickAllowedCwd={handlePickAllowedCwd}
+        onCompact={handleCompact}
+        onOpenMemory={(draft) => { setMemoryDraft(draft); setMemoryEditorOpen(true); }}
+        onOpenSkills={() => setSkillsOpen(true)}
+        onOpenTaskPanel={() => setTaskPanelOpen((v) => !v)}
+        onOpenConfig={() => { setConfigFocus(undefined); setConfigOpen(true); }}
+      />
 
       <div className="flex flex-1 min-w-0 min-h-0 overflow-hidden">
         <SessionSidebar
@@ -1339,36 +698,10 @@ export function ChatPage() {
                   });
                 }}
                 attachmentsSlot={
-                  pendingAttachments.length > 0 ? (
-                    <div className="flex gap-2 mb-2 flex-wrap">
-                      {pendingAttachments.map((a, idx) =>
-                        a.kind === "image" ? (
-                          <div key={idx} className="relative w-20 h-20 border border-gray-200 rounded overflow-hidden group">
-                            <img src={a.dataUrl} alt="" className="w-full h-full object-cover" />
-                            <button
-                              className="absolute top-0 right-0 bg-black/60 text-white text-[10px] px-1 opacity-0 group-hover:opacity-100"
-                              onClick={() =>
-                                setPendingAttachments((prev) => prev.filter((_, i) => i !== idx))
-                              }
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ) : a.kind === "text" ? (
-                          <div key={idx} className="relative px-2 py-1 border border-gray-200 rounded text-[11px] text-gray-700 bg-gray-50 flex items-center gap-2 group" title={a.name}>
-                            <span>📄 {a.name}</span>
-                            <span className="text-gray-400">{Math.ceil(a.content.length / 1024)}KB</span>
-                            <button
-                              className="text-gray-400 hover:text-red-500"
-                              onClick={() => setPendingAttachments((prev) => prev.filter((_, i) => i !== idx))}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ) : null,
-                      )}
-                    </div>
-                  ) : null
+                  <AttachmentsPreview
+                    attachments={pendingAttachments}
+                    onRemove={(idx) => setPendingAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                  />
                 }
               />
             </div>
@@ -1376,41 +709,28 @@ export function ChatPage() {
         </main>
       </div>
 
-      <RenameDialog
-        open={Boolean(renameTarget)}
-        initialValue={renameTarget?.title ?? ""}
-        onCancel={() => setRenameTarget(null)}
-        onConfirm={confirmRename}
-      />
-
-      <SessionConfigPanel
-        open={configOpen}
-        session={activeSession}
-        focus={configFocus}
-        onClose={() => setConfigOpen(false)}
-        onSave={handleSaveConfig}
-      />
-
-      <ToolApprovalDialog pending={pendingApproval} onDecide={handleApprovalDecision} />
-
-      {activeSession && (
-        <TaskPanel sessionId={activeSession.id} open={taskPanelOpen} onClose={() => setTaskPanelOpen(false)} />
-      )}
-
-      <SkillsPicker
-        open={skillsOpen}
-        onClose={() => setSkillsOpen(false)}
-        onSelect={(rendered) => setInput((prev) => (prev.trim() ? `${prev}\n\n${rendered}` : rendered))}
-      />
-
-      <ToolPicker
-        open={toolPickerOpen}
+      <ChatDialogsHost
+        renameOpen={Boolean(renameTarget)}
+        renameInitial={renameTarget?.title ?? ""}
+        onRenameCancel={() => setRenameTarget(null)}
+        onRenameConfirm={confirmRename}
+        configOpen={configOpen}
+        configFocus={configFocus}
+        activeSession={activeSession}
+        onConfigClose={() => setConfigOpen(false)}
+        onConfigSave={handleSaveConfig}
+        pendingApproval={pendingApproval}
+        onApprovalDecide={handleApprovalDecision}
+        taskPanelOpen={taskPanelOpen}
+        onTaskPanelClose={() => setTaskPanelOpen(false)}
+        skillsOpen={skillsOpen}
+        onSkillsClose={() => setSkillsOpen(false)}
+        onSkillsSelect={(rendered) => setInput((prev) => (prev.trim() ? `${prev}\n\n${rendered}` : rendered))}
+        toolPickerOpen={toolPickerOpen}
         toolSchemas={toolSchemas}
-        sessionId={activeSession?.id ?? null}
-        allowedCwd={activeSession?.allowedCwd ?? null}
-        onClose={() => setToolPickerOpen(false)}
-        onInsertHint={(hint) => setInput((prev) => (prev.trim() ? `${prev}\n\n${hint}` : hint))}
-        onExecuted={async (toolName, argumentsJson, result) => {
+        onToolPickerClose={() => setToolPickerOpen(false)}
+        onToolPickerInsertHint={(hint) => setInput((prev) => (prev.trim() ? `${prev}\n\n${hint}` : hint))}
+        onToolPickerExecuted={async (toolName, argumentsJson, result) => {
           const session = activeSessionRef.current;
           if (!session) return;
           const callId = typeof crypto.randomUUID === "function"
@@ -1433,33 +753,24 @@ export function ChatPage() {
             showToast("error", "保存消息失败");
           }
         }}
-      />
-
-      <AtMentionPicker
-        open={mentionOpen}
-        root={activeSession?.allowedCwd ?? null}
-        onClose={() => setMentionOpen(false)}
-        onPick={(paths) => {
+        mentionOpen={mentionOpen}
+        onMentionClose={() => setMentionOpen(false)}
+        onMentionPick={(paths) => {
           const snippet = paths.map(formatMentionPath).join(" ");
           setInput((prev) => (prev.trim() ? `${prev} ${snippet}` : snippet));
         }}
-      />
-      <ModelManagerDialog
-        open={modelManagerOpen}
-        onClose={() => setModelManagerOpen(false)}
-        onGoToProviders={() => setCurrentPage("aiProviders")}
+        modelManagerOpen={modelManagerOpen}
+        modelManagerInitialProviderId={modelManagerInitialProviderId}
         aiProviders={aiProviders}
         normalized={normalized}
         saveAiProviders={saveAiProviders}
-        initialProviderId={modelManagerInitialProviderId}
-      />
-
-      <MemoryEditorDialog
-        open={memoryEditorOpen}
-        draft={memoryDraft}
-        onDraftChange={setMemoryDraft}
-        onClose={() => setMemoryEditorOpen(false)}
-        onSaved={(saved) => {
+        onModelManagerClose={() => setModelManagerOpen(false)}
+        onGoToProviders={() => setCurrentPage("aiProviders")}
+        memoryEditorOpen={memoryEditorOpen}
+        memoryDraft={memoryDraft}
+        onMemoryDraftChange={setMemoryDraft}
+        onMemoryClose={() => setMemoryEditorOpen(false)}
+        onMemorySaved={(saved) => {
           setGlobalMemory(saved);
           setMemoryEditorOpen(false);
         }}
