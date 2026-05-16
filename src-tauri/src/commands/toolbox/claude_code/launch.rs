@@ -1,0 +1,393 @@
+// Claude Code 启动：在终端中运行 claude，含 Windows/macOS/Linux/WSL 各分支
+
+#[allow(unused_imports)]
+use std::path::PathBuf;
+#[allow(unused_imports)]
+use std::process::Command;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[allow(unused_imports)]
+use super::get_extra_path_dirs;
+
+#[cfg(target_os = "macos")]
+use super::get_augmented_path;
+
+/// 将 Windows 路径转换为 WSL 路径
+/// 例如: C:\work\blog → /mnt/c/work/blog
+/// 如果路径已经是 Linux 格式 (/home/...) 则不转换
+#[cfg(target_os = "windows")]
+fn windows_path_to_wsl(path: &str) -> String {
+    if path.starts_with('/') {
+        return path.to_string();
+    }
+    if path.len() >= 3 && path.as_bytes()[1] == b':' {
+        let drive = (path.as_bytes()[0] as char).to_lowercase().next().unwrap();
+        let rest = &path[2..];
+        let linux_rest = rest.replace('\\', "/");
+        return format!("/mnt/{}{}", drive, linux_rest);
+    }
+    if path.starts_with("\\\\wsl") {
+        let normalized = path.replace('\\', "/");
+        if let Some(pos) = normalized[2..].find('/') {
+            let after_host = &normalized[2 + pos + 1..];
+            if let Some(pos2) = after_host.find('/') {
+                return after_host[pos2..].to_string();
+            }
+        }
+    }
+    path.to_string()
+}
+
+/// 在终端中启动 Claude Code
+#[tauri::command]
+#[allow(unused_variables)]
+pub async fn launch_claude_in_terminal(
+    work_dir: Option<String>,
+    terminal_type: Option<String>,
+    custom_path: Option<String>,
+    terminal_path: Option<String>,
+    env_type: Option<String>,
+    env_name: Option<String>,
+) -> Result<(), String> {
+    let dir = work_dir.unwrap_or_else(|| {
+        dirs::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string())
+    });
+
+    let term_type = terminal_type.unwrap_or_else(|| "default".to_string());
+
+    #[allow(unused_variables)]
+    let is_wsl_env = env_type.as_deref() == Some("wsl");
+    #[allow(unused_variables)]
+    let wsl_distro = env_name
+        .as_deref()
+        .and_then(|n| n.strip_prefix("WSL: "))
+        .unwrap_or("")
+        .to_string();
+
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NEW_CONSOLE: u32 = 0x00000010;
+
+        if is_wsl_env {
+            let wsl_dir = windows_path_to_wsl(&dir);
+            let escaped_dir = wsl_dir.replace("'", "'\\''");
+            let wsl_bash_cmd = format!("cd '{}' && claude", escaped_dir);
+
+            let mut wsl_args: Vec<String> = Vec::new();
+            if !wsl_distro.is_empty() {
+                wsl_args.push("-d".to_string());
+                wsl_args.push(wsl_distro.clone());
+            }
+            wsl_args.push("--".to_string());
+            wsl_args.push("bash".to_string());
+            wsl_args.push("-lc".to_string());
+            wsl_args.push(wsl_bash_cmd.clone());
+
+            match term_type.as_str() {
+                "custom" => {
+                    if let Some(custom) = custom_path {
+                        Command::new(&custom)
+                            .args(&wsl_args[..wsl_args.len() - 4])
+                            .creation_flags(CREATE_NEW_CONSOLE)
+                            .spawn()
+                            .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                    } else {
+                        return Err("未提供自定义终端路径".to_string());
+                    }
+                }
+                _ => {
+                    let wt_path = terminal_path.as_deref().unwrap_or("wt");
+                    let mut wt_args = vec!["wsl.exe".to_string()];
+                    wt_args.extend(wsl_args.clone());
+                    let wt_result = Command::new(wt_path).args(&wt_args).spawn();
+
+                    if wt_result.is_err() {
+                        Command::new("wsl.exe")
+                            .args(&wsl_args)
+                            .creation_flags(CREATE_NEW_CONSOLE)
+                            .spawn()
+                            .map_err(|e| format!("启动终端失败: {}", e))?;
+                    }
+                }
+            }
+        } else {
+            match term_type.as_str() {
+                "powershell" => {
+                    let ps_path = terminal_path.as_deref().unwrap_or("powershell");
+                    let escaped_path = dir.replace("'", "''");
+                    Command::new(ps_path)
+                        .args([
+                            "-NoExit",
+                            "-Command",
+                            &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
+                        ])
+                        .creation_flags(CREATE_NEW_CONSOLE)
+                        .spawn()
+                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                }
+                "cmd" => {
+                    let cmd_path = terminal_path.as_deref().unwrap_or("cmd");
+                    Command::new(cmd_path)
+                        .args(["/k", &format!("cd /d \"{}\" && claude", dir)])
+                        .creation_flags(CREATE_NEW_CONSOLE)
+                        .spawn()
+                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                }
+                "custom" => {
+                    if let Some(custom) = custom_path {
+                        Command::new(&custom)
+                            .arg(&dir)
+                            .creation_flags(CREATE_NEW_CONSOLE)
+                            .spawn()
+                            .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                    } else {
+                        return Err("未提供自定义终端路径".to_string());
+                    }
+                }
+                _ => {
+                    let wt_path = terminal_path.as_deref().unwrap_or("wt");
+                    let wt_result = Command::new(wt_path)
+                        .args(["-d", &dir, "cmd", "/k", "claude"])
+                        .spawn();
+
+                    if wt_result.is_err() {
+                        let escaped_path = dir.replace("'", "''");
+                        Command::new("powershell")
+                            .args([
+                                "-NoExit",
+                                "-Command",
+                                &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
+                            ])
+                            .creation_flags(CREATE_NEW_CONSOLE)
+                            .spawn()
+                            .map_err(|e| format!("启动终端失败: {}", e))?;
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let extra_dirs = get_extra_path_dirs();
+        let escaped_dir = dir.replace("\\", "\\\\").replace("\"", "\\\"");
+        let path_prefix = if extra_dirs.is_empty() {
+            String::new()
+        } else {
+            format!("export PATH=\"{}:$PATH\" && ", extra_dirs.join(":"))
+        };
+        let script_cmd = format!("cd \"{}\" && {}claude", escaped_dir, path_prefix);
+
+        match term_type.as_str() {
+            "iterm" => {
+                let apple_script = format!(
+                    r#"tell application "iTerm"
+                        activate
+                        set newWindow to (create window with default profile)
+                        tell current session of newWindow
+                            write text "{}"
+                        end tell
+                    end tell"#,
+                    script_cmd.replace("\"", "\\\"")
+                );
+                Command::new("osascript")
+                    .args(["-e", &apple_script])
+                    .spawn()
+                    .map_err(|e| format!("启动 iTerm 失败: {}", e))?;
+            }
+            "custom" => {
+                let full_path = get_augmented_path();
+                if let Some(custom) = custom_path {
+                    if custom.ends_with(".app") {
+                        let macos_dir = PathBuf::from(&custom).join("Contents/MacOS");
+                        let executable = std::fs::read_dir(&macos_dir).ok().and_then(|entries| {
+                            entries
+                                .flatten()
+                                .find(|e| e.path().is_file())
+                                .map(|e| e.path().to_string_lossy().to_string())
+                        });
+
+                        if let Some(exec_path) = executable {
+                            Command::new(&exec_path)
+                                .current_dir(&dir)
+                                .env("PATH", &full_path)
+                                .spawn()
+                                .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                        } else {
+                            Command::new("open")
+                                .args(["-a", &custom, &dir])
+                                .spawn()
+                                .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                        }
+                    } else {
+                        Command::new(&custom)
+                            .current_dir(&dir)
+                            .env("PATH", &full_path)
+                            .spawn()
+                            .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                    }
+                } else {
+                    return Err("未提供自定义终端路径".to_string());
+                }
+            }
+            _ => {
+                let apple_script = format!(
+                    r#"tell application "Terminal"
+                        activate
+                        do script "{}"
+                    end tell"#,
+                    script_cmd.replace("\"", "\\\"")
+                );
+                Command::new("osascript")
+                    .args(["-e", &apple_script])
+                    .spawn()
+                    .map_err(|e| format!("启动 Terminal 失败: {}", e))?;
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let extra_dirs = get_extra_path_dirs();
+        let path_prefix = if extra_dirs.is_empty() {
+            String::new()
+        } else {
+            format!("export PATH='{}:$PATH' && ", extra_dirs.join(":"))
+        };
+        let bash_cmd = format!(
+            "cd '{}' && {}claude",
+            dir.replace("'", "'\\''"),
+            path_prefix
+        );
+
+        let in_wsl = std::fs::read_to_string("/proc/version")
+            .map(|v| v.to_lowercase().contains("microsoft"))
+            .unwrap_or(false);
+
+        match term_type.as_str() {
+            "custom" => {
+                if let Some(custom) = custom_path {
+                    Command::new(&custom)
+                        .current_dir(&dir)
+                        .spawn()
+                        .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                } else {
+                    return Err("未提供自定义终端路径".to_string());
+                }
+            }
+            "powershell" => {
+                let ps_path = terminal_path.as_deref().unwrap_or("powershell.exe");
+                if in_wsl {
+                    let wsl_cmd = format!("wsl.exe bash -lc \"{}\"", bash_cmd.replace("\"", "\\\""));
+                    let mut cmd = Command::new(ps_path);
+                    cmd.args(["-NoExit", "-Command", &wsl_cmd]);
+                    if let Ok(cwd) = std::env::current_dir() {
+                        let cwd_str = cwd.to_string_lossy();
+                        if cwd_str.starts_with("/mnt/") {
+                            cmd.current_dir(&cwd);
+                        }
+                    }
+                    cmd.spawn().map_err(|e| format!("启动终端失败: {}", e))?;
+                } else {
+                    let escaped_path = dir.replace("'", "''");
+                    Command::new(ps_path)
+                        .args([
+                            "-NoExit",
+                            "-Command",
+                            &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
+                        ])
+                        .spawn()
+                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                }
+            }
+            "cmd" => {
+                let cmd_path = terminal_path.as_deref().unwrap_or("cmd.exe");
+                if in_wsl {
+                    let wsl_cmd = format!("wsl.exe bash -lc \"{}\"", bash_cmd.replace("\"", "\\\""));
+                    let mut cmd = Command::new(cmd_path);
+                    cmd.args(["/k", &wsl_cmd]);
+                    if let Ok(cwd) = std::env::current_dir() {
+                        let cwd_str = cwd.to_string_lossy();
+                        if cwd_str.starts_with("/mnt/") {
+                            cmd.current_dir(&cwd);
+                        }
+                    }
+                    cmd.spawn().map_err(|e| format!("启动终端失败: {}", e))?;
+                } else {
+                    Command::new(cmd_path)
+                        .args(["/k", &format!("cd /d \"{}\" && claude", dir)])
+                        .spawn()
+                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                }
+            }
+            _ => {
+                if in_wsl {
+                    let wt_path = terminal_path.as_deref().unwrap_or("wt.exe");
+                    let mut cmd = Command::new(wt_path);
+                    cmd.args(["--", "wsl.exe", "bash", "-lc", &bash_cmd]);
+                    if let Ok(cwd) = std::env::current_dir() {
+                        let cwd_str = cwd.to_string_lossy();
+                        if cwd_str.starts_with("/mnt/") {
+                            cmd.current_dir(&cwd);
+                        }
+                    }
+                    let wt_result = cmd.spawn();
+
+                    if wt_result.is_err() {
+                        let mut opened = false;
+                        let terminals = ["gnome-terminal", "konsole", "xterm", "xfce4-terminal"];
+                        for term in terminals {
+                            let result = match term {
+                                "gnome-terminal" => Command::new(term)
+                                    .args(["--", "bash", "-lc", &bash_cmd])
+                                    .spawn(),
+                                "konsole" => Command::new(term)
+                                    .args(["-e", "bash", "-lc", &bash_cmd])
+                                    .spawn(),
+                                _ => Command::new(term)
+                                    .args(["-e", &format!("bash -lc '{}'", bash_cmd.replace("'", "'\\''"))])
+                                    .spawn(),
+                            };
+                            if result.is_ok() {
+                                opened = true;
+                                break;
+                            }
+                        }
+                        if !opened {
+                            return Err("未找到可用的终端程序".to_string());
+                        }
+                    }
+                } else {
+                    let terminals = ["gnome-terminal", "konsole", "xterm", "xfce4-terminal"];
+                    let mut opened = false;
+                    for term in terminals {
+                        let result = match term {
+                            "gnome-terminal" => Command::new(term)
+                                .args(["--", "bash", "-lc", &bash_cmd])
+                                .spawn(),
+                            "konsole" => Command::new(term)
+                                .args(["-e", "bash", "-lc", &bash_cmd])
+                                .spawn(),
+                            _ => Command::new(term)
+                                .args(["-e", &format!("bash -lc '{}'", bash_cmd.replace("'", "'\\''"))])
+                                .spawn(),
+                        };
+                        if result.is_ok() {
+                            opened = true;
+                            break;
+                        }
+                    }
+                    if !opened {
+                        return Err("未找到可用的终端程序".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
