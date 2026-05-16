@@ -15,12 +15,12 @@ import {
   renameChatSession,
   saveChatSession,
 } from "@/services/chat";
-import { getGlobalMemory, saveGlobalMemory, readMentionFile, listDirEntries } from "@/services/chat";
+import { getGlobalMemory, readMentionFile, listDirEntries } from "@/services/chat";
 import type { ChatStreamMessage, ToolSchema } from "@/services/chat";
 import { mcpClient } from "@/services/mcp/client";
 import { buildMcpFunctionTools, extractApiToolMetadata } from "@/services/mcp/toolLoop";
 import { useMcpEndpointLookup } from "@/hooks/useMcpEndpointLookup";
-import type { AiModelConfig, AiProviderConfig, ChatAttachment, ChatMessage, ChatSession, ChatSessionSummary, ToolCall } from "@/types";
+import type { ChatAttachment, ChatMessage, ChatSession, ChatSessionSummary, ToolCall } from "@/types";
 
 import { SessionSidebar } from "./components/SessionSidebar";
 import { MessageList } from "./components/MessageList";
@@ -32,94 +32,22 @@ import { TaskPanel } from "./components/TaskPanel";
 import { SkillsPicker } from "./components/SkillsPicker";
 import { ToolPicker } from "./components/ToolPicker";
 import { AtMentionPicker } from "./components/AtMentionPicker";
+import { ModelManagerDialog } from "./components/ModelManagerDialog";
+import { MemoryEditorDialog } from "./components/MemoryEditorDialog";
 import { useChatStream } from "./hooks/useChatStream";
 import { exportSessionAsJson, exportSessionAsMarkdown, importSessionFromJson } from "./utils/exportSession";
 import { sessionTokens } from "./utils/tokens";
 import { compactMessages } from "./utils/compact";
 import { type SlashCommandId } from "./utils/slashCommands";
-
-interface ModelOption {
-  providerId: string;
-  providerName: string;
-  modelId: string;
-  model: AiModelConfig;
-  baseUrl: string;
-  apiKey?: string;
-  key: string;
-}
-
-function buildModelOptions(providers: AiProviderConfig[]): ModelOption[] {
-  const options: ModelOption[] = [];
-  for (const p of providers) {
-    if (!p.enabled) continue;
-    for (const m of p.models) {
-      if (!m.enabled) continue;
-      options.push({
-        providerId: p.id,
-        providerName: p.name,
-        modelId: m.id,
-        model: m,
-        baseUrl: p.baseUrl,
-        apiKey: p.apiKey,
-        key: `${p.id}:${m.id}`,
-      });
-    }
-  }
-  options.sort((a, b) => {
-    const aProvider = providers.find((p) => p.id === a.providerId);
-    const bProvider = providers.find((p) => p.id === b.providerId);
-    const aIsDefaultProvider = aProvider?.isDefaultProvider ? 1 : 0;
-    const bIsDefaultProvider = bProvider?.isDefaultProvider ? 1 : 0;
-    if (aIsDefaultProvider !== bIsDefaultProvider) return bIsDefaultProvider - aIsDefaultProvider;
-    const aIsDefault = a.model.isDefault ? 1 : 0;
-    const bIsDefault = b.model.isDefault ? 1 : 0;
-    if (aIsDefault !== bIsDefault) return bIsDefault - aIsDefault;
-    return 0;
-  });
-  return options;
-}
-
-function getDefaultOptionKey(providers: AiProviderConfig[]): string | null {
-  const defaultProvider =
-    providers.filter((p) => p.enabled).find((p) => p.isDefaultProvider) ?? providers.filter((p) => p.enabled)[0];
-  if (!defaultProvider) return null;
-  const defaultModel =
-    defaultProvider.models.filter((m) => m.enabled).find((m) => m.isDefault) ?? defaultProvider.models.filter((m) => m.enabled)[0];
-  if (!defaultModel) return null;
-  return `${defaultProvider.id}:${defaultModel.id}`;
-}
-
-function makeMessage(role: ChatMessage["role"], content: string, extra?: Partial<ChatMessage>): ChatMessage {
-  return {
-    id: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    role,
-    content,
-    createdAt: new Date().toISOString(),
-    ...extra,
-  };
-}
-
-function formatMentionPath(path: string): string {
-  if (/\s|"/.test(path)) {
-    return `@"${path.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-  }
-  return `@${path}`;
-}
-
-function unescapeMentionPath(path: string): string {
-  return path.replace(/\\(["\\])/g, "$1");
-}
-
-function trimMentionPunctuation(path: string): string {
-  return path.replace(/[,.!?;:，。！？；：、)）\]】}]+$/u, "");
-}
-
-function summarizeTitle(messages: ChatMessage[]): string | null {
-  const firstUser = messages.find((m) => m.role === "user" && m.content.trim());
-  if (!firstUser) return null;
-  const trimmed = firstUser.content.trim().replace(/\s+/g, " ");
-  return trimmed.slice(0, 20) + (trimmed.length > 20 ? "..." : "");
-}
+import {
+  buildModelOptions,
+  formatMentionPath,
+  getDefaultOptionKey,
+  makeMessage,
+  summarizeTitle,
+  trimMentionPunctuation,
+  unescapeMentionPath,
+} from "./utils/chatHelpers";
 
 export function ChatPage() {
   const {
@@ -159,8 +87,7 @@ export function ChatPage() {
   const [mentionOpen, setMentionOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelManagerOpen, setModelManagerOpen] = useState(false);
-  const [qmProviderId, setQmProviderId] = useState<string>("");
-  const [qmModelId, setQmModelId] = useState("");
+  const [modelManagerInitialProviderId, setModelManagerInitialProviderId] = useState<string>("");
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
   const [sessionListCollapsed, setSessionListCollapsed] = useState<boolean>(() => {
     try {
@@ -1162,8 +1089,7 @@ export function ChatPage() {
           <button
             className="px-2 py-1 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
             onClick={() => {
-              setQmProviderId(normalized.filter((p) => p.enabled)[0]?.id ?? "");
-              setQmModelId("");
+              setModelManagerInitialProviderId(normalized.filter((p) => p.enabled)[0]?.id ?? "");
               setModelManagerOpen(true);
             }}
             title="管理模型"
@@ -1518,158 +1444,26 @@ export function ChatPage() {
           setInput((prev) => (prev.trim() ? `${prev} ${snippet}` : snippet));
         }}
       />
-      {modelManagerOpen && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setModelManagerOpen(false)}>
-          <div className="bg-white rounded-lg w-[560px] max-w-[92vw] max-h-[80vh] overflow-y-auto p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold">模型管理</div>
-              <button className="text-xs text-blue-500 hover:underline" onClick={() => { setModelManagerOpen(false); setCurrentPage("aiProviders"); }}>
-                完整设置 →
-              </button>
-            </div>
+      <ModelManagerDialog
+        open={modelManagerOpen}
+        onClose={() => setModelManagerOpen(false)}
+        onGoToProviders={() => setCurrentPage("aiProviders")}
+        aiProviders={aiProviders}
+        normalized={normalized}
+        saveAiProviders={saveAiProviders}
+        initialProviderId={modelManagerInitialProviderId}
+      />
 
-            <div className="space-y-3">
-              {normalized.filter((p) => p.enabled).map((p) => (
-                <div key={p.id} className="border border-gray-200 rounded p-2">
-                  <div className="text-xs font-semibold text-gray-700 mb-1">{p.name} {p.isDefaultProvider && <span className="text-[10px] text-blue-500">(默认)</span>}</div>
-                  <div className="space-y-1">
-                    {p.models.map((m) => (
-                      <div key={m.id} className="flex items-center gap-2 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={m.enabled}
-                          onChange={async (e) => {
-                            const next = aiProviders.map((pp) => pp.id === p.id ? {
-                              ...pp,
-                              models: pp.models.map((mm) => mm.id === m.id ? { ...mm, enabled: e.target.checked } : mm),
-                            } : pp);
-                            await saveAiProviders(next);
-                          }}
-                        />
-                        <span className="font-mono flex-1 truncate">{m.model}</span>
-                        {m.isDefault && <span className="text-[10px] text-blue-500">默认</span>}
-                        <label className="flex items-center gap-1 text-[10px] text-gray-500" title="勾选后会发送 image_url 多模态分片；非视觉模型会报错">
-                          <input
-                            type="checkbox"
-                            checked={!!m.vision}
-                            onChange={async (e) => {
-                              const next = aiProviders.map((pp) => pp.id === p.id ? {
-                                ...pp,
-                                models: pp.models.map((mm) => mm.id === m.id ? { ...mm, vision: e.target.checked } : mm),
-                              } : pp);
-                              await saveAiProviders(next);
-                            }}
-                          />
-                          视觉
-                        </label>
-                        <button
-                          className="text-gray-300 hover:text-red-500"
-                          title="删除"
-                          onClick={async () => {
-                            if (!confirm(`删除模型 ${m.model}？`)) return;
-                            const next = aiProviders.map((pp) => pp.id === p.id ? {
-                              ...pp,
-                              models: pp.models.filter((mm) => mm.id !== m.id),
-                            } : pp);
-                            await saveAiProviders(next);
-                          }}
-                        >×</button>
-                      </div>
-                    ))}
-                    {p.models.length === 0 && <div className="text-[11px] text-gray-400">此供应商下暂无模型</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-gray-200 pt-3 space-y-2">
-              <div className="text-xs font-semibold text-gray-700">快速添加模型</div>
-              <div className="flex items-center gap-2">
-                <select
-                  className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded"
-                  value={qmProviderId}
-                  onChange={(e) => setQmProviderId(e.target.value)}
-                >
-                  {normalized.filter((p) => p.enabled).map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                <input
-                  className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded"
-                  placeholder="模型 id，如 gpt-4o-mini"
-                  value={qmModelId}
-                  onChange={(e) => setQmModelId(e.target.value)}
-                />
-                <button
-                  className="px-3 py-1 text-xs bg-blue-500 text-white rounded disabled:opacity-60"
-                  disabled={!qmProviderId || !qmModelId.trim()}
-                  onClick={async () => {
-                    const modelName = qmModelId.trim();
-                    const next = aiProviders.map((pp) => pp.id === qmProviderId ? {
-                      ...pp,
-                      models: [...pp.models, {
-                        id: `${pp.id}-${modelName}-${Date.now()}`,
-                        model: modelName,
-                        enabled: true,
-                        isDefault: false,
-                        thinking: false,
-                        stream: true,
-                      }],
-                    } : pp);
-                    await saveAiProviders(next);
-                    setQmModelId("");
-                    showToast("success", "已添加");
-                  }}
-                >添加</button>
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button className="px-3 py-1.5 text-xs border border-gray-200 rounded" onClick={() => setModelManagerOpen(false)}>关闭</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {memoryEditorOpen && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-[600px] max-w-[90vw] p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold flex items-center gap-2">
-                <Brain size={14} /> 全局记忆（MEMORY.md）
-              </div>
-              <span className="text-[11px] text-gray-400">每次对话将作为 system 消息最前置</span>
-            </div>
-            <textarea
-              className="w-full border border-gray-200 rounded-lg p-2 text-sm font-mono"
-              rows={14}
-              placeholder="例：我是 Go + React 背景，偏好简洁；代码用 2 空格缩进…"
-              value={memoryDraft}
-              onChange={(e) => setMemoryDraft(e.target.value)}
-            />
-            <div className="flex justify-end gap-2">
-              <button className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg" onClick={() => setMemoryEditorOpen(false)}>
-                取消
-              </button>
-              <button
-                className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg"
-                onClick={async () => {
-                  try {
-                    await saveGlobalMemory(memoryDraft);
-                    setGlobalMemory(memoryDraft);
-                    setMemoryEditorOpen(false);
-                    showToast("success", "已保存");
-                  } catch {
-                    showToast("error", "保存失败");
-                  }
-                }}
-              >
-                保存
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <MemoryEditorDialog
+        open={memoryEditorOpen}
+        draft={memoryDraft}
+        onDraftChange={setMemoryDraft}
+        onClose={() => setMemoryEditorOpen(false)}
+        onSaved={(saved) => {
+          setGlobalMemory(saved);
+          setMemoryEditorOpen(false);
+        }}
+      />
     </div>
   );
 }
