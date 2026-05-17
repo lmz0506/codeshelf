@@ -154,7 +154,12 @@ async fn test_via_test_net_connection(host: &str, port: u16) -> Option<TestPortR
     };
 
     let script = format!(
-        "$ProgressPreference='SilentlyContinue'; \
+        // 强制 PowerShell 把 stdout/stderr 都编成 UTF-8，
+        // 否则中文 Windows 的 PowerShell 5 默认 console 编码是 GBK，
+        // stderr 上任何中文错误（解析不到主机名等）会被 from_utf8_lossy 替换成 �
+        "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; \
+         $OutputEncoding=[System.Text.Encoding]::UTF8; \
+         $ProgressPreference='SilentlyContinue'; \
          $r = Test-NetConnection -ComputerName '{}' -Port {} -InformationLevel Quiet -WarningAction SilentlyContinue; \
          if ($r) {{ Write-Output 'TcpTestSucceeded'; exit 0 }} else {{ Write-Output 'TcpTestFailed'; exit 1 }}",
         host, port
