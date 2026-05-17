@@ -71,3 +71,14 @@ impl Serialize for AppError {
         serializer.serialize_str(&self.to_string())
     }
 }
+
+// specta 默认会按 enum 结构生成 Type，但实际序列化是字符串，对不上。
+// 手写成 String 让 tauri-specta 给前端导出 `Promise<T, string>`，和实际 wire 格式一致。
+impl specta::Type for AppError {
+    fn inline(
+        types: &mut specta::TypeMap,
+        generics: specta::Generics,
+    ) -> specta::datatype::DataType {
+        <String as specta::Type>::inline(types, generics)
+    }
+}

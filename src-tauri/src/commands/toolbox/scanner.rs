@@ -215,6 +215,6 @@ mod tests {
         assert_eq!(port_service_name(80), Some("HTTP"));
         assert_eq!(port_service_name(443), Some("HTTPS"));
         assert_eq!(port_service_name(22), Some("SSH"));
-        assert_eq!(port_service_name(99999), None);
+        assert_eq!(port_service_name(0), None);
     }
 }

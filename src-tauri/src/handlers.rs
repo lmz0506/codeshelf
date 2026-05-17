@@ -310,3 +310,25 @@ pub fn make_builder() -> Builder<tauri::Wry> {
         keyboard_hook::unregister_all_global_shortcuts,
     ])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 把命令签名导出到 src/bindings.ts。
+    /// 用法：`cargo test --manifest-path src-tauri/Cargo.toml export_bindings -- --nocapture`
+    /// 后端改命令签名后，跑一下这个测试就能刷新前端类型。
+    #[test]
+    fn export_bindings() {
+        use specta_typescript::{BigIntExportBehavior, Typescript};
+
+        // u64/usize 这种 JS Number 装不下的整数：默认 spec 会报错，
+        // 我们的字段（messageCount、tail_kept 之类）都在安全范围内，所以走 Number。
+        make_builder()
+            .export(
+                Typescript::default().bigint(BigIntExportBehavior::Number),
+                "../src/bindings.ts",
+            )
+            .expect("failed to export typescript bindings");
+    }
+}

@@ -12,16 +12,6 @@ use tauri::{Manager, RunEvent};
 pub fn run() {
     let specta_builder = handlers::make_builder();
 
-    // 调试构建时把命令签名导出到 src/bindings.ts，前端可直接 import 获得类型安全的调用。
-    // 发布构建不做导出，避免运行时多余开销。
-    #[cfg(debug_assertions)]
-    specta_builder
-        .export(
-            specta_typescript::Typescript::default(),
-            "../src/bindings.ts",
-        )
-        .expect("failed to export typescript bindings");
-
     tauri::Builder::default()
         // 单实例插件：防止重复打开应用。
         // 开发模式和正式版使用不同的标识符，可以并行运行。
