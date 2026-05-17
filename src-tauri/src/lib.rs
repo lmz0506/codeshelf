@@ -59,6 +59,14 @@ pub fn run() {
                 // 不阻止应用启动，只是警告
             }
 
+            // 初始化 SQLite（projects/chat/clipboard/stats 的存储后端）
+            if let Ok(config) = storage::get_storage_config() {
+                let db_path = config.db_file();
+                if let Err(e) = tauri::async_runtime::block_on(storage::db::init_db(&db_path)) {
+                    eprintln!("SQLite 初始化失败: {}", e);
+                }
+            }
+
             // 获取日志目录路径
             let log_dir = if let Ok(config) = storage::get_storage_config() {
                 config.logs_dir.clone()

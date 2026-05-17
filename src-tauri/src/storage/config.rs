@@ -177,6 +177,11 @@ impl StorageConfig {
     pub fn api_chat_sessions_dir(&self) -> PathBuf {
         self.data_dir.join("api_chat_sessions")
     }
+
+    /// SQLite 主库文件路径。阶段 2 起作为 projects / chat / clipboard / stats 的存储。
+    pub fn db_file(&self) -> PathBuf {
+        self.data_dir.join("codeshelf.db")
+    }
 }
 
 /// 初始化存储配置
