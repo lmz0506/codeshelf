@@ -7,6 +7,7 @@
 // - INSERT 使用 ON CONFLICT DO NOTHING：万一同名 id 已存在不会破坏
 // - 最后 mark_files_migrated() 给原文件改名加 .migrated，保留作最后保险
 
+use crate::error::AppResult;
 use std::fs;
 use std::path::Path;
 
@@ -19,26 +20,26 @@ use crate::storage::{
 
 // ============ Projects ============
 
-pub async fn migrate_projects(data_dir: &Path) -> Result<(), String> {
+pub async fn migrate_projects(data_dir: &Path) -> AppResult<()> {
     let path = data_dir.join("projects.json");
     if !path.exists() {
         log::debug!("projects.json 不存在，跳过");
         return Ok(());
     }
     let raw = fs::read_to_string(&path)
-        .map_err(|e| format!("读取 projects.json 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取 projects.json 失败: {}", e)))?;
     let projects: Vec<Project> = serde_json::from_str(&raw)
-        .map_err(|e| format!("解析 projects.json 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析 projects.json 失败: {}", e)))?;
 
     let pool = pool();
     let mut conn = pool
         .acquire()
         .await
-        .map_err(|e| format!("获取连接失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
     let mut tx = conn
         .begin()
         .await
-        .map_err(|e| format!("开启事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
 
     for p in &projects {
         sqlx::query(
@@ -59,7 +60,7 @@ pub async fn migrate_projects(data_dir: &Path) -> Result<(), String> {
         .bind(&p.claude_env_name)
         .execute(&mut *tx)
         .await
-        .map_err(|e| format!("插入 project {} 失败: {}", p.id, e))?;
+        .map_err(|e| crate::error::AppError::from(format!("插入 project {} 失败: {}", p.id, e)))?;
 
         for tag in &p.tags {
             sqlx::query(
@@ -70,7 +71,7 @@ pub async fn migrate_projects(data_dir: &Path) -> Result<(), String> {
             .bind(tag)
             .execute(&mut *tx)
             .await
-            .map_err(|e| format!("插入 project_tag 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("插入 project_tag 失败: {}", e)))?;
         }
         for label in &p.labels {
             sqlx::query(
@@ -81,20 +82,20 @@ pub async fn migrate_projects(data_dir: &Path) -> Result<(), String> {
             .bind(label)
             .execute(&mut *tx)
             .await
-            .map_err(|e| format!("插入 project_label 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("插入 project_label 失败: {}", e)))?;
         }
     }
 
     tx.commit()
         .await
-        .map_err(|e| format!("提交 projects 事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("提交 projects 事务失败: {}", e)))?;
     log::info!("迁移 projects: {} 条", projects.len());
     Ok(())
 }
 
 // ============ Chat ============
 
-pub async fn migrate_chat(data_dir: &Path) -> Result<(), String> {
+pub async fn migrate_chat(data_dir: &Path) -> AppResult<()> {
     let conv_dir = data_dir.join("conversations");
     if !conv_dir.exists() {
         log::debug!("conversations/ 不存在，跳过");
@@ -106,19 +107,19 @@ pub async fn migrate_chat(data_dir: &Path) -> Result<(), String> {
     let mut compaction_count: usize = 0;
 
     let entries = fs::read_dir(&conv_dir)
-        .map_err(|e| format!("读取 conversations 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取 conversations 失败: {}", e)))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| format!("读取条目失败: {}", e))?;
+        let entry = entry.map_err(|e| crate::error::AppError::from(format!("读取条目失败: {}", e)))?;
         let path = entry.path();
-        let ft = entry.file_type().map_err(|e| format!("读取类型失败: {}", e))?;
+        let ft = entry.file_type().map_err(|e| crate::error::AppError::from(format!("读取类型失败: {}", e)))?;
 
         // 顶层 *.json 文件 = 一个 session
         if ft.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json") {
             let session_id = path
                 .file_stem()
                 .and_then(|s| s.to_str())
-                .ok_or_else(|| format!("无法解析文件名: {:?}", path))?
+                .ok_or_else(|| crate::error::AppError::from(format!("无法解析文件名: {:?}", path)))?
                 .to_string();
 
             let (s_added, m_added) = migrate_one_session(&path, &session_id).await?;
@@ -142,21 +143,21 @@ pub async fn migrate_chat(data_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-async fn migrate_one_session(path: &Path, session_id: &str) -> Result<(usize, usize), String> {
+async fn migrate_one_session(path: &Path, session_id: &str) -> AppResult<(usize, usize)> {
     let raw = fs::read_to_string(path)
-        .map_err(|e| format!("读取 {:?} 失败: {}", path, e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取 {:?} 失败: {}", path, e)))?;
     let session: ChatSession = serde_json::from_str(&raw)
-        .map_err(|e| format!("解析 {:?} 失败: {}", path, e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析 {:?} 失败: {}", path, e)))?;
 
     let pool = pool();
     let mut conn = pool
         .acquire()
         .await
-        .map_err(|e| format!("获取连接失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
     let mut tx = conn
         .begin()
         .await
-        .map_err(|e| format!("开启事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
 
     sqlx::query(
         "INSERT INTO chat_sessions (
@@ -185,7 +186,7 @@ async fn migrate_one_session(path: &Path, session_id: &str) -> Result<(usize, us
     .bind(&session.current_compaction_version)
     .execute(&mut *tx)
     .await
-    .map_err(|e| format!("插入 session {} 失败: {}", session.id, e))?;
+    .map_err(|e| crate::error::AppError::from(format!("插入 session {} 失败: {}", session.id, e)))?;
 
     let msg_count = session.messages.len();
     for (idx, m) in session.messages.iter().enumerate() {
@@ -203,7 +204,7 @@ async fn migrate_one_session(path: &Path, session_id: &str) -> Result<(usize, us
             .bind(tn)
             .execute(&mut *tx)
             .await
-            .map_err(|e| format!("插入 allowed_tool 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("插入 allowed_tool 失败: {}", e)))?;
         }
     }
     if let Some(enabled) = &session.enabled_tools {
@@ -217,13 +218,13 @@ async fn migrate_one_session(path: &Path, session_id: &str) -> Result<(usize, us
             .bind(tn)
             .execute(&mut *tx)
             .await
-            .map_err(|e| format!("插入 enabled_tool 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("插入 enabled_tool 失败: {}", e)))?;
         }
     }
 
     tx.commit()
         .await
-        .map_err(|e| format!("提交 session {} 事务失败: {}", session_id, e))?;
+        .map_err(|e| crate::error::AppError::from(format!("提交 session {} 事务失败: {}", session_id, e)))?;
 
     Ok((1, msg_count))
 }
@@ -233,7 +234,7 @@ async fn insert_message<'e, E>(
     session_id: &str,
     sort_order: usize,
     m: &ChatMessage,
-) -> Result<(), String>
+) -> AppResult<()>
 where
     E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
 {
@@ -271,30 +272,30 @@ where
     .bind(sort_order as i64)
     .execute(executor)
     .await
-    .map_err(|e| format!("插入 message {} 失败: {}", m.id, e))?;
+    .map_err(|e| crate::error::AppError::from(format!("插入 message {} 失败: {}", m.id, e)))?;
 
     Ok(())
 }
 
-async fn migrate_session_compactions(session_id: &str, comp_dir: &Path) -> Result<usize, String> {
+async fn migrate_session_compactions(session_id: &str, comp_dir: &Path) -> AppResult<usize> {
     let index_path = comp_dir.join("index.json");
     if !index_path.exists() {
         return Ok(0);
     }
     let raw = fs::read_to_string(&index_path)
-        .map_err(|e| format!("读取 {:?} 失败: {}", index_path, e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取 {:?} 失败: {}", index_path, e)))?;
     let index: CompactionIndex = serde_json::from_str(&raw)
-        .map_err(|e| format!("解析 {:?} 失败: {}", index_path, e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析 {:?} 失败: {}", index_path, e)))?;
 
     let pool = pool();
     let mut conn = pool
         .acquire()
         .await
-        .map_err(|e| format!("获取连接失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
     let mut tx = conn
         .begin()
         .await
-        .map_err(|e| format!("开启事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
 
     let mut count = 0usize;
     for meta in &index.versions {
@@ -319,38 +320,38 @@ async fn migrate_session_compactions(session_id: &str, comp_dir: &Path) -> Resul
         .bind(&meta.model)
         .execute(&mut *tx)
         .await
-        .map_err(|e| format!("插入 compaction 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("插入 compaction 失败: {}", e)))?;
         count += 1;
     }
 
     tx.commit()
         .await
-        .map_err(|e| format!("提交 compactions 事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("提交 compactions 事务失败: {}", e)))?;
     Ok(count)
 }
 
 // ============ Clipboard ============
 
-pub async fn migrate_clipboard(data_dir: &Path) -> Result<(), String> {
+pub async fn migrate_clipboard(data_dir: &Path) -> AppResult<()> {
     let path = data_dir.join("clipboard_history.json");
     if !path.exists() {
         log::debug!("clipboard_history.json 不存在，跳过");
         return Ok(());
     }
     let raw = fs::read_to_string(&path)
-        .map_err(|e| format!("读取 clipboard_history.json 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取 clipboard_history.json 失败: {}", e)))?;
     let entries: Vec<ClipboardEntry> = serde_json::from_str(&raw)
-        .map_err(|e| format!("解析 clipboard_history.json 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析 clipboard_history.json 失败: {}", e)))?;
 
     let pool = pool();
     let mut conn = pool
         .acquire()
         .await
-        .map_err(|e| format!("获取连接失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
     let mut tx = conn
         .begin()
         .await
-        .map_err(|e| format!("开启事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
 
     for e in &entries {
         sqlx::query(
@@ -368,38 +369,38 @@ pub async fn migrate_clipboard(data_dir: &Path) -> Result<(), String> {
         .bind(&e.note)
         .execute(&mut *tx)
         .await
-        .map_err(|err| format!("插入 clipboard 条目 {} 失败: {}", e.id, err))?;
+        .map_err(|err| crate::error::AppError::from(format!("插入 clipboard 条目 {} 失败: {}", e.id, err)))?;
     }
 
     tx.commit()
         .await
-        .map_err(|e| format!("提交 clipboard 事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("提交 clipboard 事务失败: {}", e)))?;
     log::info!("迁移 clipboard: {} 条", entries.len());
     Ok(())
 }
 
 // ============ Stats ============
 
-pub async fn migrate_stats(data_dir: &Path) -> Result<(), String> {
+pub async fn migrate_stats(data_dir: &Path) -> AppResult<()> {
     let path = data_dir.join("stats_cache.json");
     if !path.exists() {
         log::debug!("stats_cache.json 不存在，跳过");
         return Ok(());
     }
     let raw = fs::read_to_string(&path)
-        .map_err(|e| format!("读取 stats_cache.json 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取 stats_cache.json 失败: {}", e)))?;
     let cache: crate::commands::stats::PersistedStatsCache = serde_json::from_str(&raw)
-        .map_err(|e| format!("解析 stats_cache.json 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析 stats_cache.json 失败: {}", e)))?;
 
     let pool = pool();
     let mut conn = pool
         .acquire()
         .await
-        .map_err(|e| format!("获取连接失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
     let mut tx = conn
         .begin()
         .await
-        .map_err(|e| format!("开启事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
 
     let project_count = cache.project_stats.len();
 
@@ -414,7 +415,7 @@ pub async fn migrate_stats(data_dir: &Path) -> Result<(), String> {
         .bind(ps.last_updated)
         .execute(&mut *tx)
         .await
-        .map_err(|e| format!("插入 project_stats {} 失败: {}", proj_path, e))?;
+        .map_err(|e| crate::error::AppError::from(format!("插入 project_stats {} 失败: {}", proj_path, e)))?;
 
         for (date, count) in &ps.commits_by_date {
             sqlx::query(
@@ -427,7 +428,7 @@ pub async fn migrate_stats(data_dir: &Path) -> Result<(), String> {
             .bind(*count as i64)
             .execute(&mut *tx)
             .await
-            .map_err(|e| format!("插入 commits_by_date 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("插入 commits_by_date 失败: {}", e)))?;
         }
 
         for (idx, rc) in ps.recent_commits.iter().enumerate() {
@@ -449,7 +450,7 @@ pub async fn migrate_stats(data_dir: &Path) -> Result<(), String> {
             .bind(&rc.project_name)
             .execute(&mut *tx)
             .await
-            .map_err(|e| format!("插入 recent_commits 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("插入 recent_commits 失败: {}", e)))?;
         }
     }
 
@@ -458,12 +459,12 @@ pub async fn migrate_stats(data_dir: &Path) -> Result<(), String> {
             .bind(dp)
             .execute(&mut *tx)
             .await
-            .map_err(|e| format!("插入 stats_dirty 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("插入 stats_dirty 失败: {}", e)))?;
     }
 
     // dashboard 聚合数据 + last_updated 存到 stats_meta（key-value）
     let dashboard_json = serde_json::to_string(&cache.data)
-        .map_err(|e| format!("序列化 dashboard 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("序列化 dashboard 失败: {}", e)))?;
     sqlx::query(
         "INSERT INTO stats_meta (key, value) VALUES (?, ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -472,7 +473,7 @@ pub async fn migrate_stats(data_dir: &Path) -> Result<(), String> {
     .bind(&dashboard_json)
     .execute(&mut *tx)
     .await
-    .map_err(|e| format!("插入 stats_meta dashboard 失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("插入 stats_meta dashboard 失败: {}", e)))?;
 
     sqlx::query(
         "INSERT INTO stats_meta (key, value) VALUES (?, ?)
@@ -482,11 +483,11 @@ pub async fn migrate_stats(data_dir: &Path) -> Result<(), String> {
     .bind(cache.last_updated.to_string())
     .execute(&mut *tx)
     .await
-    .map_err(|e| format!("插入 stats_meta last_updated 失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("插入 stats_meta last_updated 失败: {}", e)))?;
 
     tx.commit()
         .await
-        .map_err(|e| format!("提交 stats 事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("提交 stats 事务失败: {}", e)))?;
     log::info!("迁移 stats: {} 个项目", project_count);
     Ok(())
 }
@@ -495,7 +496,7 @@ pub async fn migrate_stats(data_dir: &Path) -> Result<(), String> {
 
 /// 给已成功迁移的 JSON 文件 / 目录加 .migrated 后缀。
 /// 出错只 log 不返回错误：迁移已经成功，重命名失败不应让整体回滚。
-pub fn mark_files_migrated(data_dir: &Path) -> Result<(), String> {
+pub fn mark_files_migrated(data_dir: &Path) -> AppResult<()> {
     let files: &[&str] = &[
         "projects.json",
         "clipboard_history.json",

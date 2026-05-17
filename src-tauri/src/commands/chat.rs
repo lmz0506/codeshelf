@@ -1,3 +1,4 @@
+use crate::error::AppResult;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -98,23 +99,23 @@ static CHAT_ABORTS: Lazy<Arc<RwLock<HashMap<String, tokio::task::AbortHandle>>>>
 // 这个目录现在只用于存 <session_id>.tasks.json（commands/tools/tasks.rs）。
 // chat_history_dir 设置以后仅影响 task 文件位置，不再影响 chat 主数据。
 
-fn get_default_chat_dir() -> Result<PathBuf, String> {
+fn get_default_chat_dir() -> AppResult<PathBuf> {
     let config = get_storage_config()?;
     Ok(config.conversations_dir())
 }
 
-fn get_app_settings() -> Result<AppSettings, String> {
+fn get_app_settings() -> AppResult<AppSettings> {
     let config = get_storage_config()?;
     let path = config.app_settings_file();
     if !path.exists() {
         return Ok(AppSettings::default());
     }
-    let content = fs::read_to_string(&path).map_err(|e| format!("读取应用设置失败: {}", e))?;
+    let content = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取应用设置失败: {}", e)))?;
     let settings: AppSettings = serde_json::from_str(&content).unwrap_or_default();
     Ok(settings)
 }
 
-fn resolve_chat_history_dir() -> Result<PathBuf, String> {
+fn resolve_chat_history_dir() -> AppResult<PathBuf> {
     let settings = get_app_settings()?;
     if let Some(dir) = settings.chat_history_dir {
         if dir.trim().is_empty() {
@@ -126,38 +127,38 @@ fn resolve_chat_history_dir() -> Result<PathBuf, String> {
 }
 
 /// 供 tools 模块访问（task 文件路径解析）
-pub fn resolve_chat_history_dir_pub() -> Result<PathBuf, String> {
+pub fn resolve_chat_history_dir_pub() -> AppResult<PathBuf> {
     resolve_chat_history_dir()
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_chat_history_dir() -> Result<String, String> {
+pub async fn get_chat_history_dir() -> AppResult<String> {
     let dir = resolve_chat_history_dir()?;
     Ok(dir.to_string_lossy().to_string())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn migrate_chat_history_dir(new_dir: String) -> Result<String, String> {
+pub async fn migrate_chat_history_dir(new_dir: String) -> AppResult<String> {
     // 注意：迁移到 SQLite 后，这个命令只影响 <session_id>.tasks.json 类的物理文件。
     // chat sessions / messages / compactions 都在主 data_dir/codeshelf.db 里，不受影响。
     let new_path = PathBuf::from(new_dir);
     if !new_path.exists() {
         if let Some(parent) = new_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("创建目标目录失败: {}", e))?;
+            fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目标目录失败: {}", e)))?;
         }
     } else {
         let is_empty = fs::read_dir(&new_path)
-            .map_err(|e| format!("读取目标目录失败: {}", e))?
+            .map_err(|e| crate::error::AppError::from(format!("读取目标目录失败: {}", e)))?
             .next()
             .is_none();
 
         if !is_empty {
-            return Err("目标目录必须为空目录".to_string());
+            return Err(crate::error::AppError::from("目标目录必须为空目录".to_string()));
         }
 
-        fs::remove_dir(&new_path).map_err(|e| format!("清理目标目录失败: {}", e))?;
+        fs::remove_dir(&new_path).map_err(|e| crate::error::AppError::from(format!("清理目标目录失败: {}", e)))?;
     }
 
     let old_dir = resolve_chat_history_dir()?;
@@ -170,7 +171,7 @@ pub async fn migrate_chat_history_dir(new_dir: String) -> Result<String, String>
     }
 
     // 迁移 tasks.json 等物理文件；旧的 chat session JSON（如果未清理）也一起搬走
-    fs::rename(&old_dir, &new_path).map_err(|e| format!("迁移会话目录失败: {}", e))?;
+    fs::rename(&old_dir, &new_path).map_err(|e| crate::error::AppError::from(format!("迁移会话目录失败: {}", e)))?;
 
     Ok(new_path.to_string_lossy().to_string())
 }
@@ -280,7 +281,7 @@ fn session_from_row(row: SessionDbRow) -> ChatSession {
     }
 }
 
-async fn read_session_messages(session_id: &str) -> Result<Vec<ChatMessage>, String> {
+async fn read_session_messages(session_id: &str) -> AppResult<Vec<ChatMessage>> {
     let rows: Vec<MessageDbRow> = sqlx::query_as(&format!(
         "{} WHERE session_id = ? ORDER BY sort_order ASC",
         MESSAGE_SELECT
@@ -288,18 +289,18 @@ async fn read_session_messages(session_id: &str) -> Result<Vec<ChatMessage>, Str
     .bind(session_id)
     .fetch_all(pool())
     .await
-    .map_err(|e| format!("查询消息失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("查询消息失败: {}", e)))?;
     Ok(rows.into_iter().map(message_from_row).collect())
 }
 
-async fn read_session_tools(session_id: &str) -> Result<(Vec<String>, Vec<String>), String> {
+async fn read_session_tools(session_id: &str) -> AppResult<(Vec<String>, Vec<String>)> {
     let rows: Vec<(String, i64, i64)> = sqlx::query_as(
         "SELECT tool_name, is_allowed, is_enabled FROM chat_session_tools WHERE session_id = ?",
     )
     .bind(session_id)
     .fetch_all(pool())
     .await
-    .map_err(|e| format!("查询工具失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("查询工具失败: {}", e)))?;
 
     let mut allowed = Vec::new();
     let mut enabled = Vec::new();
@@ -314,12 +315,12 @@ async fn read_session_tools(session_id: &str) -> Result<(Vec<String>, Vec<String
     Ok((allowed, enabled))
 }
 
-async fn read_session_full(session_id: &str) -> Result<Option<ChatSession>, String> {
+async fn read_session_full(session_id: &str) -> AppResult<Option<ChatSession>> {
     let row: Option<SessionDbRow> = sqlx::query_as(&format!("{} WHERE id = ?", SESSION_SELECT))
         .bind(session_id)
         .fetch_optional(pool())
         .await
-        .map_err(|e| format!("查询会话失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("查询会话失败: {}", e)))?;
 
     let Some(row) = row else {
         return Ok(None);
@@ -334,16 +335,16 @@ async fn read_session_full(session_id: &str) -> Result<Option<ChatSession>, Stri
 }
 
 /// 全量保存 session：upsert sessions 表 + 清空并重插 messages / tools。
-async fn write_session_full(session: &ChatSession) -> Result<(), String> {
+async fn write_session_full(session: &ChatSession) -> AppResult<()> {
     let pool = pool();
     let mut conn = pool
         .acquire()
         .await
-        .map_err(|e| format!("获取连接失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
     let mut tx = conn
         .begin()
         .await
-        .map_err(|e| format!("开启事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
 
     sqlx::query(
         "INSERT INTO chat_sessions (
@@ -386,14 +387,14 @@ async fn write_session_full(session: &ChatSession) -> Result<(), String> {
     .bind(&session.current_compaction_version)
     .execute(&mut *tx)
     .await
-    .map_err(|e| format!("upsert chat_sessions 失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("upsert chat_sessions 失败: {}", e)))?;
 
     // 全量重插 messages
     sqlx::query("DELETE FROM chat_messages WHERE session_id = ?")
         .bind(&session.id)
         .execute(&mut *tx)
         .await
-        .map_err(|e| format!("清空旧 messages 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("清空旧 messages 失败: {}", e)))?;
 
     for (idx, m) in session.messages.iter().enumerate() {
         let tool_calls_json = m.tool_calls.as_ref().map(|v| v.to_string());
@@ -429,7 +430,7 @@ async fn write_session_full(session: &ChatSession) -> Result<(), String> {
         .bind(idx as i64)
         .execute(&mut *tx)
         .await
-        .map_err(|e| format!("插入消息 {} 失败: {}", m.id, e))?;
+        .map_err(|e| crate::error::AppError::from(format!("插入消息 {} 失败: {}", m.id, e)))?;
     }
 
     // 全量重插 tools
@@ -437,7 +438,7 @@ async fn write_session_full(session: &ChatSession) -> Result<(), String> {
         .bind(&session.id)
         .execute(&mut *tx)
         .await
-        .map_err(|e| format!("清空旧 tools 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("清空旧 tools 失败: {}", e)))?;
 
     if let Some(allowed) = &session.allowed_tools {
         for tn in allowed {
@@ -450,7 +451,7 @@ async fn write_session_full(session: &ChatSession) -> Result<(), String> {
             .bind(tn)
             .execute(&mut *tx)
             .await
-            .map_err(|e| format!("插入 allowed_tool 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("插入 allowed_tool 失败: {}", e)))?;
         }
     }
     if let Some(enabled) = &session.enabled_tools {
@@ -464,13 +465,13 @@ async fn write_session_full(session: &ChatSession) -> Result<(), String> {
             .bind(tn)
             .execute(&mut *tx)
             .await
-            .map_err(|e| format!("插入 enabled_tool 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("插入 enabled_tool 失败: {}", e)))?;
         }
     }
 
     tx.commit()
         .await
-        .map_err(|e| format!("提交事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("提交事务失败: {}", e)))?;
     Ok(())
 }
 
@@ -478,7 +479,7 @@ async fn write_session_full(session: &ChatSession) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
+pub async fn list_chat_sessions() -> AppResult<Vec<ChatSessionSummary>> {
     let rows: Vec<(
         String,
         String,
@@ -493,7 +494,7 @@ pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
     )
     .fetch_all(pool())
     .await
-    .map_err(|e| format!("查询 chat_sessions 失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("查询 chat_sessions 失败: {}", e)))?;
 
     if rows.is_empty() {
         return Ok(Vec::new());
@@ -505,7 +506,7 @@ pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
     )
     .fetch_all(pool())
     .await
-    .map_err(|e| format!("统计消息条数失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("统计消息条数失败: {}", e)))?;
 
     let mut counts: HashMap<String, i64> = HashMap::new();
     for (sid, c) in count_rows {
@@ -532,10 +533,10 @@ pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_chat_session(session_id: String) -> Result<ChatSession, String> {
+pub async fn get_chat_session(session_id: String) -> AppResult<ChatSession> {
     read_session_full(&session_id)
         .await?
-        .ok_or_else(|| "会话不存在".to_string())
+        .ok_or_else(|| crate::error::AppError::from("会话不存在".to_string()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -548,7 +549,7 @@ pub struct CreateChatSessionInput {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn create_chat_session(input: CreateChatSessionInput) -> Result<ChatSession, String> {
+pub async fn create_chat_session(input: CreateChatSessionInput) -> AppResult<ChatSession> {
     let now = current_iso_time();
     let session = ChatSession {
         id: generate_id(),
@@ -577,7 +578,7 @@ pub async fn create_chat_session(input: CreateChatSessionInput) -> Result<ChatSe
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_chat_session(mut session: ChatSession) -> Result<ChatSession, String> {
+pub async fn save_chat_session(mut session: ChatSession) -> AppResult<ChatSession> {
     session.updated_at = current_iso_time();
     write_session_full(&session).await?;
     Ok(session)
@@ -588,7 +589,7 @@ pub async fn save_chat_session(mut session: ChatSession) -> Result<ChatSession, 
 pub async fn rename_chat_session(
     session_id: String,
     title: String,
-) -> Result<ChatSession, String> {
+) -> AppResult<ChatSession> {
     let now = current_iso_time();
     let result = sqlx::query(
         "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?",
@@ -598,26 +599,26 @@ pub async fn rename_chat_session(
     .bind(&session_id)
     .execute(pool())
     .await
-    .map_err(|e| format!("重命名会话失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("重命名会话失败: {}", e)))?;
 
     if result.rows_affected() == 0 {
-        return Err("会话不存在".to_string());
+        return Err(crate::error::AppError::from("会话不存在".to_string()));
     }
 
     read_session_full(&session_id)
         .await?
-        .ok_or_else(|| "会话不存在".to_string())
+        .ok_or_else(|| crate::error::AppError::from("会话不存在".to_string()))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_chat_session(session_id: String) -> Result<(), String> {
+pub async fn delete_chat_session(session_id: String) -> AppResult<()> {
     // CASCADE 会自动清理 chat_messages / chat_session_tools / chat_compactions
     sqlx::query("DELETE FROM chat_sessions WHERE id = ?")
         .bind(&session_id)
         .execute(pool())
         .await
-        .map_err(|e| format!("删除会话失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("删除会话失败: {}", e)))?;
     Ok(())
 }
 
@@ -635,9 +636,9 @@ pub struct SaveCompactionInput {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_compaction(input: SaveCompactionInput) -> Result<CompactionMeta, String> {
+pub async fn save_compaction(input: SaveCompactionInput) -> AppResult<CompactionMeta> {
     if input.content.trim().is_empty() {
-        return Err("压缩内容为空".to_string());
+        return Err(crate::error::AppError::from("压缩内容为空".to_string()));
     }
 
     // 查当前最大 vN
@@ -648,7 +649,7 @@ pub async fn save_compaction(input: SaveCompactionInput) -> Result<CompactionMet
     .bind(&input.session_id)
     .fetch_optional(pool())
     .await
-    .map_err(|e| format!("查询当前压缩版本失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("查询当前压缩版本失败: {}", e)))?;
 
     let next_n = max_n
         .as_ref()
@@ -670,11 +671,11 @@ pub async fn save_compaction(input: SaveCompactionInput) -> Result<CompactionMet
     let mut conn = pool
         .acquire()
         .await
-        .map_err(|e| format!("获取连接失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
     let mut tx = conn
         .begin()
         .await
-        .map_err(|e| format!("开启事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
 
     sqlx::query(
         "INSERT INTO chat_compactions (
@@ -692,7 +693,7 @@ pub async fn save_compaction(input: SaveCompactionInput) -> Result<CompactionMet
     .bind(&meta.model)
     .execute(&mut *tx)
     .await
-    .map_err(|e| format!("插入 compaction 失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("插入 compaction 失败: {}", e)))?;
 
     // 更新 session.current_compaction_version 标记
     sqlx::query("UPDATE chat_sessions SET current_compaction_version = ? WHERE id = ?")
@@ -700,18 +701,18 @@ pub async fn save_compaction(input: SaveCompactionInput) -> Result<CompactionMet
         .bind(&input.session_id)
         .execute(&mut *tx)
         .await
-        .map_err(|e| format!("更新 current_compaction_version 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("更新 current_compaction_version 失败: {}", e)))?;
 
     tx.commit()
         .await
-        .map_err(|e| format!("提交事务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("提交事务失败: {}", e)))?;
 
     Ok(meta)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_compactions(session_id: String) -> Result<CompactionIndex, String> {
+pub async fn list_compactions(session_id: String) -> AppResult<CompactionIndex> {
     let rows: Vec<(String, String, i64, i64, i64, Option<String>)> = sqlx::query_as(
         "SELECT version, created_at, source_message_count, tail_kept, char_count, model
          FROM chat_compactions WHERE session_id = ?
@@ -720,7 +721,7 @@ pub async fn list_compactions(session_id: String) -> Result<CompactionIndex, Str
     .bind(&session_id)
     .fetch_all(pool())
     .await
-    .map_err(|e| format!("查询压缩列表失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("查询压缩列表失败: {}", e)))?;
 
     let current: Option<(Option<String>,)> = sqlx::query_as(
         "SELECT current_compaction_version FROM chat_sessions WHERE id = ?",
@@ -728,7 +729,7 @@ pub async fn list_compactions(session_id: String) -> Result<CompactionIndex, Str
     .bind(&session_id)
     .fetch_optional(pool())
     .await
-    .map_err(|e| format!("查询 current_compaction_version 失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("查询 current_compaction_version 失败: {}", e)))?;
 
     let versions: Vec<CompactionMeta> = rows
         .into_iter()
@@ -765,7 +766,7 @@ pub struct CompactionContent {
 pub async fn get_compaction(
     session_id: String,
     version: Option<String>,
-) -> Result<Option<CompactionContent>, String> {
+) -> AppResult<Option<CompactionContent>> {
     // 决定要取的版本：参数优先；否则取 session.current_compaction_version
     let target = match version {
         Some(v) => Some(v),
@@ -776,7 +777,7 @@ pub async fn get_compaction(
             .bind(&session_id)
             .fetch_optional(pool())
             .await
-            .map_err(|e| format!("查询 current_compaction_version 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("查询 current_compaction_version 失败: {}", e)))?;
             row.and_then(|(v,)| v)
         }
     };
@@ -793,7 +794,7 @@ pub async fn get_compaction(
     .bind(&target)
     .fetch_optional(pool())
     .await
-    .map_err(|e| format!("查询 compaction 失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("查询 compaction 失败: {}", e)))?;
 
     let Some((content, created_at, source_message_count, tail_kept, char_count, model)) = row
     else {
@@ -818,7 +819,7 @@ pub async fn get_compaction(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn chat_cancel(request_id: String) -> Result<(), String> {
+pub async fn chat_cancel(request_id: String) -> AppResult<()> {
     let mut map = CHAT_ABORTS.write().await;
     if let Some(handle) = map.remove(&request_id) {
         handle.abort();
@@ -829,7 +830,7 @@ pub async fn chat_cancel(request_id: String) -> Result<(), String> {
 fn build_chat_payload(
     request: &ChatStreamRequest,
     use_stream: bool,
-) -> Result<(String, reqwest::header::HeaderMap, serde_json::Value), String> {
+) -> AppResult<(String, reqwest::header::HeaderMap, serde_json::Value)> {
     let base_url = request.base_url.trim_end_matches('/');
     let url = format!("{}/chat/completions", base_url);
 
@@ -841,7 +842,7 @@ fn build_chat_payload(
                 reqwest::header::AUTHORIZATION,
                 auth_value
                     .parse()
-                    .map_err(|e| format!("无效 API Key: {}", e))?,
+                    .map_err(|e| crate::error::AppError::from(format!("无效 API Key: {}", e)))?,
             );
         }
     }
@@ -905,7 +906,7 @@ fn build_chat_payload(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn chat_complete(request: ChatStreamRequest) -> Result<String, String> {
+pub async fn chat_complete(request: ChatStreamRequest) -> AppResult<String> {
     let (url, headers, body) = build_chat_payload(&request, false)?;
     let client = reqwest::Client::new();
     let response = client
@@ -914,30 +915,30 @@ pub async fn chat_complete(request: ChatStreamRequest) -> Result<String, String>
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("请求失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("请求失败: {}", e)))?;
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(format!("HTTP {}: {}", status, text));
+        return Err(crate::error::AppError::from(format!("HTTP {}: {}", status, text)));
     }
     let parsed: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| format!("解析响应失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析响应失败: {}", e)))?;
     let content = parsed
         .get("choices")
         .and_then(|v| v.get(0))
         .and_then(|v| v.get("message"))
         .and_then(|v| v.get("content"))
         .and_then(|v| v.as_str())
-        .ok_or_else(|| "AI 返回无 content".to_string())?
+        .ok_or_else(|| crate::error::AppError::from("AI 返回无 content".to_string()))?
         .to_string();
     Ok(content)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(), String> {
+pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResult<()> {
     let request_id = request.request_id.clone();
     let use_stream = request.stream.unwrap_or(true);
     let (url, headers, body) = build_chat_payload(&request, use_stream)?;

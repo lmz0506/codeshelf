@@ -1,5 +1,6 @@
 // 生成等价 nginx 配置
 
+use crate::error::AppResult;
 use super::super::{NginxConfigOptions, ProxyConfig};
 use super::{ensure_servers_loaded, SERVERS};
 
@@ -176,14 +177,14 @@ fn build_nginx_config(options: NginxConfigOptions) -> String {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn generate_nginx_config(server_id: String) -> Result<String, String> {
+pub async fn generate_nginx_config(server_id: String) -> AppResult<String> {
     ensure_servers_loaded().await;
 
     let server = {
         let servers = SERVERS.lock().await;
         servers.get(&server_id).cloned()
     }
-    .ok_or_else(|| format!("服务不存在: {}", server_id))?;
+    .ok_or_else(|| crate::error::AppError::from(format!("服务不存在: {}", server_id)))?;
 
     Ok(build_nginx_config(NginxConfigOptions {
         service_name: server.name,

@@ -5,6 +5,7 @@
 // - runtime: start_server 与底层 axum 运行/代理处理
 // - nginx:   生成等价 nginx 配置
 
+use crate::error::AppResult;
 use super::ServerConfig;
 use crate::storage;
 use once_cell::sync::Lazy;
@@ -51,7 +52,7 @@ pub(super) async fn ensure_servers_loaded() {
 }
 
 /// 从文件加载服务配置
-fn load_servers_from_file() -> Result<HashMap<String, ServerConfig>, String> {
+fn load_servers_from_file() -> AppResult<HashMap<String, ServerConfig>> {
     let config = storage::get_storage_config()?;
     let path = config.server_configs_file();
 
@@ -63,7 +64,7 @@ fn load_servers_from_file() -> Result<HashMap<String, ServerConfig>, String> {
     }
 
     let content = fs::read_to_string(&path)
-        .map_err(|e| format!("读取服务配置失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取服务配置失败: {}", e)))?;
 
     // 直接解析为服务配置数组
     let servers_arr: Vec<ServerConfig> = match serde_json::from_str(&content) {
@@ -87,7 +88,7 @@ fn load_servers_from_file() -> Result<HashMap<String, ServerConfig>, String> {
 }
 
 /// 保存服务配置到文件
-pub(super) async fn save_servers_to_file() -> Result<(), String> {
+pub(super) async fn save_servers_to_file() -> AppResult<()> {
     let config = storage::get_storage_config()?;
 
     // 确保数据目录存在
@@ -99,13 +100,13 @@ pub(super) async fn save_servers_to_file() -> Result<(), String> {
     let servers_data: Vec<&ServerConfig> = servers.values().collect();
 
     let content = serde_json::to_string(&servers_data)
-        .map_err(|e| format!("序列化服务配置失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("序列化服务配置失败: {}", e)))?;
 
     let path = config.server_configs_file();
     log::info!("保存服务配置到: {:?}", path);
 
     fs::write(&path, content)
-        .map_err(|e| format!("写入服务配置失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("写入服务配置失败: {}", e)))?;
 
     log::info!("服务配置保存成功，共 {} 个服务", servers.len());
     Ok(())

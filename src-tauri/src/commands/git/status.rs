@@ -1,10 +1,11 @@
 // 工作区状态与冲突处理：get_git_status / 冲突相关命令
 
+use crate::error::AppResult;
 use super::{is_system_junk_file, run_git_command, unquote_git_path, ConflictFileContent, GitStatus};
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_git_status(path: String) -> Result<GitStatus, String> {
+pub async fn get_git_status(path: String) -> AppResult<GitStatus> {
     // Get current branch
     let branch = run_git_command(&path, &["rev-parse", "--abbrev-ref", "HEAD"])
         .unwrap_or_else(|_| "unknown".to_string());
@@ -89,7 +90,7 @@ fn git_show_stage(path: &str, stage: &str, file: &str) -> Option<String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_conflict_file_content(path: String, file: String) -> Result<ConflictFileContent, String> {
+pub async fn get_conflict_file_content(path: String, file: String) -> AppResult<ConflictFileContent> {
     let worktree = std::fs::read_to_string(std::path::Path::new(&path).join(&file)).ok();
     Ok(ConflictFileContent {
         file: file.clone(),
@@ -102,17 +103,17 @@ pub async fn get_conflict_file_content(path: String, file: String) -> Result<Con
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_checkout_conflict_version(path: String, file: String, version: String) -> Result<String, String> {
+pub async fn git_checkout_conflict_version(path: String, file: String, version: String) -> AppResult<String> {
     match version.as_str() {
         "ours" => run_git_command(&path, &["checkout", "--ours", "--", &file])?,
         "theirs" => run_git_command(&path, &["checkout", "--theirs", "--", &file])?,
-        _ => return Err("version 必须是 ours 或 theirs".to_string()),
+        _ => return Err(crate::error::AppError::from("version 必须是 ours 或 theirs".to_string())),
     };
     run_git_command(&path, &["add", "--", &file])
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_mark_resolved(path: String, file: String) -> Result<String, String> {
+pub async fn git_mark_resolved(path: String, file: String) -> AppResult<String> {
     run_git_command(&path, &["add", "--", &file])
 }

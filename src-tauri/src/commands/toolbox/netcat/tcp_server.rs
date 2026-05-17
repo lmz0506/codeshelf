@@ -1,5 +1,6 @@
 // TCP 服务器实现
 
+use crate::error::AppResult;
 use super::types::*;
 use crate::commands::toolbox::generate_id;
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ struct ClientWriter {
 
 struct ServerSendRequest {
     data: Vec<u8>,
-    result_tx: oneshot::Sender<Result<(), String>>,
+    result_tx: oneshot::Sender<AppResult<()>>,
 }
 
 /// 全局服务器客户端管理
@@ -38,7 +39,7 @@ pub async fn start_tcp_server(
     session_state: Arc<RwLock<SessionState>>,
     host: String,
     port: u16,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let session_id = {
         let state = session_state.read().await;
         state.session.id.clone()
@@ -202,7 +203,7 @@ async fn handle_client_connection(
             // 检查 shutdown 标志
             if shutdown_flag_send.load(Ordering::SeqCst) {
                 log::info!("Netcat Server 发送任务收到停止信号: client={}", client_addr_clone);
-                let _ = request.result_tx.send(Err("连接已停止".to_string()));
+                let _ = request.result_tx.send(Err(crate::error::AppError::from("连接已停止".to_string())));
                 break;
             }
 
@@ -212,13 +213,13 @@ async fn handle_client_connection(
             let mut w = writer_clone.write().await;
             if let Err(e) = w.write_all(&request.data).await {
                 log::error!("发送数据到客户端失败: {}", e);
-                let _ = request.result_tx.send(Err(format!("写入客户端失败: {}", e)));
+                let _ = request.result_tx.send(Err(crate::error::AppError::from(format!("写入客户端失败: {}", e))));
                 break;
             }
             // 刷新缓冲区，确保数据立即发送
             if let Err(e) = w.flush().await {
                 log::error!("刷新数据到客户端失败: {}", e);
-                let _ = request.result_tx.send(Err(format!("刷新客户端失败: {}", e)));
+                let _ = request.result_tx.send(Err(crate::error::AppError::from(format!("刷新客户端失败: {}", e))));
                 break;
             }
 
@@ -428,7 +429,7 @@ async fn handle_received_data(
 }
 
 /// 发送数据到指定客户端
-pub async fn send_to_client(session_id: &str, client_id: &str, data: Vec<u8>) -> Result<(), String> {
+pub async fn send_to_client(session_id: &str, client_id: &str, data: Vec<u8>) -> AppResult<()> {
     log::info!("Netcat Server 发送数据到客户端: session={}, client={}, size={}",
         session_id, client_id, data.len());
 
@@ -460,12 +461,12 @@ pub async fn send_to_client(session_id: &str, client_id: &str, data: Vec<u8>) ->
             .map_err(|_| "发送任务已关闭".to_string())?
     } else {
         log::error!("Netcat Server 客户端不存在或会话不存在: session={}, client={}", session_id, client_id);
-        Err("客户端不存在".to_string())
+        Err(crate::error::AppError::from("客户端不存在".to_string()))
     }
 }
 
 /// 广播数据到所有客户端
-pub async fn broadcast_to_clients(session_id: &str, data: Vec<u8>) -> Result<(), String> {
+pub async fn broadcast_to_clients(session_id: &str, data: Vec<u8>) -> AppResult<()> {
     log::info!("Netcat Server 广播数据: session={}, size={}", session_id, data.len());
 
     let client_txs = {
@@ -477,7 +478,7 @@ pub async fn broadcast_to_clients(session_id: &str, data: Vec<u8>) -> Result<(),
                 .collect::<Vec<_>>()
         } else {
             log::error!("Netcat Server 会话不存在: {}", session_id);
-            return Err("会话不存在".to_string());
+            return Err(crate::error::AppError::from("会话不存在".to_string()));
         }
     };
 
@@ -487,7 +488,7 @@ pub async fn broadcast_to_clients(session_id: &str, data: Vec<u8>) -> Result<(),
 
         if client_count == 0 {
             log::warn!("Netcat Server 没有已连接的客户端");
-            return Err("没有已连接的客户端".to_string());
+            return Err(crate::error::AppError::from("没有已连接的客户端".to_string()));
         }
 
         let mut failed = Vec::new();
@@ -515,22 +516,22 @@ pub async fn broadcast_to_clients(session_id: &str, data: Vec<u8>) -> Result<(),
         if failed.is_empty() {
             Ok(())
         } else {
-            Err(format!("部分客户端发送失败: {}", failed.join(", ")))
+            Err(crate::error::AppError::from(format!("部分客户端发送失败: {}", failed.join(", "))))
         }
     } else {
         log::warn!("Netcat Server 没有已连接的客户端");
-        Err("没有已连接的客户端".to_string())
+        Err(crate::error::AppError::from("没有已连接的客户端".to_string()))
     }
 }
 
 /// 断开指定客户端连接
-pub async fn disconnect_client(session_id: &str, client_id: &str) -> Result<(), String> {
+pub async fn disconnect_client(session_id: &str, client_id: &str) -> AppResult<()> {
     let mut servers = SERVER_CLIENTS.write().await;
     if let Some(clients) = servers.get_mut(session_id) {
         clients.remove(client_id);
         Ok(())
     } else {
-        Err("会话不存在".to_string())
+        Err(crate::error::AppError::from("会话不存在".to_string()))
     }
 }
 

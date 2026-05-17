@@ -1,5 +1,6 @@
 //! Bash 工具：在 allowedCwd 中执行 shell。Unix 用 /bin/sh -c，Windows 用 cmd /C。
 
+use crate::error::AppResult;
 use std::fs;
 use std::time::Duration;
 
@@ -9,7 +10,7 @@ use tokio::time::timeout as tokio_timeout;
 
 use super::ctx::{truncate, ToolCtx};
 
-pub(super) async fn tool_bash(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
+pub(super) async fn tool_bash(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
     let command = args
         .get("command")
         .and_then(|v| v.as_str())
@@ -19,7 +20,7 @@ pub(super) async fn tool_bash(ctx: &ToolCtx, args: &Value) -> Result<String, Str
         .allowed_cwd
         .as_ref()
         .ok_or("会话未设置 allowedCwd")?;
-    let base_canon = fs::canonicalize(base).map_err(|e| format!("allowedCwd 无效: {}", e))?;
+    let base_canon = fs::canonicalize(base).map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
 
     #[cfg(target_family = "unix")]
     let mut cmd = {
@@ -39,8 +40,8 @@ pub(super) async fn tool_bash(ctx: &ToolCtx, args: &Value) -> Result<String, Str
     let fut = cmd.output();
     let output = tokio_timeout(Duration::from_millis(timeout_ms), fut)
         .await
-        .map_err(|_| format!("命令超时（{} ms）", timeout_ms))?
-        .map_err(|e| format!("执行失败: {}", e))?;
+        .map_err(|_| crate::error::AppError::from(format!("命令超时（{} ms）", timeout_ms)))?
+        .map_err(|e| crate::error::AppError::from(format!("执行失败: {}", e)))?;
 
     let mut out = String::new();
     out.push_str(&format!("exit: {}\n", output.status.code().unwrap_or(-1)));

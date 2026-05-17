@@ -1,5 +1,6 @@
 //! Memory / Skills / Mention 相关后端命令
 
+use crate::error::AppResult;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
@@ -12,24 +13,24 @@ use crate::storage::get_storage_config;
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_global_memory() -> Result<String, String> {
+pub async fn get_global_memory() -> AppResult<String> {
     let config = get_storage_config()?;
     let path = config.memory_file();
     if !path.exists() {
         return Ok(String::new());
     }
-    fs::read_to_string(&path).map_err(|e| format!("读取 MEMORY 失败: {}", e))
+    fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取 MEMORY 失败: {}", e)))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_global_memory(content: String) -> Result<(), String> {
+pub async fn save_global_memory(content: String) -> AppResult<()> {
     let config = get_storage_config()?;
     let path = config.memory_file();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
     }
-    fs::write(&path, content).map_err(|e| format!("保存失败: {}", e))
+    fs::write(&path, content).map_err(|e| crate::error::AppError::from(format!("保存失败: {}", e)))
 }
 
 // ========== Skills ==========
@@ -139,11 +140,11 @@ args: "<目标语言>，如 en / ja"
     ]
 }
 
-fn ensure_skills_dir() -> Result<std::path::PathBuf, String> {
+fn ensure_skills_dir() -> AppResult<std::path::PathBuf> {
     let config = get_storage_config()?;
     let dir = config.skills_dir();
     if !dir.exists() {
-        fs::create_dir_all(&dir).map_err(|e| format!("创建目录失败: {}", e))?;
+        fs::create_dir_all(&dir).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
         // 首次初始化：拷贝 bundled
         for (fname, body) in bundled_skills() {
             let p = dir.join(fname);
@@ -157,11 +158,11 @@ fn ensure_skills_dir() -> Result<std::path::PathBuf, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_skills() -> Result<Vec<Skill>, String> {
+pub async fn list_skills() -> AppResult<Vec<Skill>> {
     let dir = ensure_skills_dir()?;
     let mut out = Vec::new();
-    for entry in fs::read_dir(&dir).map_err(|e| format!("读取失败: {}", e))? {
-        let entry = entry.map_err(|e| format!("读取失败: {}", e))?;
+    for entry in fs::read_dir(&dir).map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))? {
+        let entry = entry.map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))?;
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("md") {
             continue;
@@ -180,7 +181,7 @@ pub async fn list_skills() -> Result<Vec<Skill>, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_skill(skill: Skill) -> Result<(), String> {
+pub async fn save_skill(skill: Skill) -> AppResult<()> {
     let dir = ensure_skills_dir()?;
     let fname = format!("{}.md", sanitize_name(&skill.name));
     let path = dir.join(fname);
@@ -191,17 +192,17 @@ pub async fn save_skill(skill: Skill) -> Result<(), String> {
         skill.args_hint.as_deref().unwrap_or(""),
         skill.body
     );
-    fs::write(&path, content).map_err(|e| format!("保存失败: {}", e))
+    fs::write(&path, content).map_err(|e| crate::error::AppError::from(format!("保存失败: {}", e)))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_skill(name: String) -> Result<(), String> {
+pub async fn delete_skill(name: String) -> AppResult<()> {
     let dir = ensure_skills_dir()?;
     let fname = format!("{}.md", sanitize_name(&name));
     let path = dir.join(fname);
     if path.exists() {
-        fs::remove_file(&path).map_err(|e| format!("删除失败: {}", e))?;
+        fs::remove_file(&path).map_err(|e| crate::error::AppError::from(format!("删除失败: {}", e)))?;
     }
     Ok(())
 }
@@ -223,7 +224,7 @@ pub struct MentionFileEntry {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_dir_entries(root: String, max: Option<u32>) -> Result<Vec<MentionFileEntry>, String> {
+pub async fn list_dir_entries(root: String, max: Option<u32>) -> AppResult<Vec<MentionFileEntry>> {
     let cap = max.unwrap_or(5000) as usize;
     let mut out: Vec<MentionFileEntry> = Vec::new();
     let root_path = Path::new(&root);
@@ -249,7 +250,7 @@ fn walk_for_mention(
     out: &mut Vec<MentionFileEntry>,
     cap: usize,
     depth: u32,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if out.len() >= cap || depth > 32 {
         return Ok(());
     }
@@ -292,13 +293,13 @@ fn looks_like_text(buf: &[u8]) -> bool {
     !buf.iter().take(4096).any(|b| *b == 0)
 }
 
-fn read_mention_file_bytes(path: &Path, max_bytes: u64) -> Result<(String, bool, u64), String> {
-    let meta = fs::metadata(path).map_err(|e| format!("读取元信息失败: {}", e))?;
-    let file = fs::File::open(path).map_err(|e| format!("打开失败: {}", e))?;
+fn read_mention_file_bytes(path: &Path, max_bytes: u64) -> AppResult<(String, bool, u64)> {
+    let meta = fs::metadata(path).map_err(|e| crate::error::AppError::from(format!("读取元信息失败: {}", e)))?;
+    let file = fs::File::open(path).map_err(|e| crate::error::AppError::from(format!("打开失败: {}", e)))?;
     let mut buf = Vec::new();
     file.take(max_bytes + 1)
         .read_to_end(&mut buf)
-        .map_err(|e| format!("读取失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))?;
     let truncated = buf.len() as u64 > max_bytes;
     if truncated {
         buf.truncate(max_bytes as usize);
@@ -318,7 +319,7 @@ fn read_mention_dir(
     max_files: usize,
     max_total_bytes: u64,
     depth: u32,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if state.files_read >= max_files || state.total_bytes >= max_total_bytes || depth > 32 {
         state.truncated = true;
         return Ok(());
@@ -383,18 +384,18 @@ fn read_mention_dir(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn read_mention_file(root: String, rel_path: String) -> Result<String, String> {
+pub async fn read_mention_file(root: String, rel_path: String) -> AppResult<String> {
     const MAX_MENTION_FILE_BYTES: u64 = 1_000_000;
     const MAX_MENTION_DIR_BYTES: u64 = 1_000_000;
     const MAX_MENTION_DIR_FILES: usize = 80;
 
-    let root_canon = fs::canonicalize(&root).map_err(|e| format!("根目录无效: {}", e))?;
+    let root_canon = fs::canonicalize(&root).map_err(|e| crate::error::AppError::from(format!("根目录无效: {}", e)))?;
     let full = root_canon.join(&rel_path);
-    let canon = fs::canonicalize(&full).map_err(|e| format!("路径无效: {}", e))?;
+    let canon = fs::canonicalize(&full).map_err(|e| crate::error::AppError::from(format!("路径无效: {}", e)))?;
     if !canon.starts_with(&root_canon) {
         return Err("路径越界".into());
     }
-    let meta = fs::metadata(&canon).map_err(|e| format!("读取元信息失败: {}", e))?;
+    let meta = fs::metadata(&canon).map_err(|e| crate::error::AppError::from(format!("读取元信息失败: {}", e)))?;
     if meta.is_dir() {
         let mut sections = vec![format!("[引用目录] {}", rel_path)];
         let mut state = MentionDirReadState {

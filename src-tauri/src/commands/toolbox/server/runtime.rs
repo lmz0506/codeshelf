@@ -1,5 +1,6 @@
 // 静态服务运行时：run_server / proxy_handler / 解码与 hop-by-hop 处理
 
+use crate::error::AppResult;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -32,7 +33,7 @@ pub(super) async fn run_server(
     _server_id: &str,
     config: ServerConfig,
     controller: Arc<ServerController>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // 创建静态文件服务
     let serve_dir = ServeDir::new(&config.root_dir)
         .append_index_html_on_directories(true);
@@ -136,32 +137,32 @@ pub(super) async fn run_server(
 
     // 使用 socket2 创建支持 SO_REUSEADDR 的 socket
     let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
-        .map_err(|e| format!("创建 socket 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("创建 socket 失败: {}", e)))?;
 
     // 设置 SO_REUSEADDR，允许在 TIME_WAIT 状态时复用端口
     socket.set_reuse_address(true)
-        .map_err(|e| format!("设置 SO_REUSEADDR 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("设置 SO_REUSEADDR 失败: {}", e)))?;
 
     // 设置 SO_LINGER 为 0，使 socket 关闭时立即释放端口（发送 RST 而非 FIN）
     socket.set_linger(Some(std::time::Duration::from_secs(0)))
-        .map_err(|e| format!("设置 SO_LINGER 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("设置 SO_LINGER 失败: {}", e)))?;
 
     // 设置非阻塞模式
     socket.set_nonblocking(true)
-        .map_err(|e| format!("设置非阻塞模式失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("设置非阻塞模式失败: {}", e)))?;
 
     // 绑定地址
     socket.bind(&addr.into())
-        .map_err(|e| format!("绑定端口失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("绑定端口失败: {}", e)))?;
 
     // 监听
     socket.listen(1024)
-        .map_err(|e| format!("监听端口失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("监听端口失败: {}", e)))?;
 
     // 转换为 tokio TcpListener
     let std_listener: std::net::TcpListener = socket.into();
     let listener = tokio::net::TcpListener::from_std(std_listener)
-        .map_err(|e| format!("创建 TcpListener 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("创建 TcpListener 失败: {}", e)))?;
 
     // 使用 axum::serve 并添加 graceful shutdown
     let server = axum::serve(listener, app);
@@ -182,7 +183,7 @@ pub(super) async fn run_server(
     server
         .with_graceful_shutdown(shutdown_signal)
         .await
-        .map_err(|e| format!("服务错误: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("服务错误: {}", e)))?;
 
     log::info!("静态服务停止: {}", config.port);
 

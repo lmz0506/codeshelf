@@ -1,10 +1,11 @@
 // 分支命令：get_branches / checkout_branch / create_branch
 
+use crate::error::AppResult;
 use super::{run_git_command, BranchInfo};
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_branches(path: String) -> Result<Vec<BranchInfo>, String> {
+pub async fn get_branches(path: String) -> AppResult<Vec<BranchInfo>> {
     let output = run_git_command(&path, &["branch", "-a", "-vv"])?;
 
     let branches: Vec<BranchInfo> = output
@@ -40,13 +41,13 @@ pub async fn get_branches(path: String) -> Result<Vec<BranchInfo>, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn checkout_branch(path: String, branch: String) -> Result<String, String> {
+pub async fn checkout_branch(path: String, branch: String) -> AppResult<String> {
     run_git_command(&path, &["checkout", &branch])
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn create_branch(path: String, branch: String, checkout: bool) -> Result<String, String> {
+pub async fn create_branch(path: String, branch: String, checkout: bool) -> AppResult<String> {
     if checkout {
         // Create and checkout the new branch
         run_git_command(&path, &["checkout", "-b", &branch])

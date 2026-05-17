@@ -1,17 +1,18 @@
 //! OpenPath / OpenInEditor / OpenTerminal / OpenUrl —— 桥接到 commands::system 的跨平台实现。
 
+use crate::error::AppResult;
 use serde_json::Value;
 
 use super::ctx::expand_home;
 
-pub(super) async fn tool_open_path(args: &Value) -> Result<String, String> {
+pub(super) async fn tool_open_path(args: &Value) -> AppResult<String> {
     let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
     let path = expand_home(path);
     crate::commands::system::open_in_explorer(path.clone()).await?;
     Ok(format!("已在文件管理器中打开：{}", path))
 }
 
-pub(super) async fn tool_open_in_editor(args: &Value) -> Result<String, String> {
+pub(super) async fn tool_open_in_editor(args: &Value) -> AppResult<String> {
     let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
     let path = expand_home(path);
     let editor = args
@@ -31,7 +32,7 @@ pub(super) async fn tool_open_in_editor(args: &Value) -> Result<String, String> 
     ))
 }
 
-pub(super) async fn tool_open_terminal(args: &Value) -> Result<String, String> {
+pub(super) async fn tool_open_terminal(args: &Value) -> AppResult<String> {
     let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
     let path = expand_home(path);
     let terminal = args
@@ -42,7 +43,7 @@ pub(super) async fn tool_open_terminal(args: &Value) -> Result<String, String> {
     Ok(format!("已在终端打开：{}", path))
 }
 
-pub(super) async fn tool_open_url(args: &Value) -> Result<String, String> {
+pub(super) async fn tool_open_url(args: &Value) -> AppResult<String> {
     let url = args
         .get("url")
         .and_then(|v| v.as_str())

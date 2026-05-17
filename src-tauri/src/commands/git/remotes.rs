@@ -1,5 +1,6 @@
 // 远程仓库与同步：remotes / push / pull / fetch / sync_to_remote
 
+use crate::error::AppResult;
 use std::process::Command;
 
 #[cfg(target_os = "windows")]
@@ -12,7 +13,7 @@ use super::CREATE_NO_WINDOW;
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_remotes(path: String) -> Result<Vec<RemoteInfo>, String> {
+pub async fn get_remotes(path: String) -> AppResult<Vec<RemoteInfo>> {
     let output = run_git_command(&path, &["remote", "-v"])?;
 
     let mut remotes: std::collections::HashMap<String, RemoteInfo> = std::collections::HashMap::new();
@@ -44,46 +45,46 @@ pub async fn get_remotes(path: String) -> Result<Vec<RemoteInfo>, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn add_remote(path: String, name: String, url: String) -> Result<(), String> {
+pub async fn add_remote(path: String, name: String, url: String) -> AppResult<()> {
     run_git_command(&path, &["remote", "add", &name, &url])?;
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn verify_remote_url(url: String) -> Result<(), String> {
+pub async fn verify_remote_url(url: String) -> AppResult<()> {
     // 使用 git ls-remote 验证远程仓库 URL 是否有效 (hide console window on Windows)
     #[cfg(target_os = "windows")]
     let output = Command::new("git")
         .args(&["ls-remote", "--exit-code", &url])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| format!("执行 git 命令失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("执行 git 命令失败: {}", e)))?;
 
     #[cfg(not(target_os = "windows"))]
     let output = Command::new("git")
         .args(&["ls-remote", "--exit-code", &url])
         .output()
-        .map_err(|e| format!("执行 git 命令失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("执行 git 命令失败: {}", e)))?;
 
     if output.status.success() {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("无法连接到远程仓库: {}", stderr.trim()))
+        Err(crate::error::AppError::from(format!("无法连接到远程仓库: {}", stderr.trim())))
     }
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn remove_remote(path: String, name: String) -> Result<(), String> {
+pub async fn remove_remote(path: String, name: String) -> AppResult<()> {
     run_git_command(&path, &["remote", "remove", &name])?;
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_push(path: String, remote: String, branch: String, force: bool) -> Result<String, String> {
+pub async fn git_push(path: String, remote: String, branch: String, force: bool) -> AppResult<String> {
     let mut args = vec!["push", &remote, &branch];
     if force {
         args.push("--force");
@@ -93,13 +94,13 @@ pub async fn git_push(path: String, remote: String, branch: String, force: bool)
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_pull(path: String, remote: String, branch: String) -> Result<String, String> {
+pub async fn git_pull(path: String, remote: String, branch: String) -> AppResult<String> {
     run_git_command(&path, &["pull", &remote, &branch])
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_fetch(path: String, remote: Option<String>) -> Result<String, String> {
+pub async fn git_fetch(path: String, remote: Option<String>) -> AppResult<String> {
     match remote {
         Some(r) => run_git_command(&path, &["fetch", &r]),
         None => run_git_command(&path, &["fetch", "--all"]),
@@ -114,7 +115,7 @@ pub async fn sync_to_remote(
     target_remote: String,
     sync_all_branches: bool,
     force: bool,
-) -> Result<String, String> {
+) -> AppResult<String> {
     // First, fetch all branches from source remote to ensure we have latest refs
     run_git_command(&path, &["fetch", &source_remote, "--prune"])?;
 
@@ -142,7 +143,7 @@ pub async fn sync_to_remote(
             .collect();
 
         if branches.is_empty() {
-            return Err("No branches found to sync".to_string());
+            return Err(crate::error::AppError::from("No branches found to sync".to_string()));
         }
 
         // Sort branches to push default branch first (important for new repos)

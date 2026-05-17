@@ -1,6 +1,7 @@
 // Claude Code 检测与扫描：check_*、scan_*、get_*_version、parse_version 等
 
 #[allow(unused_imports)]
+use crate::error::AppResult;
 use std::fs;
 use std::path::PathBuf;
 #[allow(unused_imports)]
@@ -14,7 +15,7 @@ use super::{
 /// 检查所有环境的 Claude Code 安装情况
 #[tauri::command]
 #[specta::specta]
-pub async fn check_all_claude_installations() -> Result<Vec<ClaudeCodeInfo>, String> {
+pub async fn check_all_claude_installations() -> AppResult<Vec<ClaudeCodeInfo>> {
     let mut results = vec![];
 
     // 检查主机环境
@@ -38,7 +39,7 @@ pub async fn check_all_claude_installations() -> Result<Vec<ClaudeCodeInfo>, Str
 /// 根据指定路径检查 Claude Code 安装
 #[tauri::command]
 #[specta::specta]
-pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo, String> {
+pub async fn check_claude_by_path(claude_path: String) -> AppResult<ClaudeCodeInfo> {
     println!("[DEBUG] check_claude_by_path called with: {:?}", claude_path);
     println!("[DEBUG] Path length: {}", claude_path.len());
     println!(
@@ -70,12 +71,12 @@ pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo,
     let path = PathBuf::from(&claude_path);
 
     if !path.exists() {
-        return Err(format!(
+        return Err(crate::error::AppError::from(format!(
             "路径不存在。\n\n收到的路径: {}\n路径长度: {}\n前20字节: {:?}\n\n请检查路径是否正确，然后重试。",
             claude_path,
             claude_path.len(),
             &claude_path.as_bytes()[..std::cmp::min(20, claude_path.len())]
-        ));
+        )));
     }
 
     let mut info = ClaudeCodeInfo {
@@ -135,7 +136,7 @@ pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo,
 
 /// 通过 WSL UNC 路径检查 Claude Code 安装
 #[cfg(target_os = "windows")]
-pub(super) async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<ClaudeCodeInfo, String> {
+pub(super) async fn check_claude_by_wsl_unc_path(unc_path: &str) -> AppResult<ClaudeCodeInfo> {
     println!("[DEBUG] check_claude_by_wsl_unc_path called with: {:?}", unc_path);
 
     let clean_path = unc_path.trim_start_matches("\\\\?\\");
@@ -152,7 +153,7 @@ pub(super) async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<Claud
     } else if let Some(pos) = lower_path.find("wsl$/") {
         (pos + 5, pos + 5)
     } else {
-        return Err("无效的 WSL 路径格式".to_string());
+        return Err(crate::error::AppError::from("无效的 WSL 路径格式".to_string()));
     };
 
     let path_without_prefix = &clean_path[distro_start..];
@@ -160,7 +161,7 @@ pub(super) async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<Claud
 
     let parts: Vec<&str> = path_without_prefix.splitn(2, '\\').collect();
     if parts.len() < 2 {
-        return Err("无效的 WSL 路径格式：无法解析发行版名称".to_string());
+        return Err(crate::error::AppError::from("无效的 WSL 路径格式：无法解析发行版名称".to_string()));
     }
 
     let distro = parts[0];
@@ -200,10 +201,10 @@ pub(super) async fn check_claude_by_wsl_unc_path(unc_path: &str) -> Result<Claud
     };
 
     if !file_exists {
-        return Err(format!(
+        return Err(crate::error::AppError::from(format!(
             "WSL 中路径不存在: {} (Linux 路径: {})",
             unc_path, linux_path
-        ));
+        )));
     }
 
     info.installed = true;
@@ -475,11 +476,11 @@ fn get_host_name() -> String {
 
 /// 获取 WSL 发行版列表
 #[cfg(target_os = "windows")]
-async fn get_wsl_distros() -> Result<Vec<String>, String> {
+async fn get_wsl_distros() -> AppResult<Vec<String>> {
     let output = new_command("wsl")
         .args(["--list", "--quiet"])
         .output()
-        .map_err(|e| format!("执行 wsl 命令失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("执行 wsl 命令失败: {}", e)))?;
 
     if !output.status.success() {
         return Ok(vec![]);

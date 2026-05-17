@@ -1,5 +1,6 @@
 //! 会话级任务（前端任务面板）：存储 + 工具实现 + Tauri 命令。
 
+use crate::error::AppResult;
 use std::fs;
 
 use serde::{Deserialize, Serialize};
@@ -22,29 +23,29 @@ pub struct ChatTask {
     pub updated_at: String,
 }
 
-pub(super) fn read_tasks(session_id: &str) -> Result<Vec<ChatTask>, String> {
+pub(super) fn read_tasks(session_id: &str) -> AppResult<Vec<ChatTask>> {
     let path = session_tasks_path(session_id)?;
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let text = fs::read_to_string(&path).map_err(|e| format!("读取任务失败: {}", e))?;
-    serde_json::from_str(&text).map_err(|e| format!("解析任务失败: {}", e))
+    let text = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取任务失败: {}", e)))?;
+    serde_json::from_str(&text).map_err(|e| crate::error::AppError::from(format!("解析任务失败: {}", e)))
 }
 
-pub(super) fn write_tasks(session_id: &str, tasks: &[ChatTask]) -> Result<(), String> {
+pub(super) fn write_tasks(session_id: &str, tasks: &[ChatTask]) -> AppResult<()> {
     let path = session_tasks_path(session_id)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
     }
-    let text = serde_json::to_string_pretty(tasks).map_err(|e| format!("序列化任务失败: {}", e))?;
-    fs::write(&path, text).map_err(|e| format!("写入任务失败: {}", e))
+    let text = serde_json::to_string_pretty(tasks).map_err(|e| crate::error::AppError::from(format!("序列化任务失败: {}", e)))?;
+    fs::write(&path, text).map_err(|e| crate::error::AppError::from(format!("写入任务失败: {}", e)))
 }
 
 pub(super) fn tool_task_create(
     ctx: &ToolCtx,
     args: &Value,
     app: &AppHandle,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let subject = args
         .get("subject")
         .and_then(|v| v.as_str())
@@ -78,7 +79,7 @@ pub(super) fn tool_task_update(
     ctx: &ToolCtx,
     args: &Value,
     app: &AppHandle,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let task_id = args
         .get("taskId")
         .and_then(|v| v.as_str())
@@ -87,11 +88,11 @@ pub(super) fn tool_task_update(
     let t = tasks
         .iter_mut()
         .find(|t| t.id == task_id)
-        .ok_or_else(|| format!("任务不存在: {}", task_id))?;
+        .ok_or_else(|| crate::error::AppError::from(format!("任务不存在: {}", task_id)))?;
     if let Some(s) = args.get("status").and_then(|v| v.as_str()) {
         match s {
             "pending" | "in_progress" | "completed" => t.status = s.to_string(),
-            _ => return Err(format!("非法 status: {}", s)),
+            _ => return Err(crate::error::AppError::from(format!("非法 status: {}", s))),
         }
     }
     if let Some(s) = args.get("subject").and_then(|v| v.as_str()) {
@@ -106,7 +107,7 @@ pub(super) fn tool_task_update(
     Ok("任务已更新".into())
 }
 
-pub(super) fn tool_task_list(ctx: &ToolCtx) -> Result<String, String> {
+pub(super) fn tool_task_list(ctx: &ToolCtx) -> AppResult<String> {
     let tasks = read_tasks(&ctx.session_id)?;
     if tasks.is_empty() {
         return Ok("（无任务）".into());
@@ -125,7 +126,7 @@ pub(super) fn tool_task_list(ctx: &ToolCtx) -> Result<String, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_chat_tasks(session_id: String) -> Result<Vec<ChatTask>, String> {
+pub async fn list_chat_tasks(session_id: String) -> AppResult<Vec<ChatTask>> {
     read_tasks(&session_id)
 }
 
@@ -137,7 +138,7 @@ pub async fn create_chat_task(
     subject: String,
     description: String,
     active_form: Option<String>,
-) -> Result<ChatTask, String> {
+) -> AppResult<ChatTask> {
     let mut tasks = read_tasks(&session_id)?;
     let task = ChatTask {
         id: generate_id(),
@@ -164,12 +165,12 @@ pub async fn update_chat_task(
     status: Option<String>,
     subject: Option<String>,
     description: Option<String>,
-) -> Result<ChatTask, String> {
+) -> AppResult<ChatTask> {
     let mut tasks = read_tasks(&session_id)?;
     let t = tasks
         .iter_mut()
         .find(|t| t.id == task_id)
-        .ok_or_else(|| format!("任务不存在: {}", task_id))?;
+        .ok_or_else(|| crate::error::AppError::from(format!("任务不存在: {}", task_id)))?;
     if let Some(s) = status {
         t.status = s;
     }
@@ -192,7 +193,7 @@ pub async fn delete_chat_task(
     app: AppHandle,
     session_id: String,
     task_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let mut tasks = read_tasks(&session_id)?;
     tasks.retain(|t| t.id != task_id);
     write_tasks(&session_id, &tasks)?;

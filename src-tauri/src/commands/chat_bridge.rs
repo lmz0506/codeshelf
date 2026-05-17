@@ -13,6 +13,7 @@
 //!   POST /reply                   → body: {id, clientId, content} → 200 {}
 //!   GET  /health                  → 200 {ok: true}
 
+use crate::error::AppResult;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -56,40 +57,40 @@ fn load_settings_sync() -> Option<AppSettings> {
     serde_json::from_str::<AppSettings>(&content).ok()
 }
 
-async fn fetch_pending(client: &reqwest::Client, relay: &str, client_id: &str) -> Result<Vec<PendingMessage>, String> {
+async fn fetch_pending(client: &reqwest::Client, relay: &str, client_id: &str) -> AppResult<Vec<PendingMessage>> {
     let url = format!("{}/pending?clientId={}", relay.trim_end_matches('/'), urlencoding::encode(client_id));
-    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    let resp = client.get(&url).send().await.map_err(|e| crate::error::AppError::from(e.to_string()))?;
     if !resp.status().is_success() {
-        return Err(format!("relay {} returned {}", url, resp.status()));
+        return Err(crate::error::AppError::from(format!("relay {} returned {}", url, resp.status())));
     }
-    resp.json::<Vec<PendingMessage>>().await.map_err(|e| format!("解析 pending 失败: {}", e))
+    resp.json::<Vec<PendingMessage>>().await.map_err(|e| crate::error::AppError::from(format!("解析 pending 失败: {}", e)))
 }
 
-async fn post_reply(client: &reqwest::Client, relay: &str, client_id: &str, id: &str, content: &str) -> Result<(), String> {
+async fn post_reply(client: &reqwest::Client, relay: &str, client_id: &str, id: &str, content: &str) -> AppResult<()> {
     let url = format!("{}/reply", relay.trim_end_matches('/'));
     let resp = client
         .post(&url)
         .json(&json!({"id": id, "clientId": client_id, "content": content}))
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
     if !resp.status().is_success() {
-        return Err(format!("reply {} returned {}", url, resp.status()));
+        return Err(crate::error::AppError::from(format!("reply {} returned {}", url, resp.status())));
     }
     Ok(())
 }
 
-async fn run_llm(provider_id: &str, model_id: &str, prompt: &str) -> Result<String, String> {
+async fn run_llm(provider_id: &str, model_id: &str, prompt: &str) -> AppResult<String> {
     let providers = crate::commands::settings::get_ai_providers().await?;
     let provider = providers.iter().find(|p| p.id == provider_id)
-        .ok_or_else(|| format!("provider 未找到: {}", provider_id))?;
+        .ok_or_else(|| crate::error::AppError::from(format!("provider 未找到: {}", provider_id)))?;
     let model = provider.models.iter().find(|m| m.id == model_id)
-        .ok_or_else(|| format!("model 未找到: {}", model_id))?;
+        .ok_or_else(|| crate::error::AppError::from(format!("model 未找到: {}", model_id)))?;
     let url = format!("{}/chat/completions", provider.base_url.trim_end_matches('/'));
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
     let mut req = client.post(&url).json(&json!({
         "model": model.model,
         "messages": [{"role": "user", "content": prompt}],
@@ -98,13 +99,13 @@ async fn run_llm(provider_id: &str, model_id: &str, prompt: &str) -> Result<Stri
     if let Some(key) = provider.api_key.as_ref() {
         if !key.trim().is_empty() { req = req.bearer_auth(key); }
     }
-    let resp = req.send().await.map_err(|e| format!("LLM 请求失败: {}", e))?;
+    let resp = req.send().await.map_err(|e| crate::error::AppError::from(format!("LLM 请求失败: {}", e)))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("LLM {}: {}", status, text));
+        return Err(crate::error::AppError::from(format!("LLM {}: {}", status, text)));
     }
-    let body: Value = resp.json().await.map_err(|e| e.to_string())?;
+    let body: Value = resp.json().await.map_err(|e| crate::error::AppError::from(e.to_string()))?;
     Ok(body.pointer("/choices/0/message/content").and_then(|v| v.as_str()).unwrap_or("").to_string())
 }
 
@@ -177,13 +178,13 @@ pub async fn notify_reload(app: &AppHandle) {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn chat_bridge_test(relay: String) -> Result<String, String> {
+pub async fn chat_bridge_test(relay: String) -> AppResult<String> {
     let url = format!("{}/health", relay.trim_end_matches('/'));
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client.get(&url).send().await.map_err(|e| format!("请求失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
+    let resp = client.get(&url).send().await.map_err(|e| crate::error::AppError::from(format!("请求失败: {}", e)))?;
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     Ok(format!("HTTP {}: {}", status.as_u16(), text.chars().take(500).collect::<String>()))

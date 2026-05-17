@@ -15,6 +15,7 @@
 //! - file_ops   CopyFile/MoveFile/DeleteFile
 //! - web_fetch  WebFetch（工作流也复用）
 
+use crate::error::AppResult;
 use serde_json::Value;
 use tauri::AppHandle;
 
@@ -36,7 +37,7 @@ pub async fn execute_tool(
     session_id: &str,
     tool_name: &str,
     arguments_json: &str,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let ctx = ctx::load_ctx(session_id).await?;
     let args: Value =
         serde_json::from_str(arguments_json).unwrap_or(Value::Object(Default::default()));
@@ -61,13 +62,13 @@ pub async fn execute_tool(
         "CreateWorkflow" => crate::commands::workflows::tool_create_workflow(&args, app).await,
         "RunWorkflowNow" => crate::commands::workflows::tool_run_workflow_now(&args, app).await,
         "ListWorkflows" => crate::commands::workflows::tool_list_workflows(app).await,
-        _ => Err(format!("未知工具: {}", tool_name)),
+        _ => Err(crate::error::AppError::from(format!("未知工具: {}", tool_name))),
     }
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn chat_list_tools() -> Result<Vec<ToolSchema>, String> {
+pub async fn chat_list_tools() -> AppResult<Vec<ToolSchema>> {
     Ok(all_tools())
 }
 
@@ -78,6 +79,6 @@ pub async fn chat_execute_tool(
     session_id: String,
     tool_name: String,
     arguments_json: String,
-) -> Result<String, String> {
+) -> AppResult<String> {
     execute_tool(&app, &session_id, &tool_name, &arguments_json).await
 }

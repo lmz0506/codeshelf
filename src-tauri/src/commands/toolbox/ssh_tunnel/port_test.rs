@@ -4,6 +4,7 @@
 //   - 命令缺失时回退到原生 TCP connect，行为一致
 
 #[allow(unused_imports)]
+use crate::error::AppResult;
 use std::path::PathBuf;
 #[allow(unused_imports)]
 use std::process::Stdio;
@@ -20,19 +21,19 @@ const TEST_TIMEOUT_SECS: u64 = 3;
 
 #[tauri::command]
 #[specta::specta]
-pub async fn test_ssh_tunnel(tunnel_id: String) -> Result<TestPortResult, String> {
+pub async fn test_ssh_tunnel(tunnel_id: String) -> AppResult<TestPortResult> {
     ensure_tunnels_loaded().await;
     let port = {
         let tunnels = SSH_TUNNELS.lock().await;
         tunnels.get(&tunnel_id).map(|t| t.local_port)
     };
-    let port = port.ok_or_else(|| format!("隧道不存在: {}", tunnel_id))?;
+    let port = port.ok_or_else(|| crate::error::AppError::from(format!("隧道不存在: {}", tunnel_id)))?;
     Ok(test_local_port_inner(port).await)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn test_local_port(port: u16) -> Result<TestPortResult, String> {
+pub async fn test_local_port(port: u16) -> AppResult<TestPortResult> {
     Ok(test_local_port_inner(port).await)
 }
 

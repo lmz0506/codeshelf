@@ -1,22 +1,23 @@
 // 仓库扫描与初始化：scan_directory / is_git_repo / git_init
 
+use crate::error::AppResult;
 use super::{run_git_command, GitRepo};
 
 #[tauri::command]
 #[specta::specta]
-pub async fn scan_directory(path: String, depth: Option<u32>) -> Result<Vec<GitRepo>, String> {
+pub async fn scan_directory(path: String, depth: Option<u32>) -> AppResult<Vec<GitRepo>> {
     let mut repos = Vec::new();
     let scan_depth = depth.unwrap_or(3);
     scan_for_repos(&path, &mut repos, scan_depth)?;
     Ok(repos)
 }
 
-fn scan_for_repos(path: &str, repos: &mut Vec<GitRepo>, depth: u32) -> Result<(), String> {
+fn scan_for_repos(path: &str, repos: &mut Vec<GitRepo>, depth: u32) -> AppResult<()> {
     if depth == 0 {
         return Ok(());
     }
 
-    let entries = std::fs::read_dir(path).map_err(|e| e.to_string())?;
+    let entries = std::fs::read_dir(path).map_err(|e| crate::error::AppError::from(e.to_string()))?;
 
     for entry in entries.flatten() {
         let entry_path = entry.path();
@@ -55,13 +56,13 @@ fn scan_for_repos(path: &str, repos: &mut Vec<GitRepo>, depth: u32) -> Result<()
 
 #[tauri::command]
 #[specta::specta]
-pub async fn is_git_repo(path: String) -> Result<bool, String> {
+pub async fn is_git_repo(path: String) -> AppResult<bool> {
     let git_dir = std::path::Path::new(&path).join(".git");
     Ok(git_dir.exists())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_init(path: String) -> Result<String, String> {
+pub async fn git_init(path: String) -> AppResult<String> {
     run_git_command(&path, &["init"])
 }

@@ -1,5 +1,6 @@
 // SSH 隧道运行时：监听本地端口、转发到远端、统计
 
+use crate::error::AppResult;
 use std::sync::Arc;
 
 use russh::client;
@@ -19,32 +20,32 @@ pub(super) async fn run_tunnel_server(
     remote_port: u16,
     ssh_handle: Arc<Mutex<client::Handle<SshClient>>>,
     controller: Arc<SshTunnelController>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let addr: std::net::SocketAddr = format!("0.0.0.0:{}", local_port)
         .parse()
-        .map_err(|e| format!("解析地址失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析地址失败: {}", e)))?;
 
     let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
-        .map_err(|e| format!("创建 socket 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("创建 socket 失败: {}", e)))?;
     socket
         .set_reuse_address(true)
-        .map_err(|e| format!("设置 SO_REUSEADDR 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("设置 SO_REUSEADDR 失败: {}", e)))?;
     socket
         .set_linger(Some(std::time::Duration::from_secs(0)))
-        .map_err(|e| format!("设置 SO_LINGER 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("设置 SO_LINGER 失败: {}", e)))?;
     socket
         .set_nonblocking(true)
-        .map_err(|e| format!("设置非阻塞失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("设置非阻塞失败: {}", e)))?;
     socket
         .bind(&addr.into())
-        .map_err(|e| format!("绑定端口失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("绑定端口失败: {}", e)))?;
     socket
         .listen(128)
-        .map_err(|e| format!("监听端口失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("监听端口失败: {}", e)))?;
 
     let std_listener: std::net::TcpListener = socket.into();
     let listener = TcpListener::from_std(std_listener)
-        .map_err(|e| format!("创建 TcpListener 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("创建 TcpListener 失败: {}", e)))?;
 
     log::info!(
         "SSH 隧道服务启动: localhost:{} -> ssh -> {}:{}",
@@ -109,7 +110,7 @@ async fn handle_tunnel_connection(
     remote_host: &str,
     remote_port: u16,
     controller: Arc<SshTunnelController>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let channel = {
         let handle = ssh_handle.lock().await;
         handle
@@ -120,7 +121,7 @@ async fn handle_tunnel_connection(
                 peer_addr.port() as u32,
             )
             .await
-            .map_err(|e| format!("打开 direct-tcpip 失败: {}", e))?
+            .map_err(|e| crate::error::AppError::from(format!("打开 direct-tcpip 失败: {}", e)))?
     };
 
     let mut stream = channel.into_stream();

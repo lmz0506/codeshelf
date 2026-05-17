@@ -1,3 +1,4 @@
+use crate::error::AppResult;
 use super::types::DockerCommandResult;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -90,15 +91,15 @@ pub(super) fn run_docker(args: &[&str], cwd: Option<&Path>) -> DockerCommandResu
     }
 }
 
-pub(super) fn project_root(project_path: &str) -> Result<PathBuf, String> {
-    let root = fs::canonicalize(project_path).map_err(|e| format!("项目目录无效: {}", e))?;
+pub(super) fn project_root(project_path: &str) -> AppResult<PathBuf> {
+    let root = fs::canonicalize(project_path).map_err(|e| crate::error::AppError::from(format!("项目目录无效: {}", e)))?;
     if !root.is_dir() {
         return Err("项目路径不是目录".into());
     }
     Ok(root)
 }
 
-fn validate_relative_project_path(rel_path: &str) -> Result<PathBuf, String> {
+fn validate_relative_project_path(rel_path: &str) -> AppResult<PathBuf> {
     let rel = rel_path.trim().trim_start_matches(['/', '\\']);
     if rel.is_empty() {
         return Err("文件路径不能为空".into());
@@ -114,15 +115,15 @@ fn validate_relative_project_path(rel_path: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-pub(super) fn resolve_project_file(root: &Path, rel_path: &str) -> Result<PathBuf, String> {
+pub(super) fn resolve_project_file(root: &Path, rel_path: &str) -> AppResult<PathBuf> {
     let rel = validate_relative_project_path(rel_path)?;
     let full = root.join(rel);
-    let parent = full.parent().ok_or_else(|| "文件路径无效".to_string())?;
+    let parent = full.parent().ok_or_else(|| crate::error::AppError::from("文件路径无效".to_string()))?;
     let parent_canon = if parent.exists() {
-        fs::canonicalize(parent).map_err(|e| format!("父目录无效: {}", e))?
+        fs::canonicalize(parent).map_err(|e| crate::error::AppError::from(format!("父目录无效: {}", e)))?
     } else {
-        fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
-        fs::canonicalize(parent).map_err(|e| format!("父目录无效: {}", e))?
+        fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
+        fs::canonicalize(parent).map_err(|e| crate::error::AppError::from(format!("父目录无效: {}", e)))?
     };
     if !parent_canon.starts_with(root) {
         return Err("路径越界".into());
@@ -130,10 +131,10 @@ pub(super) fn resolve_project_file(root: &Path, rel_path: &str) -> Result<PathBu
     Ok(full)
 }
 
-pub(super) fn resolve_existing_project_file(root: &Path, rel_path: &str) -> Result<PathBuf, String> {
+pub(super) fn resolve_existing_project_file(root: &Path, rel_path: &str) -> AppResult<PathBuf> {
     let rel = validate_relative_project_path(rel_path)?;
     let full = root.join(rel);
-    let canon = fs::canonicalize(&full).map_err(|e| format!("文件无效: {}", e))?;
+    let canon = fs::canonicalize(&full).map_err(|e| crate::error::AppError::from(format!("文件无效: {}", e)))?;
     if !canon.starts_with(root) {
         return Err("路径越界".into());
     }

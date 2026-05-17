@@ -1,5 +1,6 @@
 // HTTP 执行：execute_api_endpoint + 鉴权注入 + Session 缓存 + 在线文档抓取
 
+use crate::error::AppResult;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -33,12 +34,12 @@ pub(super) async fn drop_session_client(group_id: &str) {
     guard.remove(group_id);
 }
 
-fn build_session_base_client() -> Result<reqwest::Client, String> {
+fn build_session_base_client() -> AppResult<reqwest::Client> {
     reqwest::Client::builder()
         .cookie_store(true)
         .timeout(Duration::from_secs(30))
         .build()
-        .map_err(|e| format!("构建 client 失败: {}", e))
+        .map_err(|e| crate::error::AppError::from(format!("构建 client 失败: {}", e)))
 }
 
 fn join_url(base: &str, path: &str) -> String {
@@ -210,7 +211,7 @@ async fn apply_auth(
     base_url_for_relative_login: &str,
     mut builder: reqwest::RequestBuilder,
     client_for_others: &reqwest::Client,
-) -> Result<(reqwest::Client, reqwest::RequestBuilder), String> {
+) -> AppResult<(reqwest::Client, reqwest::RequestBuilder)> {
     match auth {
         ApiAuthConfig::None => Ok((client_for_others.clone(), builder)),
         ApiAuthConfig::Bearer { token } => {
@@ -295,7 +296,7 @@ async fn ensure_session_login(
     credentials_json: &str,
     token_json_path: Option<&str>,
     inject_as: &SessionInject,
-) -> Result<SessionClient, String> {
+) -> AppResult<SessionClient> {
     // 已登录过就直接返回
     match inject_as {
         SessionInject::Header { .. } => {
@@ -318,9 +319,9 @@ async fn ensure_session_login(
 
     let url = join_url(base_url, login_url);
     let method = reqwest::Method::from_bytes(login_method.as_bytes())
-        .map_err(|e| format!("非法 login_method: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("非法 login_method: {}", e)))?;
     let body: Value = serde_json::from_str(credentials_json)
-        .map_err(|e| format!("credentialsJson 不是合法 JSON: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("credentialsJson 不是合法 JSON: {}", e)))?;
 
     let resp = session
         .client
@@ -328,16 +329,16 @@ async fn ensure_session_login(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("登录请求失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("登录请求失败: {}", e)))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!(
+        return Err(crate::error::AppError::from(format!(
             "Session 登录失败 {}: {}",
             status,
             text.chars().take(300).collect::<String>()
-        ));
+        )));
     }
 
     let token: Option<String>;
@@ -346,15 +347,15 @@ async fn ensure_session_login(
             let body: Value = resp
                 .json()
                 .await
-                .map_err(|e| format!("解析登录响应失败: {}", e))?;
+                .map_err(|e| crate::error::AppError::from(format!("解析登录响应失败: {}", e)))?;
             let path = token_json_path.unwrap_or("token");
             token = extract_json_path(&body, path);
             if token.is_none() {
-                return Err(format!(
+                return Err(crate::error::AppError::from(format!(
                     "登录响应中找不到 token（path={}）：{}",
                     path,
                     serde_json::to_string(&body).unwrap_or_default()
-                ));
+                )));
             }
         }
         SessionInject::Cookie => {
@@ -392,13 +393,13 @@ fn resolve_effective_auth<'a>(
 pub async fn execute_api_endpoint(
     endpoint_id: String,
     arguments_json: String,
-) -> Result<ApiExecutionResult, String> {
+) -> AppResult<ApiExecutionResult> {
     // 1. 加载 endpoint 和所属 group
     let endpoints = load_endpoints()?;
     let endpoint = endpoints
         .into_iter()
         .find(|e| e.id == endpoint_id)
-        .ok_or_else(|| format!("未找到接口: {}", endpoint_id))?;
+        .ok_or_else(|| crate::error::AppError::from(format!("未找到接口: {}", endpoint_id)))?;
     let groups = load_groups()?;
     let group = endpoint
         .group_id
@@ -414,7 +415,7 @@ pub async fn execute_api_endpoint(
         json!({})
     } else {
         serde_json::from_str(&arguments_json)
-            .map_err(|e| format!("arguments 不是合法 JSON: {}", e))?
+            .map_err(|e| crate::error::AppError::from(format!("arguments 不是合法 JSON: {}", e)))?
     };
 
     let (mut path_map, mut query_map, mut body) = split_arguments(&args_value, &endpoint.method);
@@ -436,13 +437,13 @@ pub async fn execute_api_endpoint(
 
     // 4. 构建请求
     let method = reqwest::Method::from_bytes(endpoint.method.to_uppercase().as_bytes())
-        .map_err(|e| format!("非法 method: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("非法 method: {}", e)))?;
 
     // 普通 client（非 Session 鉴权用）
     let default_client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
-        .map_err(|e| format!("构建 client 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("构建 client 失败: {}", e)))?;
 
     // 若 path 参数被替换到 URL 里，从 body 里挪掉它们避免重复发送
     if let Some(Value::Object(ref mut m)) = body {
@@ -547,7 +548,7 @@ pub async fn execute_api_endpoint(
     let resp = builder
         .send()
         .await
-        .map_err(|e| format!("请求失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("请求失败: {}", e)))?;
 
     let resp = if matches!(auth, ApiAuthConfig::Session { .. })
         && (resp.status() == reqwest::StatusCode::UNAUTHORIZED
@@ -571,7 +572,7 @@ pub async fn execute_api_endpoint(
     let bytes = resp
         .bytes()
         .await
-        .map_err(|e| format!("读取响应失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取响应失败: {}", e)))?;
     let elapsed_ms = started.elapsed().as_millis() as u64;
     let total_bytes = bytes.len();
     let truncated = total_bytes > trim;
@@ -590,9 +591,9 @@ pub async fn execute_api_endpoint(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fetch_api_document_url(url: String) -> Result<String, String> {
+pub async fn fetch_api_document_url(url: String) -> AppResult<String> {
     let trimmed = url.trim();
-    let parsed = reqwest::Url::parse(trimmed).map_err(|e| format!("URL 不合法: {}", e))?;
+    let parsed = reqwest::Url::parse(trimmed).map_err(|e| crate::error::AppError::from(format!("URL 不合法: {}", e)))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("只支持 http 或 https 链接".into());
     }
@@ -601,21 +602,21 @@ pub async fn fetch_api_document_url(url: String) -> Result<String, String> {
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::limited(5))
         .build()
-        .map_err(|e| format!("构建下载 client 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("构建下载 client 失败: {}", e)))?;
 
     let resp = client
         .get(parsed)
         .send()
         .await
-        .map_err(|e| format!("读取在线文档失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取在线文档失败: {}", e)))?;
     let status = resp.status();
     if !status.is_success() {
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!(
+        return Err(crate::error::AppError::from(format!(
             "在线文档返回 {}: {}",
             status,
             text.chars().take(300).collect::<String>()
-        ));
+        )));
     }
 
     if let Some(len) = resp.content_length() {
@@ -627,10 +628,10 @@ pub async fn fetch_api_document_url(url: String) -> Result<String, String> {
     let bytes = resp
         .bytes()
         .await
-        .map_err(|e| format!("读取在线文档内容失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取在线文档内容失败: {}", e)))?;
     if bytes.len() as u64 > MAX_API_DOCUMENT_BYTES {
         return Err("在线文档超过 10MB，已停止导入".into());
     }
 
-    String::from_utf8(bytes.to_vec()).map_err(|e| format!("在线文档不是 UTF-8 文本: {}", e))
+    String::from_utf8(bytes.to_vec()).map_err(|e| crate::error::AppError::from(format!("在线文档不是 UTF-8 文本: {}", e)))
 }

@@ -1,5 +1,6 @@
 // Group CRUD
 
+use crate::error::AppResult;
 use crate::storage::{current_iso_time, generate_id, ApiGroup};
 
 use super::execute::drop_session_client;
@@ -7,7 +8,7 @@ use super::{load_endpoints, load_groups, write_endpoints, write_groups};
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_api_groups() -> Result<Vec<ApiGroup>, String> {
+pub async fn list_api_groups() -> AppResult<Vec<ApiGroup>> {
     let mut groups = load_groups()?;
     groups.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(groups)
@@ -15,7 +16,7 @@ pub async fn list_api_groups() -> Result<Vec<ApiGroup>, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_api_group(mut group: ApiGroup) -> Result<ApiGroup, String> {
+pub async fn save_api_group(mut group: ApiGroup) -> AppResult<ApiGroup> {
     let mut groups = load_groups()?;
     let now = current_iso_time();
     if group.id.trim().is_empty() {
@@ -43,7 +44,7 @@ pub async fn save_api_group(mut group: ApiGroup) -> Result<ApiGroup, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_api_group(id: String) -> Result<(), String> {
+pub async fn delete_api_group(id: String) -> AppResult<()> {
     let mut groups = load_groups()?;
     groups.retain(|g| g.id != id);
     write_groups(&groups)?;

@@ -1,5 +1,6 @@
 // 端口转发模块 - TCP 流量代理转发，支持连接管理和流量统计
 
+use crate::error::AppResult;
 use super::{current_time, generate_id, ForwardRule, ForwardRuleInput, ForwardStats};
 use crate::storage;
 use once_cell::sync::Lazy;
@@ -43,7 +44,7 @@ async fn ensure_rules_loaded() {
 }
 
 /// 从文件加载转发规则
-fn load_rules_from_file() -> Result<HashMap<String, ForwardRule>, String> {
+fn load_rules_from_file() -> AppResult<HashMap<String, ForwardRule>> {
     let config = storage::get_storage_config()?;
     let path = config.forward_rules_file();
 
@@ -55,7 +56,7 @@ fn load_rules_from_file() -> Result<HashMap<String, ForwardRule>, String> {
     }
 
     let content = fs::read_to_string(&path)
-        .map_err(|e| format!("读取转发规则失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取转发规则失败: {}", e)))?;
 
     // 直接解析为规则数组
     let rules_arr: Vec<ForwardRule> = match serde_json::from_str(&content) {
@@ -82,7 +83,7 @@ fn load_rules_from_file() -> Result<HashMap<String, ForwardRule>, String> {
 }
 
 /// 保存转发规则到文件
-async fn save_rules_to_file() -> Result<(), String> {
+async fn save_rules_to_file() -> AppResult<()> {
     let config = storage::get_storage_config()?;
 
     // 确保数据目录存在
@@ -94,13 +95,13 @@ async fn save_rules_to_file() -> Result<(), String> {
     let rules_data: Vec<&ForwardRule> = rules.values().collect();
 
     let content = serde_json::to_string(&rules_data)
-        .map_err(|e| format!("序列化转发规则失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("序列化转发规则失败: {}", e)))?;
 
     let path = config.forward_rules_file();
     log::info!("保存转发规则到: {:?}", path);
 
     fs::write(&path, content)
-        .map_err(|e| format!("写入转发规则失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("写入转发规则失败: {}", e)))?;
 
     log::info!("转发规则保存成功，共 {} 个规则", rules.len());
     Ok(())
@@ -164,18 +165,18 @@ impl ForwardController {
 /// 添加转发规则
 #[tauri::command]
 #[specta::specta]
-pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, String> {
+pub async fn add_forward_rule(input: ForwardRuleInput) -> AppResult<ForwardRule> {
     ensure_rules_loaded().await;
 
     // 验证端口
     if input.local_port == 0 {
-        return Err("本地端口不能为 0".to_string());
+        return Err(crate::error::AppError::from("本地端口不能为 0".to_string()));
     }
     if input.remote_port == 0 {
-        return Err("远程端口不能为 0".to_string());
+        return Err(crate::error::AppError::from("远程端口不能为 0".to_string()));
     }
     if input.remote_host.is_empty() {
-        return Err("远程主机不能为空".to_string());
+        return Err(crate::error::AppError::from("远程主机不能为空".to_string()));
     }
 
     // 检查端口是否已被使用
@@ -183,7 +184,7 @@ pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, St
         let rules = FORWARD_RULES.lock().await;
         for rule in rules.values() {
             if rule.local_port == input.local_port && rule.status == "running" {
-                return Err(format!("端口 {} 已被其他规则使用", input.local_port));
+                return Err(crate::error::AppError::from(format!("端口 {} 已被其他规则使用", input.local_port)));
             }
         }
     }
@@ -215,7 +216,7 @@ pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, St
         // 移除刚添加的规则，因为无法持久化
         let mut rules = FORWARD_RULES.lock().await;
         rules.remove(&rule_id);
-        return Err(format!("保存转发规则失败: {}", e));
+        return Err(crate::error::AppError::from(format!("保存转发规则失败: {}", e)));
     }
 
     Ok(rule)
@@ -224,7 +225,7 @@ pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, St
 /// 移除转发规则
 #[tauri::command]
 #[specta::specta]
-pub async fn remove_forward_rule(rule_id: String) -> Result<(), String> {
+pub async fn remove_forward_rule(rule_id: String) -> AppResult<()> {
     ensure_rules_loaded().await;
 
     // 先停止转发
@@ -250,7 +251,7 @@ pub async fn remove_forward_rule(rule_id: String) -> Result<(), String> {
             let mut rules = FORWARD_RULES.lock().await;
             rules.insert(rule_id, rule);
         }
-        return Err(format!("保存转发规则失败: {}", e));
+        return Err(crate::error::AppError::from(format!("保存转发规则失败: {}", e)));
     }
 
     Ok(())
@@ -259,7 +260,7 @@ pub async fn remove_forward_rule(rule_id: String) -> Result<(), String> {
 /// 启动转发
 #[tauri::command]
 #[specta::specta]
-pub async fn start_forwarding(rule_id: String) -> Result<(), String> {
+pub async fn start_forwarding(rule_id: String) -> AppResult<()> {
     ensure_rules_loaded().await;
 
     // 获取规则
@@ -268,10 +269,10 @@ pub async fn start_forwarding(rule_id: String) -> Result<(), String> {
         rules.get(&rule_id).cloned()
     };
 
-    let rule = rule.ok_or_else(|| format!("规则不存在: {}", rule_id))?;
+    let rule = rule.ok_or_else(|| crate::error::AppError::from(format!("规则不存在: {}", rule_id)))?;
 
     if rule.status == "running" {
-        return Err("转发已在运行中".to_string());
+        return Err(crate::error::AppError::from("转发已在运行中".to_string()));
     }
 
     // 创建控制器
@@ -319,39 +320,39 @@ async fn run_forward_server(
     remote_host: &str,
     remote_port: u16,
     controller: Arc<ForwardController>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let addr: std::net::SocketAddr = format!("0.0.0.0:{}", local_port)
         .parse()
-        .map_err(|e| format!("解析地址失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析地址失败: {}", e)))?;
 
     // 使用 socket2 创建支持快速关闭的 socket
     let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
-        .map_err(|e| format!("创建 socket 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("创建 socket 失败: {}", e)))?;
 
     // 设置 SO_REUSEADDR，允许在 TIME_WAIT 状态时复用端口
     socket.set_reuse_address(true)
-        .map_err(|e| format!("设置 SO_REUSEADDR 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("设置 SO_REUSEADDR 失败: {}", e)))?;
 
     // 设置 SO_LINGER 为 0，使 socket 关闭时立即释放端口
     socket.set_linger(Some(std::time::Duration::from_secs(0)))
-        .map_err(|e| format!("设置 SO_LINGER 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("设置 SO_LINGER 失败: {}", e)))?;
 
     // 设置非阻塞模式
     socket.set_nonblocking(true)
-        .map_err(|e| format!("设置非阻塞模式失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("设置非阻塞模式失败: {}", e)))?;
 
     // 绑定地址
     socket.bind(&addr.into())
-        .map_err(|e| format!("绑定端口失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("绑定端口失败: {}", e)))?;
 
     // 监听
     socket.listen(128)
-        .map_err(|e| format!("监听端口失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("监听端口失败: {}", e)))?;
 
     // 转换为 tokio TcpListener
     let std_listener: std::net::TcpListener = socket.into();
     let listener = TcpListener::from_std(std_listener)
-        .map_err(|e| format!("创建 TcpListener 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("创建 TcpListener 失败: {}", e)))?;
 
     log::info!("转发服务启动: {} -> {}:{}", local_port, remote_host, remote_port);
 
@@ -415,14 +416,14 @@ async fn handle_connection(
     mut inbound: TcpStream,
     remote_addr: &str,
     controller: Arc<ForwardController>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // 连接超时
     let connect_timeout = Duration::from_secs(10);
 
     let mut outbound = timeout(connect_timeout, TcpStream::connect(remote_addr))
         .await
         .map_err(|_| "连接超时".to_string())?
-        .map_err(|e| format!("连接远程服务器失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("连接远程服务器失败: {}", e)))?;
 
     let (mut ri, mut wi) = inbound.split();
     let (mut ro, mut wo) = outbound.split();
@@ -510,7 +511,7 @@ async fn update_rule_stats(rule_id: &str) {
 /// 停止转发
 #[tauri::command]
 #[specta::specta]
-pub async fn stop_forwarding(rule_id: String) -> Result<(), String> {
+pub async fn stop_forwarding(rule_id: String) -> AppResult<()> {
     log::info!("停止转发: {}", rule_id);
 
     // 发送停止信号
@@ -548,7 +549,7 @@ pub async fn stop_forwarding(rule_id: String) -> Result<(), String> {
 /// 获取所有转发规则
 #[tauri::command]
 #[specta::specta]
-pub async fn get_forward_rules() -> Result<Vec<ForwardRule>, String> {
+pub async fn get_forward_rules() -> AppResult<Vec<ForwardRule>> {
     ensure_rules_loaded().await;
 
     // 先更新所有运行中规则的统计信息
@@ -572,7 +573,7 @@ pub async fn get_forward_rules() -> Result<Vec<ForwardRule>, String> {
 /// 获取单个转发规则
 #[tauri::command]
 #[specta::specta]
-pub async fn get_forward_rule(rule_id: String) -> Result<Option<ForwardRule>, String> {
+pub async fn get_forward_rule(rule_id: String) -> AppResult<Option<ForwardRule>> {
     ensure_rules_loaded().await;
 
     update_rule_stats(&rule_id).await;
@@ -584,7 +585,7 @@ pub async fn get_forward_rule(rule_id: String) -> Result<Option<ForwardRule>, St
 /// 获取转发统计
 #[tauri::command]
 #[specta::specta]
-pub async fn get_forward_stats(rule_id: String) -> Result<ForwardStats, String> {
+pub async fn get_forward_stats(rule_id: String) -> AppResult<ForwardStats> {
     let controllers = FORWARD_CONTROLLERS.lock().await;
     let (connections, bytes_in, bytes_out) = controllers
         .get(&rule_id)
@@ -602,7 +603,7 @@ pub async fn get_forward_stats(rule_id: String) -> Result<ForwardStats, String> 
 /// 更新转发规则
 #[tauri::command]
 #[specta::specta]
-pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> Result<ForwardRule, String> {
+pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> AppResult<ForwardRule> {
     ensure_rules_loaded().await;
 
     // 获取当前规则（用于回滚）
@@ -611,7 +612,7 @@ pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> Re
         rules.get(&rule_id).cloned()
     };
 
-    let current = current_rule.ok_or_else(|| format!("规则不存在: {}", rule_id))?;
+    let current = current_rule.ok_or_else(|| crate::error::AppError::from(format!("规则不存在: {}", rule_id)))?;
     let old_rule = current.clone();
 
     // 如果正在运行，先停止
@@ -637,12 +638,12 @@ pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> Re
         // 回滚：恢复旧规则
         let mut rules = FORWARD_RULES.lock().await;
         rules.insert(rule_id.clone(), old_rule);
-        return Err(format!("保存转发规则失败: {}", e));
+        return Err(crate::error::AppError::from(format!("保存转发规则失败: {}", e)));
     }
 
     let rules = FORWARD_RULES.lock().await;
     rules
         .get(&rule_id)
         .cloned()
-        .ok_or_else(|| "规则不存在".to_string())
+        .ok_or_else(|| crate::error::AppError::from("规则不存在".to_string()))
 }

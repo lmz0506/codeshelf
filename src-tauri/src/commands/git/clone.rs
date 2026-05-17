@@ -1,5 +1,6 @@
 // git clone 与取消：包含进度解析、子进程管理
 
+use crate::error::AppResult;
 use std::io::Read;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -93,7 +94,7 @@ pub async fn git_clone(
     url: String,
     target_dir: String,
     repo_name: String,
-) -> Result<String, String> {
+) -> AppResult<String> {
     use std::path::PathBuf;
     use std::io::BufReader;
     use tauri::Emitter;
@@ -102,14 +103,14 @@ pub async fn git_clone(
     let target_path_str = target_path.to_string_lossy().to_string();
 
     if target_path.exists() {
-        return Err(format!("目录 '{}' 已存在", repo_name));
+        return Err(crate::error::AppError::from(format!("目录 '{}' 已存在", repo_name)));
     }
 
     // Check if another clone is in progress
     {
-        let guard = CLONE_PID.lock().map_err(|e| e.to_string())?;
+        let guard = CLONE_PID.lock().map_err(|e| crate::error::AppError::from(e.to_string()))?;
         if guard.is_some() {
-            return Err("另一个克隆操作正在进行中".to_string());
+            return Err(crate::error::AppError::from("另一个克隆操作正在进行中".to_string()));
         }
     }
 
@@ -131,7 +132,7 @@ pub async fn git_clone(
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("启动 git clone 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("启动 git clone 失败: {}", e)))?;
 
     #[cfg(not(target_os = "windows"))]
     let mut child = Command::new("git")
@@ -139,12 +140,12 @@ pub async fn git_clone(
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("启动 git clone 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("启动 git clone 失败: {}", e)))?;
 
     // Store PID for cancellation
     let pid = child.id();
     {
-        let mut guard = CLONE_PID.lock().map_err(|e| e.to_string())?;
+        let mut guard = CLONE_PID.lock().map_err(|e| crate::error::AppError::from(e.to_string()))?;
         *guard = Some(pid);
     }
 
@@ -186,11 +187,11 @@ pub async fn git_clone(
     }
 
     // Wait for process to complete
-    let status = child.wait().map_err(|e| format!("等待克隆完成失败: {}", e))?;
+    let status = child.wait().map_err(|e| crate::error::AppError::from(format!("等待克隆完成失败: {}", e)))?;
 
     // Clear PID
     {
-        let mut guard = CLONE_PID.lock().map_err(|e| e.to_string())?;
+        let mut guard = CLONE_PID.lock().map_err(|e| crate::error::AppError::from(e.to_string()))?;
         *guard = None;
     }
 
@@ -199,7 +200,7 @@ pub async fn git_clone(
         if target_path.exists() {
             let _ = std::fs::remove_dir_all(&target_path);
         }
-        return Err("克隆已取消".to_string());
+        return Err(crate::error::AppError::from("克隆已取消".to_string()));
     }
 
     if status.success() {
@@ -209,20 +210,20 @@ pub async fn git_clone(
             let _ = std::fs::remove_dir_all(&target_path);
         }
         if last_error_line.is_empty() {
-            Err("克隆失败".to_string())
+            Err(crate::error::AppError::from("克隆失败".to_string()))
         } else {
-            Err(last_error_line)
+            Err(crate::error::AppError::from(last_error_line))
         }
     }
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn cancel_git_clone() -> Result<(), String> {
+pub async fn cancel_git_clone() -> AppResult<()> {
     CLONE_CANCELLED.store(true, Ordering::SeqCst);
 
     let pid = {
-        let guard = CLONE_PID.lock().map_err(|e| e.to_string())?;
+        let guard = CLONE_PID.lock().map_err(|e| crate::error::AppError::from(e.to_string()))?;
         *guard
     };
 

@@ -1,3 +1,4 @@
+use crate::error::AppResult;
 use axum::{
     extract::{Query, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode},
@@ -104,14 +105,14 @@ fn http_router() -> Router {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn mcp_gateway_status() -> Result<McpGatewayStatus, String> {
+pub async fn mcp_gateway_status() -> AppResult<McpGatewayStatus> {
     let guard = APP_HTTP_GATEWAY.lock().await;
     Ok(status_from_gateway(guard.as_ref()))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn mcp_gateway_internal_endpoint() -> Result<Option<McpGatewayInternalEndpoint>, String> {
+pub async fn mcp_gateway_internal_endpoint() -> AppResult<Option<McpGatewayInternalEndpoint>> {
     let status = {
         let guard = APP_HTTP_GATEWAY.lock().await;
         status_from_gateway(guard.as_ref())
@@ -131,12 +132,12 @@ pub async fn mcp_gateway_internal_endpoint() -> Result<Option<McpGatewayInternal
     Ok(Some(McpGatewayInternalEndpoint { url, api_key }))
 }
 
-pub async fn apply_settings_from_storage() -> Result<McpGatewayStatus, String> {
+pub async fn apply_settings_from_storage() -> AppResult<McpGatewayStatus> {
     let settings = crate::commands::settings::get_app_settings().await?;
     apply_settings(&settings).await
 }
 
-pub async fn apply_settings(settings: &AppSettings) -> Result<McpGatewayStatus, String> {
+pub async fn apply_settings(settings: &AppSettings) -> AppResult<McpGatewayStatus> {
     if settings.mcp_gateway_enabled {
         start_gateway(settings.mcp_gateway_host.clone(), settings.mcp_gateway_port).await
     } else {
@@ -144,11 +145,11 @@ pub async fn apply_settings(settings: &AppSettings) -> Result<McpGatewayStatus, 
     }
 }
 
-async fn start_gateway(host: String, port: u16) -> Result<McpGatewayStatus, String> {
+async fn start_gateway(host: String, port: u16) -> AppResult<McpGatewayStatus> {
     storage::init_storage()?;
     let addr: SocketAddr = format!("{}:{}", host, port)
         .parse()
-        .map_err(|e| format!("invalid HTTP bind address: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("invalid HTTP bind address: {}", e)))?;
 
     let mut guard = APP_HTTP_GATEWAY.lock().await;
     if let Some(existing) = guard.as_ref() {
@@ -166,7 +167,7 @@ async fn start_gateway(host: String, port: u16) -> Result<McpGatewayStatus, Stri
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .map_err(|e| format!("HTTP bind failed: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("HTTP bind failed: {}", e)))?;
     let (tx, rx) = oneshot::channel::<()>();
     let task = tokio::spawn(async move {
         let server = axum::serve(listener, http_router()).with_graceful_shutdown(async {
@@ -188,7 +189,7 @@ async fn start_gateway(host: String, port: u16) -> Result<McpGatewayStatus, Stri
     Ok(status_from_gateway(guard.as_ref()))
 }
 
-async fn stop_gateway() -> Result<McpGatewayStatus, String> {
+async fn stop_gateway() -> AppResult<McpGatewayStatus> {
     let mut guard = APP_HTTP_GATEWAY.lock().await;
     if let Some(mut gateway) = guard.take() {
         if let Some(tx) = gateway.shutdown.take() {

@@ -1,11 +1,12 @@
 // 快捷键备忘工具 - 预置 Mac/Windows 常用快捷键，支持自定义编辑、搜索、导入导出
 
+use crate::error::AppResult;
 use crate::storage::config::get_storage_config;
 use super::{ShortcutEntry, ShortcutInput, generate_id};
 
 // ============== 文件读写 ==============
 
-fn read_shortcuts_file() -> Result<Vec<ShortcutEntry>, String> {
+fn read_shortcuts_file() -> AppResult<Vec<ShortcutEntry>> {
     let config = get_storage_config()?;
     let path = config.shortcuts_file();
 
@@ -14,25 +15,25 @@ fn read_shortcuts_file() -> Result<Vec<ShortcutEntry>, String> {
     }
 
     let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("读取快捷键文件失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取快捷键文件失败: {}", e)))?;
 
     if content.trim().is_empty() {
         return Ok(Vec::new());
     }
 
     serde_json::from_str(&content)
-        .map_err(|e| format!("解析快捷键文件失败: {}", e))
+        .map_err(|e| crate::error::AppError::from(format!("解析快捷键文件失败: {}", e)))
 }
 
-fn write_shortcuts_file(shortcuts: &[ShortcutEntry]) -> Result<(), String> {
+fn write_shortcuts_file(shortcuts: &[ShortcutEntry]) -> AppResult<()> {
     let config = get_storage_config()?;
     let path = config.shortcuts_file();
 
     let content = serde_json::to_string_pretty(shortcuts)
-        .map_err(|e| format!("序列化快捷键数据失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("序列化快捷键数据失败: {}", e)))?;
 
     std::fs::write(&path, content)
-        .map_err(|e| format!("写入快捷键文件失败: {}", e))
+        .map_err(|e| crate::error::AppError::from(format!("写入快捷键文件失败: {}", e)))
 }
 
 // ============== 默认数据 ==============
@@ -223,7 +224,7 @@ fn default_shortcuts() -> Vec<ShortcutEntry> {
 /// 获取所有快捷键，首次自动写入默认数据
 #[tauri::command]
 #[specta::specta]
-pub async fn get_shortcuts() -> Result<Vec<ShortcutEntry>, String> {
+pub async fn get_shortcuts() -> AppResult<Vec<ShortcutEntry>> {
     let existing = read_shortcuts_file()?;
 
     if existing.is_empty() {
@@ -238,14 +239,14 @@ pub async fn get_shortcuts() -> Result<Vec<ShortcutEntry>, String> {
 /// 全量保存快捷键（导入用）
 #[tauri::command]
 #[specta::specta]
-pub async fn save_shortcuts(shortcuts: Vec<ShortcutEntry>) -> Result<(), String> {
+pub async fn save_shortcuts(shortcuts: Vec<ShortcutEntry>) -> AppResult<()> {
     write_shortcuts_file(&shortcuts)
 }
 
 /// 添加用户自定义快捷键
 #[tauri::command]
 #[specta::specta]
-pub async fn add_shortcut(input: ShortcutInput) -> Result<ShortcutEntry, String> {
+pub async fn add_shortcut(input: ShortcutInput) -> AppResult<ShortcutEntry> {
     let mut shortcuts = read_shortcuts_file()?;
 
     let entry = ShortcutEntry {
@@ -268,11 +269,11 @@ pub async fn add_shortcut(input: ShortcutInput) -> Result<ShortcutEntry, String>
 /// 编辑快捷键（默认项首次编辑时保存 originalKeys）
 #[tauri::command]
 #[specta::specta]
-pub async fn update_shortcut(id: String, input: ShortcutInput) -> Result<ShortcutEntry, String> {
+pub async fn update_shortcut(id: String, input: ShortcutInput) -> AppResult<ShortcutEntry> {
     let mut shortcuts = read_shortcuts_file()?;
 
     let entry = shortcuts.iter_mut().find(|s| s.id == id)
-        .ok_or_else(|| format!("快捷键 {} 不存在", id))?;
+        .ok_or_else(|| crate::error::AppError::from(format!("快捷键 {} 不存在", id)))?;
 
     // 默认项首次编辑时保存原始按键
     if entry.is_default && !entry.is_modified {
@@ -302,14 +303,14 @@ pub async fn update_shortcut(id: String, input: ShortcutInput) -> Result<Shortcu
 /// 删除快捷键（仅允许删除用户添加的）
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_shortcut(id: String) -> Result<(), String> {
+pub async fn delete_shortcut(id: String) -> AppResult<()> {
     let mut shortcuts = read_shortcuts_file()?;
 
     let idx = shortcuts.iter().position(|s| s.id == id)
-        .ok_or_else(|| format!("快捷键 {} 不存在", id))?;
+        .ok_or_else(|| crate::error::AppError::from(format!("快捷键 {} 不存在", id)))?;
 
     if shortcuts[idx].is_default {
-        return Err("不能删除默认快捷键".to_string());
+        return Err(crate::error::AppError::from("不能删除默认快捷键".to_string()));
     }
 
     shortcuts.remove(idx);
@@ -319,7 +320,7 @@ pub async fn delete_shortcut(id: String) -> Result<(), String> {
 /// 恢复所有默认项 + 保留用户自定义项
 #[tauri::command]
 #[specta::specta]
-pub async fn reset_shortcuts() -> Result<Vec<ShortcutEntry>, String> {
+pub async fn reset_shortcuts() -> AppResult<Vec<ShortcutEntry>> {
     let existing = read_shortcuts_file()?;
 
     // 保留用户自定义项
@@ -340,7 +341,7 @@ pub async fn reset_shortcuts() -> Result<Vec<ShortcutEntry>, String> {
 /// 返回当前平台
 #[tauri::command]
 #[specta::specta]
-pub async fn get_current_platform() -> Result<String, String> {
+pub async fn get_current_platform() -> AppResult<String> {
     if cfg!(target_os = "macos") {
         Ok("mac".to_string())
     } else {

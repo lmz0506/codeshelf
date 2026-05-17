@@ -1,6 +1,7 @@
 // Claude Code 启动：在终端中运行 claude，含 Windows/macOS/Linux/WSL 各分支
 
 #[allow(unused_imports)]
+use crate::error::AppResult;
 use std::path::PathBuf;
 #[allow(unused_imports)]
 use std::process::Command;
@@ -54,7 +55,7 @@ pub async fn launch_claude_in_terminal(
     terminal_path: Option<String>,
     env_type: Option<String>,
     env_name: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let dir = work_dir.unwrap_or_else(|| {
         dirs::home_dir()
             .map(|p| p.to_string_lossy().to_string())
@@ -98,9 +99,9 @@ pub async fn launch_claude_in_terminal(
                             .args(&wsl_args[..wsl_args.len() - 4])
                             .creation_flags(CREATE_NEW_CONSOLE)
                             .spawn()
-                            .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                            .map_err(|e| crate::error::AppError::from(format!("启动自定义终端失败: {}", e)))?;
                     } else {
-                        return Err("未提供自定义终端路径".to_string());
+                        return Err(crate::error::AppError::from("未提供自定义终端路径".to_string()));
                     }
                 }
                 _ => {
@@ -114,7 +115,7 @@ pub async fn launch_claude_in_terminal(
                             .args(&wsl_args)
                             .creation_flags(CREATE_NEW_CONSOLE)
                             .spawn()
-                            .map_err(|e| format!("启动终端失败: {}", e))?;
+                            .map_err(|e| crate::error::AppError::from(format!("启动终端失败: {}", e)))?;
                     }
                 }
             }
@@ -131,7 +132,7 @@ pub async fn launch_claude_in_terminal(
                         ])
                         .creation_flags(CREATE_NEW_CONSOLE)
                         .spawn()
-                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                        .map_err(|e| crate::error::AppError::from(format!("启动终端失败: {}", e)))?;
                 }
                 "cmd" => {
                     let cmd_path = terminal_path.as_deref().unwrap_or("cmd");
@@ -139,7 +140,7 @@ pub async fn launch_claude_in_terminal(
                         .args(["/k", &format!("cd /d \"{}\" && claude", dir)])
                         .creation_flags(CREATE_NEW_CONSOLE)
                         .spawn()
-                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                        .map_err(|e| crate::error::AppError::from(format!("启动终端失败: {}", e)))?;
                 }
                 "custom" => {
                     if let Some(custom) = custom_path {
@@ -147,9 +148,9 @@ pub async fn launch_claude_in_terminal(
                             .arg(&dir)
                             .creation_flags(CREATE_NEW_CONSOLE)
                             .spawn()
-                            .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                            .map_err(|e| crate::error::AppError::from(format!("启动自定义终端失败: {}", e)))?;
                     } else {
-                        return Err("未提供自定义终端路径".to_string());
+                        return Err(crate::error::AppError::from("未提供自定义终端路径".to_string()));
                     }
                 }
                 _ => {
@@ -168,7 +169,7 @@ pub async fn launch_claude_in_terminal(
                             ])
                             .creation_flags(CREATE_NEW_CONSOLE)
                             .spawn()
-                            .map_err(|e| format!("启动终端失败: {}", e))?;
+                            .map_err(|e| crate::error::AppError::from(format!("启动终端失败: {}", e)))?;
                     }
                 }
             }
@@ -201,7 +202,7 @@ pub async fn launch_claude_in_terminal(
                 Command::new("osascript")
                     .args(["-e", &apple_script])
                     .spawn()
-                    .map_err(|e| format!("启动 iTerm 失败: {}", e))?;
+                    .map_err(|e| crate::error::AppError::from(format!("启动 iTerm 失败: {}", e)))?;
             }
             "custom" => {
                 let full_path = get_augmented_path();
@@ -220,22 +221,22 @@ pub async fn launch_claude_in_terminal(
                                 .current_dir(&dir)
                                 .env("PATH", &full_path)
                                 .spawn()
-                                .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                                .map_err(|e| crate::error::AppError::from(format!("启动自定义终端失败: {}", e)))?;
                         } else {
                             Command::new("open")
                                 .args(["-a", &custom, &dir])
                                 .spawn()
-                                .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                                .map_err(|e| crate::error::AppError::from(format!("启动自定义终端失败: {}", e)))?;
                         }
                     } else {
                         Command::new(&custom)
                             .current_dir(&dir)
                             .env("PATH", &full_path)
                             .spawn()
-                            .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                            .map_err(|e| crate::error::AppError::from(format!("启动自定义终端失败: {}", e)))?;
                     }
                 } else {
-                    return Err("未提供自定义终端路径".to_string());
+                    return Err(crate::error::AppError::from("未提供自定义终端路径".to_string()));
                 }
             }
             _ => {
@@ -249,7 +250,7 @@ pub async fn launch_claude_in_terminal(
                 Command::new("osascript")
                     .args(["-e", &apple_script])
                     .spawn()
-                    .map_err(|e| format!("启动 Terminal 失败: {}", e))?;
+                    .map_err(|e| crate::error::AppError::from(format!("启动 Terminal 失败: {}", e)))?;
             }
         }
     }
@@ -278,9 +279,9 @@ pub async fn launch_claude_in_terminal(
                     Command::new(&custom)
                         .current_dir(&dir)
                         .spawn()
-                        .map_err(|e| format!("启动自定义终端失败: {}", e))?;
+                        .map_err(|e| crate::error::AppError::from(format!("启动自定义终端失败: {}", e)))?;
                 } else {
-                    return Err("未提供自定义终端路径".to_string());
+                    return Err(crate::error::AppError::from("未提供自定义终端路径".to_string()));
                 }
             }
             "powershell" => {
@@ -295,7 +296,7 @@ pub async fn launch_claude_in_terminal(
                             cmd.current_dir(&cwd);
                         }
                     }
-                    cmd.spawn().map_err(|e| format!("启动终端失败: {}", e))?;
+                    cmd.spawn().map_err(|e| crate::error::AppError::from(format!("启动终端失败: {}", e)))?;
                 } else {
                     let escaped_path = dir.replace("'", "''");
                     Command::new(ps_path)
@@ -305,7 +306,7 @@ pub async fn launch_claude_in_terminal(
                             &format!("Set-Location -LiteralPath '{}'; claude", escaped_path),
                         ])
                         .spawn()
-                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                        .map_err(|e| crate::error::AppError::from(format!("启动终端失败: {}", e)))?;
                 }
             }
             "cmd" => {
@@ -320,12 +321,12 @@ pub async fn launch_claude_in_terminal(
                             cmd.current_dir(&cwd);
                         }
                     }
-                    cmd.spawn().map_err(|e| format!("启动终端失败: {}", e))?;
+                    cmd.spawn().map_err(|e| crate::error::AppError::from(format!("启动终端失败: {}", e)))?;
                 } else {
                     Command::new(cmd_path)
                         .args(["/k", &format!("cd /d \"{}\" && claude", dir)])
                         .spawn()
-                        .map_err(|e| format!("启动终端失败: {}", e))?;
+                        .map_err(|e| crate::error::AppError::from(format!("启动终端失败: {}", e)))?;
                 }
             }
             _ => {
@@ -362,7 +363,7 @@ pub async fn launch_claude_in_terminal(
                             }
                         }
                         if !opened {
-                            return Err("未找到可用的终端程序".to_string());
+                            return Err(crate::error::AppError::from("未找到可用的终端程序".to_string()));
                         }
                     }
                 } else {
@@ -386,7 +387,7 @@ pub async fn launch_claude_in_terminal(
                         }
                     }
                     if !opened {
-                        return Err("未找到可用的终端程序".to_string());
+                        return Err(crate::error::AppError::from("未找到可用的终端程序".to_string()));
                     }
                 }
             }

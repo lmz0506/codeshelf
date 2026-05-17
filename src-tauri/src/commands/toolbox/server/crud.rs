@@ -1,5 +1,6 @@
 // 静态服务 CRUD：create / stop / remove / get / update
 
+use crate::error::AppResult;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -12,21 +13,21 @@ use super::{
 /// 创建服务
 #[tauri::command]
 #[specta::specta]
-pub async fn create_server(input: ServerConfigInput) -> Result<ServerConfig, String> {
+pub async fn create_server(input: ServerConfigInput) -> AppResult<ServerConfig> {
     ensure_servers_loaded().await;
 
     // 验证
     if input.port == 0 {
-        return Err("端口不能为 0".to_string());
+        return Err(crate::error::AppError::from("端口不能为 0".to_string()));
     }
     if input.root_dir.is_empty() {
-        return Err("根目录不能为空".to_string());
+        return Err(crate::error::AppError::from("根目录不能为空".to_string()));
     }
 
     // 检查目录是否存在
     let root_path = PathBuf::from(&input.root_dir);
     if !root_path.exists() {
-        return Err(format!("目录不存在: {}", input.root_dir));
+        return Err(crate::error::AppError::from(format!("目录不存在: {}", input.root_dir)));
     }
 
     // 检查端口是否已被使用
@@ -34,7 +35,7 @@ pub async fn create_server(input: ServerConfigInput) -> Result<ServerConfig, Str
         let servers = SERVERS.lock().await;
         for server in servers.values() {
             if server.port == input.port && server.status == "running" {
-                return Err(format!("端口 {} 已被其他服务使用", input.port));
+                return Err(crate::error::AppError::from(format!("端口 {} 已被其他服务使用", input.port)));
             }
         }
     }
@@ -87,7 +88,7 @@ pub async fn create_server(input: ServerConfigInput) -> Result<ServerConfig, Str
         // 移除刚添加的配置，因为无法持久化
         let mut servers = SERVERS.lock().await;
         servers.remove(&server_id);
-        return Err(format!("保存服务配置失败: {}", e));
+        return Err(crate::error::AppError::from(format!("保存服务配置失败: {}", e)));
     }
 
     Ok(config)
@@ -96,7 +97,7 @@ pub async fn create_server(input: ServerConfigInput) -> Result<ServerConfig, Str
 /// 停止服务
 #[tauri::command]
 #[specta::specta]
-pub async fn stop_server(server_id: String) -> Result<(), String> {
+pub async fn stop_server(server_id: String) -> AppResult<()> {
     log::info!("停止服务: {}", server_id);
 
     // 发送停止信号
@@ -140,7 +141,7 @@ pub async fn stop_server(server_id: String) -> Result<(), String> {
 /// 启动服务
 #[tauri::command]
 #[specta::specta]
-pub async fn start_server(server_id: String) -> Result<String, String> {
+pub async fn start_server(server_id: String) -> AppResult<String> {
     ensure_servers_loaded().await;
 
     // 获取配置
@@ -149,10 +150,10 @@ pub async fn start_server(server_id: String) -> Result<String, String> {
         servers.get(&server_id).cloned()
     };
 
-    let config = config.ok_or_else(|| format!("服务不存在: {}", server_id))?;
+    let config = config.ok_or_else(|| crate::error::AppError::from(format!("服务不存在: {}", server_id)))?;
 
     if config.status == "running" {
-        return Err("服务已在运行中".to_string());
+        return Err(crate::error::AppError::from("服务已在运行中".to_string()));
     }
 
     // 创建控制器
@@ -237,7 +238,7 @@ pub async fn start_server(server_id: String) -> Result<String, String> {
 /// 移除服务
 #[tauri::command]
 #[specta::specta]
-pub async fn remove_server(server_id: String) -> Result<(), String> {
+pub async fn remove_server(server_id: String) -> AppResult<()> {
     ensure_servers_loaded().await;
 
     // 先停止服务
@@ -263,7 +264,7 @@ pub async fn remove_server(server_id: String) -> Result<(), String> {
             let mut servers = SERVERS.lock().await;
             servers.insert(server_id, config);
         }
-        return Err(format!("保存服务配置失败: {}", e));
+        return Err(crate::error::AppError::from(format!("保存服务配置失败: {}", e)));
     }
 
     Ok(())
@@ -272,7 +273,7 @@ pub async fn remove_server(server_id: String) -> Result<(), String> {
 /// 获取所有服务
 #[tauri::command]
 #[specta::specta]
-pub async fn get_servers() -> Result<Vec<ServerConfig>, String> {
+pub async fn get_servers() -> AppResult<Vec<ServerConfig>> {
     ensure_servers_loaded().await;
 
     let servers = SERVERS.lock().await;
@@ -282,7 +283,7 @@ pub async fn get_servers() -> Result<Vec<ServerConfig>, String> {
 /// 获取单个服务
 #[tauri::command]
 #[specta::specta]
-pub async fn get_server(server_id: String) -> Result<Option<ServerConfig>, String> {
+pub async fn get_server(server_id: String) -> AppResult<Option<ServerConfig>> {
     ensure_servers_loaded().await;
 
     let servers = SERVERS.lock().await;
@@ -292,7 +293,7 @@ pub async fn get_server(server_id: String) -> Result<Option<ServerConfig>, Strin
 /// 更新服务配置
 #[tauri::command]
 #[specta::specta]
-pub async fn update_server(server_id: String, input: ServerConfigInput) -> Result<ServerConfig, String> {
+pub async fn update_server(server_id: String, input: ServerConfigInput) -> AppResult<ServerConfig> {
     ensure_servers_loaded().await;
 
     // 获取当前配置（用于回滚）
@@ -301,7 +302,7 @@ pub async fn update_server(server_id: String, input: ServerConfigInput) -> Resul
         servers.get(&server_id).cloned()
     };
 
-    let current = current.ok_or_else(|| format!("服务不存在: {}", server_id))?;
+    let current = current.ok_or_else(|| crate::error::AppError::from(format!("服务不存在: {}", server_id)))?;
     let old_config = current.clone();
 
     // 如果正在运行，先停止
@@ -352,12 +353,12 @@ pub async fn update_server(server_id: String, input: ServerConfigInput) -> Resul
         // 回滚：恢复旧配置
         let mut servers = SERVERS.lock().await;
         servers.insert(server_id.clone(), old_config);
-        return Err(format!("保存服务配置失败: {}", e));
+        return Err(crate::error::AppError::from(format!("保存服务配置失败: {}", e)));
     }
 
     let servers = SERVERS.lock().await;
     servers
         .get(&server_id)
         .cloned()
-        .ok_or_else(|| "服务不存在".to_string())
+        .ok_or_else(|| crate::error::AppError::from("服务不存在".to_string()))
 }

@@ -1,5 +1,6 @@
 // 提交历史、详情、文件变更、搜索
 
+use crate::error::AppResult;
 use super::{run_git_command, CommitFileChange, CommitInfo};
 
 /// 解析分支/标签引用
@@ -82,7 +83,7 @@ fn get_commit_stats_sync(path: &str, commit_hash: &str) -> Option<(u32, u32, u32
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_commit_history(path: String, limit: Option<u32>, ref_name: Option<String>) -> Result<Vec<CommitInfo>, String> {
+pub async fn get_commit_history(path: String, limit: Option<u32>, ref_name: Option<String>) -> AppResult<Vec<CommitInfo>> {
     let limit_str = limit.unwrap_or(50).to_string();
 
     // 使用 %x1f (Unit Separator) 作为字段分隔符，%x1e (Record Separator) 作为提交分隔符
@@ -159,7 +160,7 @@ pub async fn get_commit_history(path: String, limit: Option<u32>, ref_name: Opti
 /// 获取单个提交的详细信息（用于按需加载）
 #[tauri::command]
 #[specta::specta]
-pub async fn get_commit_detail(path: String, commit_hash: String) -> Result<CommitInfo, String> {
+pub async fn get_commit_detail(path: String, commit_hash: String) -> AppResult<CommitInfo> {
     let format = [
         "%H", "%h", "%s", "%an", "%ae", "%aI", "%b", "%D", "%P",
     ]
@@ -170,7 +171,7 @@ pub async fn get_commit_detail(path: String, commit_hash: String) -> Result<Comm
 
     let parts: Vec<&str> = output.trim().split('\x1f').collect();
     if parts.len() < 9 {
-        return Err("Invalid commit format".to_string());
+        return Err(crate::error::AppError::from("Invalid commit format".to_string()));
     }
 
     let stats = get_commit_stats_sync(&path, &commit_hash);
@@ -204,7 +205,7 @@ pub async fn get_commit_detail(path: String, commit_hash: String) -> Result<Comm
 pub async fn get_commit_files(
     path: String,
     commit_hash: String,
-) -> Result<Vec<CommitFileChange>, String> {
+) -> AppResult<Vec<CommitFileChange>> {
     let args = vec![
         "show",
         "--numstat",
@@ -246,7 +247,7 @@ pub async fn search_commits(
     query: String,
     search_type: Option<String>,
     limit: Option<u32>,
-) -> Result<Vec<CommitInfo>, String> {
+) -> AppResult<Vec<CommitInfo>> {
     let limit_str = limit.unwrap_or(50).to_string();
     let format = [
         "%H", "%h", "%s", "%an", "%ae", "%aI", "%b", "%D", "%P",

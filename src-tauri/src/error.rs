@@ -64,6 +64,14 @@ impl From<&str> for AppError {
     }
 }
 
+// 让尚未迁移的、仍返回 `Result<_, String>` 的旧函数能用 `?` 吃下 `AppResult`。
+// 迁移完成后可以删掉。
+impl From<AppError> for String {
+    fn from(e: AppError) -> Self {
+        e.to_string()
+    }
+}
+
 // Tauri 用 serde 序列化命令返回值（包括 Err 分支）。前端旧契约只期望字符串错误，
 // 所以这里把整个 enum 序列化成 Display 文本，保持兼容。
 impl Serialize for AppError {

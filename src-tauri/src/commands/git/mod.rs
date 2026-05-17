@@ -1,5 +1,6 @@
 // Git 工具模块：类型、共享 helpers 与子模块声明
 
+use crate::error::AppResult;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
@@ -106,26 +107,26 @@ pub struct GitCloneProgress {
 }
 
 /// 执行 `git -C <path> <args>` 并返回 stdout（trim 后），失败返回 stderr
-pub(super) fn run_git_command(path: &str, args: &[&str]) -> Result<String, String> {
+pub(super) fn run_git_command(path: &str, args: &[&str]) -> AppResult<String> {
     #[cfg(target_os = "windows")]
     let output = Command::new("git")
         .args(["-C", path])
         .args(args)
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
 
     #[cfg(not(target_os = "windows"))]
     let output = Command::new("git")
         .args(["-C", path])
         .args(args)
         .output()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        Err(crate::error::AppError::from(String::from_utf8_lossy(&output.stderr).trim().to_string()))
     }
 }
 

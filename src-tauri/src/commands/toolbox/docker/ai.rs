@@ -1,3 +1,4 @@
+use crate::error::AppResult;
 use super::types::{DockerAiGenerateInput, DockerAiGenerateOutput};
 use super::utils::{project_root, read_project_context, resolve_existing_project_file};
 use serde_json::{json, Value};
@@ -21,7 +22,7 @@ fn extract_dockerfile_content(text: &str) -> String {
 
 pub(super) async fn generate_dockerfile_with_ai(
     input: DockerAiGenerateInput,
-) -> Result<DockerAiGenerateOutput, String> {
+) -> AppResult<DockerAiGenerateOutput> {
     let root = project_root(&input.project_path)?;
     let providers = crate::commands::settings::get_ai_providers().await?;
     let provider = if let Some(provider_id) = input
@@ -32,27 +33,27 @@ pub(super) async fn generate_dockerfile_with_ai(
         providers
             .iter()
             .find(|p| p.id == provider_id)
-            .ok_or_else(|| format!("未找到 AI 供应商: {}", provider_id))?
+            .ok_or_else(|| crate::error::AppError::from(format!("未找到 AI 供应商: {}", provider_id)))?
     } else {
         providers
             .iter()
             .find(|p| p.enabled && p.is_default_provider)
             .or_else(|| providers.iter().find(|p| p.enabled))
-            .ok_or_else(|| "未配置可用的 AI 供应商，请先在 AI 供应商中启用模型".to_string())?
+            .ok_or_else(|| crate::error::AppError::from("未配置可用的 AI 供应商，请先在 AI 供应商中启用模型".to_string()))?
     };
     let model = if let Some(model_id) = input.model_id.as_deref().filter(|s| !s.trim().is_empty()) {
         provider
             .models
             .iter()
             .find(|m| m.id == model_id)
-            .ok_or_else(|| format!("未找到 AI 模型: {}", model_id))?
+            .ok_or_else(|| crate::error::AppError::from(format!("未找到 AI 模型: {}", model_id)))?
     } else {
         provider
             .models
             .iter()
             .find(|m| m.enabled && m.is_default)
             .or_else(|| provider.models.iter().find(|m| m.enabled))
-            .ok_or_else(|| "当前 AI 供应商没有启用的模型".to_string())?
+            .ok_or_else(|| crate::error::AppError::from("当前 AI 供应商没有启用的模型".to_string()))?
     };
 
     let dockerfile_path = input
@@ -95,7 +96,7 @@ pub(super) async fn generate_dockerfile_with_ai(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
     let mut req = client.post(&url).json(&json!({
         "model": model.model,
         "messages": [{"role": "user", "content": prompt}],
@@ -109,16 +110,16 @@ pub(super) async fn generate_dockerfile_with_ai(
     let resp = req
         .send()
         .await
-        .map_err(|e| format!("AI 请求失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("AI 请求失败: {}", e)))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("AI {}: {}", status, text));
+        return Err(crate::error::AppError::from(format!("AI {}: {}", status, text)));
     }
     let body: Value = resp
         .json()
         .await
-        .map_err(|e| format!("AI 响应解析失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("AI 响应解析失败: {}", e)))?;
     let content = body
         .pointer("/choices/0/message/content")
         .and_then(|v| v.as_str())

@@ -1,5 +1,6 @@
 // SSH 认证：解析 ~/.ssh/config、列出 host 别名、connect + authenticate
 
+use crate::error::AppResult;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -12,9 +13,9 @@ use super::super::{SshAuthMethod, SshTunnel};
 use super::SshClient;
 
 /// 解析 ~/.ssh/config 中某个 Host 别名，返回 (user, host, port, identity_files)
-fn resolve_ssh_config(alias: &str) -> Result<(String, String, u16, Vec<PathBuf>), String> {
+fn resolve_ssh_config(alias: &str) -> AppResult<(String, String, u16, Vec<PathBuf>)> {
     let cfg = russh_config::parse_home(alias)
-        .map_err(|e| format!("解析 ~/.ssh/config 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析 ~/.ssh/config 失败: {}", e)))?;
     let user = cfg.user();
     let host = cfg.host().to_string();
     let port = cfg.port();
@@ -60,7 +61,7 @@ pub(super) fn list_host_aliases_from_config() -> Vec<String> {
 }
 
 /// 连接 SSH 并完成认证，返回 client handle
-pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> Result<client::Handle<SshClient>, String> {
+pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> AppResult<client::Handle<SshClient>> {
     let config = Arc::new(client::Config {
         // None = 不做 inactivity 检测；保活由 keepalive_interval 负责。
         // 之前误用 Some(Duration::from_secs(0)) 反而会"0 秒后超时"，立刻断开。
@@ -81,10 +82,10 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> Result<clien
     };
 
     if effective_user.is_empty() {
-        return Err("SSH 用户名不能为空".to_string());
+        return Err(crate::error::AppError::from("SSH 用户名不能为空".to_string()));
     }
     if effective_host.is_empty() {
-        return Err("SSH 主机不能为空".to_string());
+        return Err(crate::error::AppError::from("SSH 主机不能为空".to_string()));
     }
 
     log::info!(
@@ -97,23 +98,23 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> Result<clien
     let mut session =
         client::connect(config, (effective_host.as_str(), effective_port), SshClient)
             .await
-            .map_err(|e| format!("SSH 连接失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("SSH 连接失败: {}", e)))?;
 
     let success = match &tunnel.auth {
         SshAuthMethod::Password { password } => session
             .authenticate_password(&effective_user, password)
             .await
-            .map_err(|e| format!("SSH 密码认证失败: {}", e))?
+            .map_err(|e| crate::error::AppError::from(format!("SSH 密码认证失败: {}", e)))?
             .success(),
 
         SshAuthMethod::Key { key_path, passphrase } => {
             let pp = passphrase.as_deref().filter(|s| !s.is_empty());
             let key = load_secret_key(key_path, pp)
-                .map_err(|e| format!("加载私钥失败 ({}): {}", key_path, e))?;
+                .map_err(|e| crate::error::AppError::from(format!("加载私钥失败 ({}): {}", key_path, e)))?;
             let hash = session
                 .best_supported_rsa_hash()
                 .await
-                .map_err(|e| format!("协商 RSA hash 失败: {}", e))?
+                .map_err(|e| crate::error::AppError::from(format!("协商 RSA hash 失败: {}", e)))?
                 .flatten();
             session
                 .authenticate_publickey(
@@ -121,16 +122,16 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> Result<clien
                     PrivateKeyWithHashAlg::new(Arc::new(key), hash),
                 )
                 .await
-                .map_err(|e| format!("SSH 私钥认证失败: {}", e))?
+                .map_err(|e| crate::error::AppError::from(format!("SSH 私钥认证失败: {}", e)))?
                 .success()
         }
 
         SshAuthMethod::SshConfig { host_alias } => {
             if identity_files.is_empty() {
-                return Err(format!(
+                return Err(crate::error::AppError::from(format!(
                     "~/.ssh/config 中 Host '{}' 未配置 IdentityFile",
                     host_alias
-                ));
+                )));
             }
             let mut last_err: Option<String> = None;
             let mut authed = false;
@@ -146,7 +147,7 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> Result<clien
                 let hash = session
                     .best_supported_rsa_hash()
                     .await
-                    .map_err(|e| format!("协商 RSA hash 失败: {}", e))?
+                    .map_err(|e| crate::error::AppError::from(format!("协商 RSA hash 失败: {}", e)))?
                     .flatten();
                 let res = session
                     .authenticate_publickey(
@@ -154,7 +155,7 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> Result<clien
                         PrivateKeyWithHashAlg::new(Arc::new(key), hash),
                     )
                     .await
-                    .map_err(|e| format!("SSH 私钥认证失败 ({}): {}", path_str, e))?;
+                    .map_err(|e| crate::error::AppError::from(format!("SSH 私钥认证失败 ({}): {}", path_str, e)))?;
                 if res.success() {
                     authed = true;
                     break;
@@ -163,14 +164,14 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> Result<clien
                 }
             }
             if !authed {
-                return Err(last_err.unwrap_or_else(|| "所有 IdentityFile 认证均失败".to_string()));
+                return Err(crate::error::AppError::from(last_err.unwrap_or_else(|| "所有 IdentityFile 认证均失败".to_string())));
             }
             true
         }
     };
 
     if !success {
-        return Err("SSH 认证被拒绝".to_string());
+        return Err(crate::error::AppError::from("SSH 认证被拒绝".to_string()));
     }
 
     Ok(session)

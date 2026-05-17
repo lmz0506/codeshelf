@@ -1,5 +1,6 @@
 // Claude Code 安装信息缓存与启动目录持久化
 
+use crate::error::AppResult;
 use std::fs;
 
 use crate::storage;
@@ -14,12 +15,12 @@ use super::{ClaudeCodeInfo, ConfigFileInfo, EnvType};
 /// 获取缓存的 Claude 安装信息
 #[tauri::command]
 #[specta::specta]
-pub async fn get_claude_installations_cache() -> Result<Option<Vec<ClaudeCodeInfo>>, String> {
+pub async fn get_claude_installations_cache() -> AppResult<Option<Vec<ClaudeCodeInfo>>> {
     if let Ok(config) = storage::get_storage_config() {
         let path = config.claude_installations_cache_file();
         if path.exists() {
             let content = fs::read_to_string(&path)
-                .map_err(|e| format!("读取安装缓存失败: {}", e))?;
+                .map_err(|e| crate::error::AppError::from(format!("读取安装缓存失败: {}", e)))?;
 
             // 直接解析为安装信息数组
             let installations: Vec<ClaudeInstallation> = serde_json::from_str(&content)
@@ -53,7 +54,7 @@ pub async fn get_claude_installations_cache() -> Result<Option<Vec<ClaudeCodeInf
 /// 保存 Claude 安装信息缓存
 #[tauri::command]
 #[specta::specta]
-pub async fn save_claude_installations_cache(installs: Vec<ClaudeCodeInfo>) -> Result<(), String> {
+pub async fn save_claude_installations_cache(installs: Vec<ClaudeCodeInfo>) -> AppResult<()> {
     let config = storage::get_storage_config()?;
     config.ensure_dirs()?;
 
@@ -80,21 +81,21 @@ pub async fn save_claude_installations_cache(installs: Vec<ClaudeCodeInfo>) -> R
 
     // 直接保存为安装信息数组
     let content = serde_json::to_string(&installations)
-        .map_err(|e| format!("序列化安装缓存失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("序列化安装缓存失败: {}", e)))?;
     fs::write(config.claude_installations_cache_file(), content)
-        .map_err(|e| format!("保存安装缓存失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("保存安装缓存失败: {}", e)))?;
     Ok(())
 }
 
 /// 清除 Claude 安装信息缓存
 #[tauri::command]
 #[specta::specta]
-pub async fn clear_claude_installations_cache() -> Result<(), String> {
+pub async fn clear_claude_installations_cache() -> AppResult<()> {
     if let Ok(config) = storage::get_storage_config() {
         let path = config.claude_installations_cache_file();
         if path.exists() {
             fs::remove_file(&path)
-                .map_err(|e| format!("删除缓存文件失败: {}", e))?;
+                .map_err(|e| crate::error::AppError::from(format!("删除缓存文件失败: {}", e)))?;
         }
     }
     Ok(())
@@ -105,7 +106,7 @@ pub async fn clear_claude_installations_cache() -> Result<(), String> {
 /// 获取保存的 Claude 启动目录列表
 #[tauri::command]
 #[specta::specta]
-pub async fn get_claude_launch_dirs() -> Result<Vec<String>, String> {
+pub async fn get_claude_launch_dirs() -> AppResult<Vec<String>> {
     let config = storage::get_storage_config()?;
     let path = config.claude_launch_dirs_file();
 
@@ -114,10 +115,10 @@ pub async fn get_claude_launch_dirs() -> Result<Vec<String>, String> {
     }
 
     let content = fs::read_to_string(&path)
-        .map_err(|e| format!("读取启动目录列表失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取启动目录列表失败: {}", e)))?;
 
     let dirs: Vec<String> = serde_json::from_str(&content)
-        .map_err(|e| format!("解析启动目录列表失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析启动目录列表失败: {}", e)))?;
 
     Ok(dirs)
 }
@@ -125,11 +126,11 @@ pub async fn get_claude_launch_dirs() -> Result<Vec<String>, String> {
 /// 保存 Claude 启动目录列表
 #[tauri::command]
 #[specta::specta]
-pub async fn save_claude_launch_dirs(dirs: Vec<String>) -> Result<(), String> {
+pub async fn save_claude_launch_dirs(dirs: Vec<String>) -> AppResult<()> {
     let config = storage::get_storage_config()?;
     let content = serde_json::to_string_pretty(&dirs)
-        .map_err(|e| format!("序列化启动目录列表失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("序列化启动目录列表失败: {}", e)))?;
     fs::write(config.claude_launch_dirs_file(), content)
-        .map_err(|e| format!("保存启动目录列表失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("保存启动目录列表失败: {}", e)))?;
     Ok(())
 }

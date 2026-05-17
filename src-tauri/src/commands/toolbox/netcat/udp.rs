@@ -1,5 +1,6 @@
 // UDP 客户端/服务器实现
 
+use crate::error::AppResult;
 use super::types::*;
 use crate::commands::toolbox::generate_id;
 use std::collections::HashMap;
@@ -34,7 +35,7 @@ pub async fn start_udp_session(
     host: String,
     port: u16,
     mode: SessionMode,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let session_id = {
         let state = session_state.read().await;
         state.session.id.clone()
@@ -48,14 +49,14 @@ pub async fn start_udp_session(
     // 绑定 UDP 套接字
     let socket = UdpSocket::bind(&bind_addr)
         .await
-        .map_err(|e| format!("绑定 UDP 端口失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("绑定 UDP 端口失败: {}", e)))?;
 
     let socket = Arc::new(socket);
 
     // 如果是客户端模式，连接到目标
     let target_addr = if mode == SessionMode::Client {
         let addr = format!("{}:{}", host, port);
-        Some(addr.parse::<SocketAddr>().map_err(|e| format!("解析地址失败: {}", e))?)
+        Some(addr.parse::<SocketAddr>().map_err(|e| crate::error::AppError::from(format!("解析地址失败: {}", e)))?)
     } else {
         None
     };
@@ -213,19 +214,19 @@ pub async fn send_udp_data(
     session_id: &str,
     data: Vec<u8>,
     target_addr: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let sockets = UDP_SOCKETS.read().await;
     if let Some(socket_state) = sockets.get(session_id) {
         let addr = match target_addr {
-            Some(addr_str) => Some(addr_str.parse::<SocketAddr>().map_err(|e| format!("解析地址失败: {}", e))?),
+            Some(addr_str) => Some(addr_str.parse::<SocketAddr>().map_err(|e| crate::error::AppError::from(format!("解析地址失败: {}", e)))?),
             None => socket_state.target_addr,
         };
 
         socket_state.send_tx.send((data, addr))
             .await
-            .map_err(|e| format!("发送失败: {}", e))
+            .map_err(|e| crate::error::AppError::from(format!("发送失败: {}", e)))
     } else {
-        Err("会话不存在".to_string())
+        Err(crate::error::AppError::from("会话不存在".to_string()))
     }
 }
 

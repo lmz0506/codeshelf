@@ -1,5 +1,6 @@
 // 把已有 Endpoint 包装成 OpenAI function-calling tools
 
+use crate::error::AppResult;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -40,7 +41,7 @@ fn sanitize_tool_name(endpoint_id: &str) -> String {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn build_api_tools(endpoint_ids: Vec<String>) -> Result<ApiToolsBundle, String> {
+pub async fn build_api_tools(endpoint_ids: Vec<String>) -> AppResult<ApiToolsBundle> {
     let all = load_endpoints()?;
     let by_id: HashMap<String, ApiEndpoint> =
         all.into_iter().map(|e| (e.id.clone(), e)).collect();

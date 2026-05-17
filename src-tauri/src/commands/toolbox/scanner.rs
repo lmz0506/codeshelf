@@ -1,5 +1,6 @@
 // 端口扫描模块 - 支持并发扫描、超时控制、进度回调
 
+use crate::error::AppResult;
 use super::{common_ports, port_service_name, ScanConfig, ScanResult};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
@@ -16,13 +17,13 @@ static SCAN_CANCELLED: AtomicBool = AtomicBool::new(false);
 /// 扫描端口
 #[tauri::command]
 #[specta::specta]
-pub async fn scan_ports(config: ScanConfig) -> Result<Vec<ScanResult>, String> {
+pub async fn scan_ports(config: ScanConfig) -> AppResult<Vec<ScanResult>> {
     // 重置取消标志
     SCAN_CANCELLED.store(false, Ordering::SeqCst);
 
     // 解析目标 IP
     let target_ip = IpAddr::from_str(&config.target)
-        .map_err(|_| format!("无效的 IP 地址: {}", config.target))?;
+        .map_err(|_| crate::error::AppError::from(format!("无效的 IP 地址: {}", config.target)))?;
 
     // 确定要扫描的端口
     let ports = determine_ports(&config);
@@ -40,7 +41,7 @@ pub async fn scan_ports(config: ScanConfig) -> Result<Vec<ScanResult>, String> {
 /// 停止扫描
 #[tauri::command]
 #[specta::specta]
-pub async fn stop_scan() -> Result<(), String> {
+pub async fn stop_scan() -> AppResult<()> {
     SCAN_CANCELLED.store(true, Ordering::SeqCst);
     Ok(())
 }
@@ -48,7 +49,7 @@ pub async fn stop_scan() -> Result<(), String> {
 /// 获取常用端口列表
 #[tauri::command]
 #[specta::specta]
-pub async fn get_common_ports() -> Result<Vec<u16>, String> {
+pub async fn get_common_ports() -> AppResult<Vec<u16>> {
     Ok(common_ports())
 }
 
@@ -78,7 +79,7 @@ async fn concurrent_scan(
     ports: Vec<u16>,
     timeout_ms: u64,
     concurrency: usize,
-) -> Result<Vec<ScanResult>, String> {
+) -> AppResult<Vec<ScanResult>> {
     let results = Arc::new(Mutex::new(Vec::new()));
     let _total = ports.len();
     let scanned = Arc::new(AtomicU32::new(0));
@@ -157,9 +158,9 @@ pub async fn check_port(
     target: String,
     port: u16,
     timeout_ms: Option<u64>,
-) -> Result<ScanResult, String> {
+) -> AppResult<ScanResult> {
     let target_ip =
-        IpAddr::from_str(&target).map_err(|_| format!("无效的 IP 地址: {}", target))?;
+        IpAddr::from_str(&target).map_err(|_| crate::error::AppError::from(format!("无效的 IP 地址: {}", target)))?;
 
     let timeout_duration = Duration::from_millis(timeout_ms.unwrap_or(3000));
     let addr = SocketAddr::new(target_ip, port);
@@ -181,7 +182,7 @@ pub async fn check_port(
 /// 扫描本地常用开发端口
 #[tauri::command]
 #[specta::specta]
-pub async fn scan_local_dev_ports() -> Result<Vec<ScanResult>, String> {
+pub async fn scan_local_dev_ports() -> AppResult<Vec<ScanResult>> {
     let dev_ports = vec![
         3000, 3001, 4200, 5000, 5173, 5174, 8000, 8080, 8081, 8888, 9000,
     ];

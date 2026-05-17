@@ -1,5 +1,6 @@
 // TCP 客户端实现
 
+use crate::error::AppResult;
 use super::types::*;
 use crate::commands::toolbox::generate_id;
 use std::sync::Arc;
@@ -16,7 +17,7 @@ pub async fn start_tcp_client(
     host: String,
     port: u16,
     timeout_ms: u64,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let session_id = {
         let state = session_state.read().await;
         state.session.id.clone()
@@ -35,12 +36,12 @@ pub async fn start_tcp_client(
         Ok(Err(e)) => {
             let err_msg = format!("连接失败: {}", e);
             update_status(&app, &session_state, SessionStatus::Error, Some(err_msg.clone())).await;
-            return Err(err_msg);
+            return Err(crate::error::AppError::from(err_msg));
         }
         Err(_) => {
             let err_msg = "连接超时".to_string();
             update_status(&app, &session_state, SessionStatus::Error, Some(err_msg.clone())).await;
-            return Err(err_msg);
+            return Err(crate::error::AppError::from(err_msg));
         }
     };
 
@@ -197,7 +198,7 @@ pub async fn start_tcp_client(
 }
 
 /// 发送数据到 TCP 客户端
-pub async fn send_tcp_client_data(session_id: &str, data: Vec<u8>) -> Result<(), String> {
+pub async fn send_tcp_client_data(session_id: &str, data: Vec<u8>) -> AppResult<()> {
     log::info!("Netcat Client 发送数据: session={}, size={}", session_id, data.len());
 
     let senders = TCP_SENDERS.read().await;
@@ -213,12 +214,12 @@ pub async fn send_tcp_client_data(session_id: &str, data: Vec<u8>) -> Result<(),
             }
             Err(e) => {
                 log::error!("Netcat Client 发送到通道失败: {}", e);
-                Err(format!("发送失败: {}", e))
+                Err(crate::error::AppError::from(format!("发送失败: {}", e)))
             }
         }
     } else {
         log::error!("Netcat Client 会话不存在或未连接: {}", session_id);
-        Err("会话不存在或未连接".to_string())
+        Err(crate::error::AppError::from("会话不存在或未连接".to_string()))
     }
 }
 

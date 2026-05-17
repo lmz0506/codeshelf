@@ -1,5 +1,6 @@
 //! Read / Write / Edit / Glob / Grep —— allowedCwd 沙箱内的文件系统操作。
 
+use crate::error::AppResult;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -7,10 +8,10 @@ use serde_json::Value;
 
 use super::ctx::{require_under_cwd, truncate, ToolCtx};
 
-pub(super) fn tool_read(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
+pub(super) fn tool_read(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
     let path_str = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
     let path = require_under_cwd(ctx, Path::new(path_str))?;
-    let text = fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))?;
+    let text = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))?;
     let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
     let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(2000) as usize;
     let lines: Vec<&str> = text.lines().collect();
@@ -23,7 +24,7 @@ pub(super) fn tool_read(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
     Ok(truncate(out, 200_000))
 }
 
-pub(super) fn tool_write(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
+pub(super) fn tool_write(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
     let path_str = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
     let content = args
         .get("content")
@@ -31,13 +32,13 @@ pub(super) fn tool_write(ctx: &ToolCtx, args: &Value) -> Result<String, String> 
         .ok_or("缺少 content")?;
     let path = require_under_cwd(ctx, Path::new(path_str))?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
     }
-    fs::write(&path, content).map_err(|e| format!("写入失败: {}", e))?;
+    fs::write(&path, content).map_err(|e| crate::error::AppError::from(format!("写入失败: {}", e)))?;
     Ok(format!("已写入 {}（{} 字节）", path.display(), content.len()))
 }
 
-pub(super) fn tool_edit(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
+pub(super) fn tool_edit(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
     let path_str = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
     let old = args
         .get("oldString")
@@ -48,22 +49,22 @@ pub(super) fn tool_edit(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
         .and_then(|v| v.as_str())
         .ok_or("缺少 newString")?;
     let path = require_under_cwd(ctx, Path::new(path_str))?;
-    let text = fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))?;
+    let text = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))?;
     let occurrences = text.matches(old).count();
     if occurrences == 0 {
         return Err("oldString 未在文件中找到".into());
     }
     if occurrences > 1 {
-        return Err(format!("oldString 出现 {} 次，必须唯一", occurrences));
+        return Err(crate::error::AppError::from(format!("oldString 出现 {} 次，必须唯一", occurrences)));
     }
     let updated = text.replacen(old, new, 1);
-    fs::write(&path, &updated).map_err(|e| format!("写入失败: {}", e))?;
+    fs::write(&path, &updated).map_err(|e| crate::error::AppError::from(format!("写入失败: {}", e)))?;
     Ok(format!("已替换 {} 中 1 处", path.display()))
 }
 
 // ========== glob/grep + 极简正则 ==========
 
-fn glob_walk(root: &Path, pattern: &str) -> Result<Vec<PathBuf>, String> {
+fn glob_walk(root: &Path, pattern: &str) -> AppResult<Vec<PathBuf>> {
     let regex_src = glob_to_regex(pattern);
     let re = regex_lite(&regex_src)?;
     let mut out = Vec::new();
@@ -78,7 +79,7 @@ fn walk_dir(
     re: &SimpleRegex,
     out: &mut Vec<PathBuf>,
     depth: u32,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if depth > 16 {
         return Ok(());
     }
@@ -150,7 +151,7 @@ enum RegexTok {
     DotStar,         // .*
 }
 
-fn regex_lite(src: &str) -> Result<SimpleRegex, String> {
+fn regex_lite(src: &str) -> AppResult<SimpleRegex> {
     let bytes = src.as_bytes();
     let mut i = 0;
     let mut tokens = Vec::new();
@@ -242,7 +243,7 @@ impl SimpleRegex {
     }
 }
 
-pub(super) fn tool_glob(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
+pub(super) fn tool_glob(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
     let pattern = args
         .get("pattern")
         .and_then(|v| v.as_str())
@@ -251,7 +252,7 @@ pub(super) fn tool_glob(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
         .allowed_cwd
         .as_ref()
         .ok_or("会话未设置 allowedCwd")?;
-    let base_canon = fs::canonicalize(base).map_err(|e| format!("allowedCwd 无效: {}", e))?;
+    let base_canon = fs::canonicalize(base).map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
     let files = glob_walk(&base_canon, pattern)?;
     if files.is_empty() {
         return Ok("（无匹配）".into());
@@ -267,7 +268,7 @@ pub(super) fn tool_glob(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
     Ok(out)
 }
 
-pub(super) fn tool_grep(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
+pub(super) fn tool_grep(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
     let pattern = args
         .get("pattern")
         .and_then(|v| v.as_str())
@@ -277,7 +278,7 @@ pub(super) fn tool_grep(ctx: &ToolCtx, args: &Value) -> Result<String, String> {
         .allowed_cwd
         .as_ref()
         .ok_or("会话未设置 allowedCwd")?;
-    let base_canon = fs::canonicalize(base).map_err(|e| format!("allowedCwd 无效: {}", e))?;
+    let base_canon = fs::canonicalize(base).map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
     let files = glob_walk(&base_canon, glob)?;
     let mut out = String::new();
     let mut hits = 0;

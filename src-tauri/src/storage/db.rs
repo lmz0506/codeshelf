@@ -6,6 +6,7 @@
 // - 启用外键约束（ON DELETE CASCADE 才会生效）
 // - schema_version 表记录迁移版本，迁移逻辑在 migrations/ 子模块
 
+use crate::error::AppResult;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::path::Path;
 use std::str::FromStr;
@@ -15,10 +16,10 @@ static DB_POOL: OnceCell<SqlitePool> = OnceCell::const_new();
 
 /// 初始化 SQLite 连接池。`db_path` 不存在会自动创建。
 /// 仅允许调用一次；重复调用会返回错误。
-pub async fn init_db(db_path: &Path) -> Result<(), String> {
+pub async fn init_db(db_path: &Path) -> AppResult<()> {
     let url = format!("sqlite://{}", db_path.display());
     let options = SqliteConnectOptions::from_str(&url)
-        .map_err(|e| format!("解析 SQLite URL 失败: {}", e))?
+        .map_err(|e| crate::error::AppError::from(format!("解析 SQLite URL 失败: {}", e)))?
         .create_if_missing(true)
         .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
         .foreign_keys(true)
@@ -28,7 +29,7 @@ pub async fn init_db(db_path: &Path) -> Result<(), String> {
         .max_connections(8)
         .connect_with(options)
         .await
-        .map_err(|e| format!("打开 SQLite 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("打开 SQLite 失败: {}", e)))?;
 
     // 确保 schema_version 表存在（最先要做的事，迁移逻辑依赖它）
     sqlx::query(
@@ -39,7 +40,7 @@ pub async fn init_db(db_path: &Path) -> Result<(), String> {
     )
     .execute(&pool)
     .await
-    .map_err(|e| format!("创建 schema_version 表失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("创建 schema_version 表失败: {}", e)))?;
 
     DB_POOL
         .set(pool)
@@ -57,25 +58,25 @@ pub fn pool() -> &'static SqlitePool {
 }
 
 /// 读取当前已应用的最高 schema 版本号。表不存在或无记录返回 0。
-pub async fn get_schema_version() -> Result<u32, String> {
+pub async fn get_schema_version() -> AppResult<u32> {
     let row: Option<(i64,)> = sqlx::query_as(
         "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
     )
     .fetch_optional(pool())
     .await
-    .map_err(|e| format!("读取 schema_version 失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("读取 schema_version 失败: {}", e)))?;
 
     Ok(row.map(|(v,)| v as u32).unwrap_or(0))
 }
 
 /// 标记某个版本已应用。同版本号重复写入会被主键拦下，返回错误。
-pub async fn set_schema_version(version: u32) -> Result<(), String> {
+pub async fn set_schema_version(version: u32) -> AppResult<()> {
     let now = chrono::Utc::now().to_rfc3339();
     sqlx::query("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)")
         .bind(version as i64)
         .bind(now)
         .execute(pool())
         .await
-        .map_err(|e| format!("写入 schema_version 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("写入 schema_version 失败: {}", e)))?;
     Ok(())
 }

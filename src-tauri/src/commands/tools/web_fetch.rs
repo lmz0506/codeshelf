@@ -1,18 +1,19 @@
 //! WebFetch 工具：HTTP(S) 抓取，自动识别 HTML/JSON/纯文本/二进制并做对应处理。
 //! 工作流模块也直接复用 `run_web_fetch_for_workflow`。
 
+use crate::error::AppResult;
 use serde_json::Value;
 
-pub(super) async fn tool_web_fetch(args: &Value) -> Result<String, String> {
+pub(super) async fn tool_web_fetch(args: &Value) -> AppResult<String> {
     run_web_fetch(args).await
 }
 
 /// 供工作流模块调用
-pub async fn run_web_fetch_for_workflow(args: &Value) -> Result<String, String> {
+pub async fn run_web_fetch_for_workflow(args: &Value) -> AppResult<String> {
     run_web_fetch(args).await
 }
 
-async fn run_web_fetch(args: &Value) -> Result<String, String> {
+async fn run_web_fetch(args: &Value) -> AppResult<String> {
     let url = args
         .get("url")
         .and_then(|v| v.as_str())
@@ -31,7 +32,7 @@ async fn run_web_fetch(args: &Value) -> Result<String, String> {
         .timeout(std::time::Duration::from_secs(20))
         .user_agent("codeshelf/0.1 (+https://github.com/)")
         .build()
-        .map_err(|e| format!("客户端构建失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("客户端构建失败: {}", e)))?;
 
     let mut req = client.get(url);
     if let Some(headers) = args.get("headers").and_then(|v| v.as_object()) {
@@ -41,7 +42,7 @@ async fn run_web_fetch(args: &Value) -> Result<String, String> {
             }
         }
     }
-    let resp = req.send().await.map_err(|e| format!("请求失败: {}", e))?;
+    let resp = req.send().await.map_err(|e| crate::error::AppError::from(format!("请求失败: {}", e)))?;
     let status = resp.status();
     let final_url = resp.url().to_string();
     let content_type = resp
@@ -50,7 +51,7 @@ async fn run_web_fetch(args: &Value) -> Result<String, String> {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let bytes = resp.bytes().await.map_err(|e| format!("读取响应失败: {}", e))?;
+    let bytes = resp.bytes().await.map_err(|e| crate::error::AppError::from(format!("读取响应失败: {}", e)))?;
     let total_len = bytes.len();
     let truncated = total_len > max_bytes;
     let slice = &bytes[..total_len.min(max_bytes)];

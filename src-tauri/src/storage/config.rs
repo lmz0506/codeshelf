@@ -2,6 +2,7 @@
 // - macOS: ~/Library/Application Support/com.codeshelf.desktop/ (避免更新时 .app bundle 被替换导致数据丢失)
 // - Windows/Linux: 安装目录下的 data 和 logs 文件夹
 
+use crate::error::AppResult;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -18,20 +19,20 @@ pub struct StorageConfig {
 
 impl StorageConfig {
     /// 创建存储配置
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> AppResult<Self> {
         // macOS: 使用系统标准路径，避免更新时 .app bundle 被替换导致数据丢失
         #[cfg(target_os = "macos")]
         let base_dir = dirs::data_dir()
-            .ok_or_else(|| "无法获取系统数据目录 (Application Support)".to_string())?
+            .ok_or_else(|| crate::error::AppError::from("无法获取系统数据目录 (Application Support)".to_string()))?
             .join("com.codeshelf.desktop");
 
         // Windows/Linux: 使用安装目录
         #[cfg(not(target_os = "macos"))]
         let base_dir = std::env::current_exe()
-            .map_err(|e| format!("获取可执行文件路径失败: {}", e))?
+            .map_err(|e| crate::error::AppError::from(format!("获取可执行文件路径失败: {}", e)))?
             .parent()
             .map(|p| p.to_path_buf())
-            .ok_or_else(|| "无法获取安装目录".to_string())?;
+            .ok_or_else(|| crate::error::AppError::from("无法获取安装目录".to_string()))?;
 
         Ok(Self {
             data_dir: base_dir.join("data"),
@@ -40,11 +41,11 @@ impl StorageConfig {
     }
 
     /// 确保目录存在
-    pub fn ensure_dirs(&self) -> Result<(), String> {
+    pub fn ensure_dirs(&self) -> AppResult<()> {
         fs::create_dir_all(&self.data_dir)
-            .map_err(|e| format!("创建数据目录失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("创建数据目录失败: {}", e)))?;
         fs::create_dir_all(&self.logs_dir)
-            .map_err(|e| format!("创建日志目录失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("创建日志目录失败: {}", e)))?;
         Ok(())
     }
 
@@ -173,7 +174,7 @@ impl StorageConfig {
 }
 
 /// 初始化存储配置
-pub fn init_storage() -> Result<&'static StorageConfig, String> {
+pub fn init_storage() -> AppResult<&'static StorageConfig> {
     let config = StorageConfig::new()?;
     config.ensure_dirs()?;
 
@@ -213,7 +214,7 @@ pub fn init_storage() -> Result<&'static StorageConfig, String> {
 
 /// macOS: 将旧目录中的文件迁移到新目录（仅当新目录为空时）
 #[cfg(target_os = "macos")]
-fn migrate_dir(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+fn migrate_dir(src: &std::path::Path, dst: &std::path::Path) -> AppResult<()> {
     // 目标目录已有文件，跳过迁移（说明已经迁移过或用户已有新数据）
     if dst.exists() {
         let has_files = fs::read_dir(dst)
@@ -225,17 +226,17 @@ fn migrate_dir(src: &std::path::Path, dst: &std::path::Path) -> Result<(), Strin
     }
 
     fs::create_dir_all(dst)
-        .map_err(|e| format!("创建目标目录失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("创建目标目录失败: {}", e)))?;
 
     let entries = fs::read_dir(src)
-        .map_err(|e| format!("读取旧目录失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取旧目录失败: {}", e)))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| format!("读取目录条目失败: {}", e))?;
+        let entry = entry.map_err(|e| crate::error::AppError::from(format!("读取目录条目失败: {}", e)))?;
         if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
             let dest_file = dst.join(entry.file_name());
             fs::copy(entry.path(), &dest_file)
-                .map_err(|e| format!("迁移文件 {:?} 失败: {}", entry.file_name(), e))?;
+                .map_err(|e| crate::error::AppError::from(format!("迁移文件 {:?} 失败: {}", entry.file_name(), e)))?;
         }
     }
 
@@ -244,7 +245,7 @@ fn migrate_dir(src: &std::path::Path, dst: &std::path::Path) -> Result<(), Strin
 }
 
 /// 获取存储配置
-pub fn get_storage_config() -> Result<&'static StorageConfig, String> {
+pub fn get_storage_config() -> AppResult<&'static StorageConfig> {
     match STORAGE_CONFIG.get() {
         Some(config) => Ok(config),
         None => {

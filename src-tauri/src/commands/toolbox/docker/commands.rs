@@ -1,3 +1,4 @@
+use crate::error::AppResult;
 use super::ai::generate_dockerfile_with_ai;
 use super::templates::generate_template;
 use super::types::{
@@ -48,7 +49,7 @@ fn compose_meta(container_id: &str) -> (Option<String>, Option<String>, Option<S
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_check_available() -> Result<DockerStatus, String> {
+pub async fn docker_check_available() -> AppResult<DockerStatus> {
     let result = run_docker(&["--version"], None);
     if result.success {
         Ok(DockerStatus {
@@ -67,7 +68,7 @@ pub async fn docker_check_available() -> Result<DockerStatus, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_find_dockerfiles(project_path: String) -> Result<Vec<String>, String> {
+pub async fn docker_find_dockerfiles(project_path: String) -> AppResult<Vec<String>> {
     let root = project_root(&project_path)?;
     let mut out = Vec::new();
     walk_dockerfiles(&root, &root, &mut out, 0);
@@ -80,10 +81,10 @@ pub async fn docker_find_dockerfiles(project_path: String) -> Result<Vec<String>
 pub async fn docker_read_dockerfile(
     project_path: String,
     dockerfile_path: String,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let root = project_root(&project_path)?;
     let full = resolve_existing_project_file(&root, &dockerfile_path)?;
-    fs::read_to_string(full).map_err(|e| format!("读取 Dockerfile 失败: {}", e))
+    fs::read_to_string(full).map_err(|e| crate::error::AppError::from(format!("读取 Dockerfile 失败: {}", e)))
 }
 
 #[tauri::command]
@@ -92,10 +93,10 @@ pub async fn docker_write_dockerfile(
     project_path: String,
     dockerfile_path: String,
     content: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let root = project_root(&project_path)?;
     let full = resolve_project_file(&root, &dockerfile_path)?;
-    fs::write(full, content).map_err(|e| format!("写入 Dockerfile 失败: {}", e))
+    fs::write(full, content).map_err(|e| crate::error::AppError::from(format!("写入 Dockerfile 失败: {}", e)))
 }
 
 #[tauri::command]
@@ -103,7 +104,7 @@ pub async fn docker_write_dockerfile(
 pub async fn docker_generate_dockerfile_template(
     project_path: String,
     template: Option<String>,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let root = project_root(&project_path)?;
     Ok(generate_template(&root, template.as_deref()))
 }
@@ -112,13 +113,13 @@ pub async fn docker_generate_dockerfile_template(
 #[specta::specta]
 pub async fn docker_generate_dockerfile_ai(
     input: DockerAiGenerateInput,
-) -> Result<DockerAiGenerateOutput, String> {
+) -> AppResult<DockerAiGenerateOutput> {
     generate_dockerfile_with_ai(input).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_build_image(input: DockerBuildInput) -> Result<DockerCommandResult, String> {
+pub async fn docker_build_image(input: DockerBuildInput) -> AppResult<DockerCommandResult> {
     let root = project_root(&input.project_path)?;
     resolve_existing_project_file(&root, &input.dockerfile_path)?;
     let full_image = if input.image_name.contains(':') {
@@ -146,10 +147,10 @@ pub async fn docker_build_image(input: DockerBuildInput) -> Result<DockerCommand
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_list_images() -> Result<Vec<DockerImageInfo>, String> {
+pub async fn docker_list_images() -> AppResult<Vec<DockerImageInfo>> {
     let result = run_docker(&["image", "ls", "--format", "{{json .}}"], None);
     if !result.success {
-        return Err(result.stderr);
+        return Err(crate::error::AppError::from(result.stderr));
     }
     let mut out = Vec::new();
     for line in result.stdout.lines() {
@@ -171,7 +172,7 @@ pub async fn docker_list_images() -> Result<Vec<DockerImageInfo>, String> {
 pub async fn docker_remove_image(
     image: String,
     force: Option<bool>,
-) -> Result<DockerCommandResult, String> {
+) -> AppResult<DockerCommandResult> {
     let mut args = vec!["rmi"];
     if force.unwrap_or(false) {
         args.push("-f");
@@ -182,7 +183,7 @@ pub async fn docker_remove_image(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_run_image(input: DockerRunInput) -> Result<DockerCommandResult, String> {
+pub async fn docker_run_image(input: DockerRunInput) -> AppResult<DockerCommandResult> {
     let mut args = vec!["run", "-d"];
     if let Some(name) = input
         .container_name
@@ -257,10 +258,10 @@ pub async fn docker_run_image(input: DockerRunInput) -> Result<DockerCommandResu
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_list_containers() -> Result<Vec<DockerContainerInfo>, String> {
+pub async fn docker_list_containers() -> AppResult<Vec<DockerContainerInfo>> {
     let result = run_docker(&["ps", "-a", "--format", "{{json .}}"], None);
     if !result.success {
-        return Err(result.stderr);
+        return Err(crate::error::AppError::from(result.stderr));
     }
     let mut out = Vec::new();
     for line in result.stdout.lines() {
@@ -316,19 +317,19 @@ fn infer_state_from_status(status: &str) -> String {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_stop_container(container: String) -> Result<DockerCommandResult, String> {
+pub async fn docker_stop_container(container: String) -> AppResult<DockerCommandResult> {
     Ok(run_docker(&["stop", container.as_str()], None))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_start_container(container: String) -> Result<DockerCommandResult, String> {
+pub async fn docker_start_container(container: String) -> AppResult<DockerCommandResult> {
     Ok(run_docker(&["start", container.as_str()], None))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_restart_container(container: String) -> Result<DockerCommandResult, String> {
+pub async fn docker_restart_container(container: String) -> AppResult<DockerCommandResult> {
     Ok(run_docker(&["restart", container.as_str()], None))
 }
 
@@ -337,7 +338,7 @@ pub async fn docker_restart_container(container: String) -> Result<DockerCommand
 pub async fn docker_remove_container(
     container: String,
     force: Option<bool>,
-) -> Result<DockerCommandResult, String> {
+) -> AppResult<DockerCommandResult> {
     let mut args = vec!["rm"];
     if force.unwrap_or(false) {
         args.push("-f");
@@ -348,7 +349,7 @@ pub async fn docker_remove_container(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_push_image(image: String) -> Result<DockerCommandResult, String> {
+pub async fn docker_push_image(image: String) -> AppResult<DockerCommandResult> {
     Ok(run_docker(&["push", image.as_str()], None))
 }
 
@@ -408,13 +409,13 @@ fn json_to_yaml(value: &Value, indent: usize) -> String {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_inspect_container_yaml(container: String) -> Result<String, String> {
+pub async fn docker_inspect_container_yaml(container: String) -> AppResult<String> {
     let result = run_docker(&["inspect", container.as_str()], None);
     if !result.success {
-        return Err(result.stderr);
+        return Err(crate::error::AppError::from(result.stderr));
     }
     let value: Value = serde_json::from_str(&result.stdout)
-        .map_err(|e| format!("解析 docker inspect 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("解析 docker inspect 失败: {}", e)))?;
     let first = value
         .as_array()
         .and_then(|items| items.first())

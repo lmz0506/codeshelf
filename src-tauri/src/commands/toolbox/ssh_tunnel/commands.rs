@@ -1,5 +1,6 @@
 // SSH 隧道 Tauri 命令：CRUD + start/stop + get + stats + list_hosts
 
+use crate::error::AppResult;
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
@@ -14,27 +15,27 @@ use super::{
 
 #[tauri::command]
 #[specta::specta]
-pub async fn add_ssh_tunnel(input: SshTunnelInput) -> Result<SshTunnel, String> {
+pub async fn add_ssh_tunnel(input: SshTunnelInput) -> AppResult<SshTunnel> {
     ensure_tunnels_loaded().await;
 
     if input.local_port == 0 {
-        return Err("本地端口不能为 0".to_string());
+        return Err(crate::error::AppError::from("本地端口不能为 0".to_string()));
     }
     if input.remote_port == 0 {
-        return Err("远程端口不能为 0".to_string());
+        return Err(crate::error::AppError::from("远程端口不能为 0".to_string()));
     }
     if input.remote_host.is_empty() {
-        return Err("远程主机不能为空".to_string());
+        return Err(crate::error::AppError::from("远程主机不能为空".to_string()));
     }
     if matches!(&input.auth, SshAuthMethod::SshConfig { host_alias } if host_alias.is_empty()) {
-        return Err("SSH config Host 别名不能为空".to_string());
+        return Err(crate::error::AppError::from("SSH config Host 别名不能为空".to_string()));
     }
 
     {
         let tunnels = SSH_TUNNELS.lock().await;
         for t in tunnels.values() {
             if t.local_port == input.local_port && t.status == "running" {
-                return Err(format!("端口 {} 已被其他隧道使用", input.local_port));
+                return Err(crate::error::AppError::from(format!("端口 {} 已被其他隧道使用", input.local_port)));
             }
         }
     }
@@ -67,7 +68,7 @@ pub async fn add_ssh_tunnel(input: SshTunnelInput) -> Result<SshTunnel, String> 
         log::error!("保存 SSH 隧道失败: {}", e);
         let mut tunnels = SSH_TUNNELS.lock().await;
         tunnels.remove(&id);
-        return Err(format!("保存 SSH 隧道失败: {}", e));
+        return Err(crate::error::AppError::from(format!("保存 SSH 隧道失败: {}", e)));
     }
 
     Ok(tunnel)
@@ -78,14 +79,14 @@ pub async fn add_ssh_tunnel(input: SshTunnelInput) -> Result<SshTunnel, String> 
 pub async fn update_ssh_tunnel(
     tunnel_id: String,
     input: SshTunnelInput,
-) -> Result<SshTunnel, String> {
+) -> AppResult<SshTunnel> {
     ensure_tunnels_loaded().await;
 
     let old = {
         let tunnels = SSH_TUNNELS.lock().await;
         tunnels.get(&tunnel_id).cloned()
     };
-    let old = old.ok_or_else(|| format!("隧道不存在: {}", tunnel_id))?;
+    let old = old.ok_or_else(|| crate::error::AppError::from(format!("隧道不存在: {}", tunnel_id)))?;
 
     if old.status == "running" {
         stop_ssh_tunnel(tunnel_id.clone()).await?;
@@ -110,19 +111,19 @@ pub async fn update_ssh_tunnel(
         log::error!("保存 SSH 隧道失败: {}", e);
         let mut tunnels = SSH_TUNNELS.lock().await;
         tunnels.insert(tunnel_id.clone(), old);
-        return Err(format!("保存 SSH 隧道失败: {}", e));
+        return Err(crate::error::AppError::from(format!("保存 SSH 隧道失败: {}", e)));
     }
 
     let tunnels = SSH_TUNNELS.lock().await;
     tunnels
         .get(&tunnel_id)
         .cloned()
-        .ok_or_else(|| "隧道不存在".to_string())
+        .ok_or_else(|| crate::error::AppError::from("隧道不存在".to_string()))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn remove_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
+pub async fn remove_ssh_tunnel(tunnel_id: String) -> AppResult<()> {
     ensure_tunnels_loaded().await;
 
     let _ = stop_ssh_tunnel(tunnel_id.clone()).await;
@@ -142,7 +143,7 @@ pub async fn remove_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
             let mut tunnels = SSH_TUNNELS.lock().await;
             tunnels.insert(tunnel_id, t);
         }
-        return Err(format!("保存 SSH 隧道失败: {}", e));
+        return Err(crate::error::AppError::from(format!("保存 SSH 隧道失败: {}", e)));
     }
 
     Ok(())
@@ -150,17 +151,17 @@ pub async fn remove_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn start_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
+pub async fn start_ssh_tunnel(tunnel_id: String) -> AppResult<()> {
     ensure_tunnels_loaded().await;
 
     let tunnel = {
         let tunnels = SSH_TUNNELS.lock().await;
         tunnels.get(&tunnel_id).cloned()
     };
-    let tunnel = tunnel.ok_or_else(|| format!("隧道不存在: {}", tunnel_id))?;
+    let tunnel = tunnel.ok_or_else(|| crate::error::AppError::from(format!("隧道不存在: {}", tunnel_id)))?;
 
     if tunnel.status == "running" {
-        return Err("隧道已在运行中".to_string());
+        return Err(crate::error::AppError::from("隧道已在运行中".to_string()));
     }
 
     // 先清除 last_error
@@ -177,7 +178,7 @@ pub async fn start_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
         .map_err(|e| {
             // 记录错误
             let id = tunnel_id.clone();
-            let err = e.clone();
+            let err = e.to_string();
             tokio::spawn(async move {
                 let mut tunnels = SSH_TUNNELS.lock().await;
                 if let Some(t) = tunnels.get_mut(&id) {
@@ -243,7 +244,7 @@ pub async fn start_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn stop_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
+pub async fn stop_ssh_tunnel(tunnel_id: String) -> AppResult<()> {
     log::info!("停止 SSH 隧道: {}", tunnel_id);
 
     {
@@ -271,7 +272,7 @@ pub async fn stop_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_ssh_tunnels() -> Result<Vec<SshTunnel>, String> {
+pub async fn get_ssh_tunnels() -> AppResult<Vec<SshTunnel>> {
     ensure_tunnels_loaded().await;
 
     let ids: Vec<String> = {
@@ -292,7 +293,7 @@ pub async fn get_ssh_tunnels() -> Result<Vec<SshTunnel>, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_ssh_tunnel(tunnel_id: String) -> Result<Option<SshTunnel>, String> {
+pub async fn get_ssh_tunnel(tunnel_id: String) -> AppResult<Option<SshTunnel>> {
     ensure_tunnels_loaded().await;
     update_tunnel_stats(&tunnel_id).await;
     let tunnels = SSH_TUNNELS.lock().await;
@@ -301,7 +302,7 @@ pub async fn get_ssh_tunnel(tunnel_id: String) -> Result<Option<SshTunnel>, Stri
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_ssh_tunnel_stats(tunnel_id: String) -> Result<SshTunnelStats, String> {
+pub async fn get_ssh_tunnel_stats(tunnel_id: String) -> AppResult<SshTunnelStats> {
     let controllers = SSH_CONTROLLERS.lock().await;
     let (connections, bytes_in, bytes_out) = controllers
         .get(&tunnel_id)
@@ -317,6 +318,6 @@ pub async fn get_ssh_tunnel_stats(tunnel_id: String) -> Result<SshTunnelStats, S
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_ssh_config_hosts() -> Result<Vec<String>, String> {
+pub async fn list_ssh_config_hosts() -> AppResult<Vec<String>> {
     Ok(list_host_aliases_from_config())
 }

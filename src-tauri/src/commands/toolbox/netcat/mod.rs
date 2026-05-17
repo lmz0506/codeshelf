@@ -7,6 +7,7 @@ mod udp;
 
 pub use types::*;
 
+use crate::error::AppResult;
 use super::generate_id;
 use crate::storage::get_storage_config;
 use std::sync::Arc;
@@ -27,7 +28,7 @@ impl NetcatState {
     }
 
     /// 从文件加载会话配置
-    pub async fn load_sessions(&self) -> Result<(), String> {
+    pub async fn load_sessions(&self) -> AppResult<()> {
         let config = get_storage_config()?;
         let file_path = config.netcat_sessions_file();
 
@@ -36,10 +37,10 @@ impl NetcatState {
         }
 
         let content = std::fs::read_to_string(&file_path)
-            .map_err(|e| format!("读取 Netcat 会话文件失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("读取 Netcat 会话文件失败: {}", e)))?;
 
         let configs: Vec<NetcatSessionConfig> = serde_json::from_str(&content)
-            .map_err(|e| format!("解析 Netcat 会话文件失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("解析 Netcat 会话文件失败: {}", e)))?;
 
         let mut sessions = self.sessions.write().await;
         for cfg in configs {
@@ -72,7 +73,7 @@ impl NetcatState {
     }
 
     /// 保存会话配置到文件
-    pub async fn save_sessions(&self) -> Result<(), String> {
+    pub async fn save_sessions(&self) -> AppResult<()> {
         let config = get_storage_config()?;
         let file_path = config.netcat_sessions_file();
 
@@ -96,10 +97,10 @@ impl NetcatState {
         }
 
         let content = serde_json::to_string_pretty(&configs)
-            .map_err(|e| format!("序列化 Netcat 会话失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("序列化 Netcat 会话失败: {}", e)))?;
 
         std::fs::write(&file_path, content)
-            .map_err(|e| format!("保存 Netcat 会话文件失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("保存 Netcat 会话文件失败: {}", e)))?;
 
         Ok(())
     }
@@ -116,7 +117,7 @@ impl Default for NetcatState {
 #[specta::specta]
 pub async fn netcat_init(
     state: State<'_, NetcatState>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     state.load_sessions().await
 }
 
@@ -127,7 +128,7 @@ pub async fn netcat_create_session(
     _app: AppHandle,
     state: State<'_, NetcatState>,
     input: NetcatSessionInput,
-) -> Result<NetcatSession, String> {
+) -> AppResult<NetcatSession> {
     let now = current_timestamp();
     let session_id = generate_id();
 
@@ -187,7 +188,7 @@ pub async fn netcat_start_session(
     app: AppHandle,
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let session_state = {
         let sessions = state.sessions.read().await;
         sessions.get(&session_id).cloned()
@@ -280,7 +281,7 @@ pub async fn netcat_start_session(
 pub async fn netcat_stop_session(
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     stop_session_internal(&state, &session_id).await
 }
 
@@ -288,7 +289,7 @@ pub async fn netcat_stop_session(
 async fn stop_session_internal(
     state: &NetcatState,
     session_id: &str,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let session_state = {
         let sessions = state.sessions.read().await;
         sessions.get(session_id).cloned()
@@ -375,7 +376,7 @@ async fn stop_session_internal(
 pub async fn netcat_remove_session(
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // 先停止
     let _ = stop_session_internal(&state, &session_id).await;
 
@@ -395,7 +396,7 @@ pub async fn netcat_update_auto_send(
     state: State<'_, NetcatState>,
     session_id: String,
     config: AutoSendConfig,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let sessions = state.sessions.read().await;
     let session_state = sessions.get(&session_id).ok_or("会话不存在")?;
 
@@ -419,7 +420,7 @@ pub async fn netcat_send_message(
     app: AppHandle,
     state: State<'_, NetcatState>,
     input: SendMessageInput,
-) -> Result<NetcatMessage, String> {
+) -> AppResult<NetcatMessage> {
     log::info!("Netcat 发送消息: session={}, size={}, format={:?}, target_client={:?}, broadcast={:?}",
         input.session_id, input.data.len(), input.format, input.target_client, input.broadcast);
 
@@ -477,7 +478,7 @@ pub async fn netcat_send_message(
                 tcp_server::send_to_client(&input.session_id, client_id, data.clone()).await?;
             } else {
                 log::error!("Netcat TCP 服务器模式: 未指定目标客户端或广播");
-                return Err("服务器模式需要指定目标客户端或广播".to_string());
+                return Err(crate::error::AppError::from("服务器模式需要指定目标客户端或广播".to_string()));
             }
         }
         (Protocol::Udp, _) => {
@@ -675,7 +676,7 @@ async fn mirror_tcp_server_send_to_local_clients(
 #[specta::specta]
 pub async fn netcat_get_sessions(
     state: State<'_, NetcatState>,
-) -> Result<Vec<NetcatSession>, String> {
+) -> AppResult<Vec<NetcatSession>> {
     let sessions = state.sessions.read().await;
     let mut result = Vec::new();
 
@@ -693,7 +694,7 @@ pub async fn netcat_get_sessions(
 pub async fn netcat_get_session(
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<NetcatSession, String> {
+) -> AppResult<NetcatSession> {
     let sessions = state.sessions.read().await;
     let session_state = sessions.get(&session_id).ok_or("会话不存在")?;
     let s = session_state.read().await;
@@ -708,7 +709,7 @@ pub async fn netcat_get_messages(
     session_id: String,
     limit: Option<usize>,
     offset: Option<usize>,
-) -> Result<Vec<NetcatMessage>, String> {
+) -> AppResult<Vec<NetcatMessage>> {
     let sessions = state.sessions.read().await;
     let session_state = sessions.get(&session_id).ok_or("会话不存在")?;
     let s = session_state.read().await;
@@ -733,7 +734,7 @@ pub async fn netcat_get_messages(
 pub async fn netcat_get_clients(
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<Vec<ConnectedClient>, String> {
+) -> AppResult<Vec<ConnectedClient>> {
     let sessions = state.sessions.read().await;
     let session_state = sessions.get(&session_id).ok_or("会话不存在")?;
     let s = session_state.read().await;
@@ -747,7 +748,7 @@ pub async fn netcat_get_clients(
 pub async fn netcat_clear_messages(
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let sessions = state.sessions.read().await;
     let session_state = sessions.get(&session_id).ok_or("会话不存在")?;
     let mut s = session_state.write().await;
@@ -762,7 +763,7 @@ pub async fn netcat_disconnect_client(
     state: State<'_, NetcatState>,
     session_id: String,
     client_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // 对于 TCP 服务器，从全局存储中移除客户端发送器会导致连接关闭
     let _ = tcp_server::disconnect_client(&session_id, &client_id).await;
 
@@ -797,7 +798,7 @@ pub struct HttpFetchConfig {
 #[specta::specta]
 pub async fn netcat_fetch_http(
     config: HttpFetchConfig,
-) -> Result<String, String> {
+) -> AppResult<String> {
     use reqwest::{Client, Method};
     use std::time::Duration;
 
@@ -812,7 +813,7 @@ pub async fn netcat_fetch_http(
         .user_agent("CodeShelf-Netcat/1.0")
         .danger_accept_invalid_certs(true)  // 接受无效证书（用于本地测试）
         .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("创建 HTTP 客户端失败: {}", e)))?;
 
     // 解析 HTTP 方法
     let method = match config.method.as_deref().unwrap_or("GET").to_uppercase().as_str() {
@@ -822,7 +823,7 @@ pub async fn netcat_fetch_http(
         "DELETE" => Method::DELETE,
         "PATCH" => Method::PATCH,
         "HEAD" => Method::HEAD,
-        other => return Err(format!("不支持的 HTTP 方法: {}", other)),
+        other => return Err(crate::error::AppError::from(format!("不支持的 HTTP 方法: {}", other))),
     };
 
     let mut request = client.request(method, &config.url);
@@ -861,7 +862,7 @@ pub async fn netcat_fetch_http(
     log::info!("Netcat HTTP 响应状态: {}", status);
 
     if !status.is_success() {
-        return Err(format!("HTTP 请求失败: {} {}", status.as_u16(), status.canonical_reason().unwrap_or("")));
+        return Err(crate::error::AppError::from(format!("HTTP 请求失败: {} {}", status.as_u16(), status.canonical_reason().unwrap_or(""))));
     }
 
     let content_type = response
@@ -874,7 +875,7 @@ pub async fn netcat_fetch_http(
     let text = response
         .text()
         .await
-        .map_err(|e| format!("读取响应失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取响应失败: {}", e)))?;
 
     log::info!("Netcat HTTP 响应: {} bytes, content-type={}, preview={}",
         text.len(), content_type, &text[..text.len().min(100)]);
@@ -894,9 +895,9 @@ pub async fn netcat_fetch_http(
 }
 
 /// 从 JSON 中提取指定路径的值
-fn extract_json_path(json_str: &str, path: &str) -> Result<String, String> {
+fn extract_json_path(json_str: &str, path: &str) -> AppResult<String> {
     let json: serde_json::Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("JSON 解析失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("JSON 解析失败: {}", e)))?;
 
     // 支持多路径: "data.name,data.id"
     let paths: Vec<&str> = path.split(',').map(|p| p.trim()).collect();
@@ -952,7 +953,7 @@ fn get_json_value<'a>(json: &'a serde_json::Value, path: &str) -> Option<&'a ser
 // ============== 辅助函数 ==============
 
 /// 解析输入数据
-fn parse_input_data(data: &str, format: DataFormat) -> Result<Vec<u8>, String> {
+fn parse_input_data(data: &str, format: DataFormat) -> AppResult<Vec<u8>> {
     match format {
         DataFormat::Text => Ok(data.as_bytes().to_vec()),
         DataFormat::Hex => {
@@ -967,14 +968,14 @@ fn parse_input_data(data: &str, format: DataFormat) -> Result<Vec<u8>, String> {
             let hex_str: String = cleaned.split_whitespace().collect();
 
             if hex_str.len() % 2 != 0 {
-                return Err("十六进制字符串长度必须为偶数".to_string());
+                return Err(crate::error::AppError::from("十六进制字符串长度必须为偶数".to_string()));
             }
 
             (0..hex_str.len())
                 .step_by(2)
                 .map(|i| {
                     u8::from_str_radix(&hex_str[i..i + 2], 16)
-                        .map_err(|e| format!("无效的十六进制: {}", e))
+                        .map_err(|e| crate::error::AppError::from(format!("无效的十六进制: {}", e)))
                 })
                 .collect()
         }
@@ -982,7 +983,7 @@ fn parse_input_data(data: &str, format: DataFormat) -> Result<Vec<u8>, String> {
             use base64::{Engine as _, engine::general_purpose};
             general_purpose::STANDARD
                 .decode(data.trim())
-                .map_err(|e| format!("Base64 解码失败: {}", e))
+                .map_err(|e| crate::error::AppError::from(format!("Base64 解码失败: {}", e)))
         }
     }
 }

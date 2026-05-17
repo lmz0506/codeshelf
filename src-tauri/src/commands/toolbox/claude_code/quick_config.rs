@@ -1,5 +1,6 @@
 // Claude Code 快捷配置：选项列表、应用、持久化
 
+use crate::error::AppResult;
 use std::fs;
 
 use crate::storage;
@@ -10,7 +11,7 @@ use super::{EnvType, QuickConfigOption};
 /// 获取快捷配置选项列表
 #[tauri::command]
 #[specta::specta]
-pub async fn get_quick_config_options() -> Result<Vec<QuickConfigOption>, String> {
+pub async fn get_quick_config_options() -> AppResult<Vec<QuickConfigOption>> {
     Ok(vec![
         // 模型设置
         QuickConfigOption {
@@ -135,7 +136,7 @@ pub async fn apply_quick_config(
     env_name: String,
     config_path: String,
     options: Vec<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // 读取现有配置
     let existing_content = super::config_io::read_claude_config_file(
         env_type.clone(), env_name.clone(), config_path.clone()
@@ -161,7 +162,7 @@ pub async fn apply_quick_config(
 
     // 写入配置
     let content = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("序列化配置失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("序列化配置失败: {}", e)))?;
 
     super::config_io::write_claude_config_file(env_type, env_name, config_path, content).await
 }
@@ -171,12 +172,12 @@ pub async fn apply_quick_config(
 /// 获取保存的 Claude 快捷配置
 #[tauri::command]
 #[specta::specta]
-pub async fn get_saved_quick_configs() -> Result<Vec<ClaudeQuickConfig>, String> {
+pub async fn get_saved_quick_configs() -> AppResult<Vec<ClaudeQuickConfig>> {
     if let Ok(config) = storage::get_storage_config() {
         let path = config.claude_quick_configs_file();
         if path.exists() {
             let content = fs::read_to_string(&path)
-                .map_err(|e| format!("读取快捷配置失败: {}", e))?;
+                .map_err(|e| crate::error::AppError::from(format!("读取快捷配置失败: {}", e)))?;
 
             // 直接解析为配置数组
             let configs: Vec<ClaudeQuickConfig> = serde_json::from_str(&content)
@@ -190,14 +191,14 @@ pub async fn get_saved_quick_configs() -> Result<Vec<ClaudeQuickConfig>, String>
 /// 保存 Claude 快捷配置
 #[tauri::command]
 #[specta::specta]
-pub async fn save_quick_configs(configs: Vec<ClaudeQuickConfig>) -> Result<(), String> {
+pub async fn save_quick_configs(configs: Vec<ClaudeQuickConfig>) -> AppResult<()> {
     let config = storage::get_storage_config()?;
     config.ensure_dirs()?;
 
     // 直接保存为配置数组
     let content = serde_json::to_string(&configs)
-        .map_err(|e| format!("序列化快捷配置失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("序列化快捷配置失败: {}", e)))?;
     fs::write(config.claude_quick_configs_file(), content)
-        .map_err(|e| format!("保存快捷配置失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("保存快捷配置失败: {}", e)))?;
     Ok(())
 }

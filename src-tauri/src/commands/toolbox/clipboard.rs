@@ -11,6 +11,7 @@
 //
 // 并发：sqlite 自己处理 (WAL + busy_timeout)，不再需要 FILE_LOCK
 
+use crate::error::AppResult;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
@@ -49,7 +50,7 @@ fn generate_id() -> String {
 
 // ============== Settings（仍走 JSON 文件） ==============
 
-fn read_settings_file() -> Result<ClipboardSettings, String> {
+fn read_settings_file() -> AppResult<ClipboardSettings> {
     let config = get_storage_config()?;
     let path = config.clipboard_settings_file();
 
@@ -58,23 +59,23 @@ fn read_settings_file() -> Result<ClipboardSettings, String> {
     }
 
     let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("读取剪贴板设置文件失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取剪贴板设置文件失败: {}", e)))?;
 
     if content.trim().is_empty() {
         return Ok(ClipboardSettings::default());
     }
 
-    serde_json::from_str(&content).map_err(|e| format!("解析剪贴板设置文件失败: {}", e))
+    serde_json::from_str(&content).map_err(|e| crate::error::AppError::from(format!("解析剪贴板设置文件失败: {}", e)))
 }
 
-fn write_settings_file(settings: &ClipboardSettings) -> Result<(), String> {
+fn write_settings_file(settings: &ClipboardSettings) -> AppResult<()> {
     let config = get_storage_config()?;
     let path = config.clipboard_settings_file();
 
     let content = serde_json::to_string_pretty(settings)
-        .map_err(|e| format!("序列化剪贴板设置失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("序列化剪贴板设置失败: {}", e)))?;
 
-    std::fs::write(&path, content).map_err(|e| format!("写入剪贴板设置文件失败: {}", e))
+    std::fs::write(&path, content).map_err(|e| crate::error::AppError::from(format!("写入剪贴板设置文件失败: {}", e)))
 }
 
 // ============== sqlite 操作 ==============
@@ -97,37 +98,37 @@ fn entry_from_row(row: EntryRow) -> ClipboardEntry {
     }
 }
 
-async fn fetch_all_sorted() -> Result<Vec<ClipboardEntry>, String> {
+async fn fetch_all_sorted() -> AppResult<Vec<ClipboardEntry>> {
     let rows: Vec<EntryRow> = sqlx::query_as(&format!(
         "{} ORDER BY pinned DESC, timestamp DESC",
         ENTRY_SELECT
     ))
     .fetch_all(pool())
     .await
-    .map_err(|e| format!("查询剪贴板历史失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("查询剪贴板历史失败: {}", e)))?;
     Ok(rows.into_iter().map(entry_from_row).collect())
 }
 
-async fn fetch_by_id(id: &str) -> Result<Option<ClipboardEntry>, String> {
+async fn fetch_by_id(id: &str) -> AppResult<Option<ClipboardEntry>> {
     let row: Option<EntryRow> = sqlx::query_as(&format!("{} WHERE id = ?", ENTRY_SELECT))
         .bind(id)
         .fetch_optional(pool())
         .await
-        .map_err(|e| format!("查询剪贴板条目失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("查询剪贴板条目失败: {}", e)))?;
     Ok(row.map(entry_from_row))
 }
 
-async fn fetch_by_content(content: &str) -> Result<Option<ClipboardEntry>, String> {
+async fn fetch_by_content(content: &str) -> AppResult<Option<ClipboardEntry>> {
     let row: Option<EntryRow> = sqlx::query_as(&format!("{} WHERE content = ? LIMIT 1", ENTRY_SELECT))
         .bind(content)
         .fetch_optional(pool())
         .await
-        .map_err(|e| format!("按 content 查询失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("按 content 查询失败: {}", e)))?;
     Ok(row.map(entry_from_row))
 }
 
 /// 淘汰非置顶条目，保留最近 max_items 条；置顶条目不受影响。
-async fn trim_unpinned(max_items: i64) -> Result<(), String> {
+async fn trim_unpinned(max_items: i64) -> AppResult<()> {
     sqlx::query(
         "DELETE FROM clipboard_entries
          WHERE pinned = 0
@@ -141,12 +142,12 @@ async fn trim_unpinned(max_items: i64) -> Result<(), String> {
     .bind(max_items)
     .execute(pool())
     .await
-    .map_err(|e| format!("清理过量条目失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("清理过量条目失败: {}", e)))?;
     Ok(())
 }
 
 /// 内部：上报一条新内容（去重 + 写库 + 裁剪）。返回最终生效的条目。
-async fn upsert_entry(content: String) -> Result<ClipboardEntry, String> {
+async fn upsert_entry(content: String) -> AppResult<ClipboardEntry> {
     let now = chrono::Utc::now().timestamp_millis();
     let preview = generate_preview(&content);
 
@@ -160,14 +161,14 @@ async fn upsert_entry(content: String) -> Result<ClipboardEntry, String> {
         .bind(&existing.id)
         .execute(pool())
         .await
-        .map_err(|e| format!("更新剪贴板条目失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("更新剪贴板条目失败: {}", e)))?;
 
         let max_items = read_settings_file()?.max_items as i64;
         trim_unpinned(max_items).await?;
 
         return fetch_by_id(&existing.id)
             .await?
-            .ok_or_else(|| "更新后条目消失".to_string());
+            .ok_or_else(|| crate::error::AppError::from("更新后条目消失".to_string()));
     }
 
     let entry = ClipboardEntry {
@@ -191,7 +192,7 @@ async fn upsert_entry(content: String) -> Result<ClipboardEntry, String> {
     .bind(entry.char_count as i64)
     .execute(pool())
     .await
-    .map_err(|e| format!("插入剪贴板条目失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("插入剪贴板条目失败: {}", e)))?;
 
     let max_items = read_settings_file()?.max_items as i64;
     trim_unpinned(max_items).await?;
@@ -203,48 +204,48 @@ async fn upsert_entry(content: String) -> Result<ClipboardEntry, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_clipboard_history() -> Result<Vec<ClipboardEntry>, String> {
+pub async fn get_clipboard_history() -> AppResult<Vec<ClipboardEntry>> {
     fetch_all_sorted().await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn add_clipboard_entry(content: String) -> Result<ClipboardEntry, String> {
+pub async fn add_clipboard_entry(content: String) -> AppResult<ClipboardEntry> {
     upsert_entry(content).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn update_clipboard_note(id: String, note: String) -> Result<ClipboardEntry, String> {
+pub async fn update_clipboard_note(id: String, note: String) -> AppResult<ClipboardEntry> {
     let final_note: Option<String> = if note.trim().is_empty() { None } else { Some(note) };
     let result = sqlx::query("UPDATE clipboard_entries SET note = ? WHERE id = ?")
         .bind(&final_note)
         .bind(&id)
         .execute(pool())
         .await
-        .map_err(|e| format!("更新备注失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("更新备注失败: {}", e)))?;
     if result.rows_affected() == 0 {
-        return Err(format!("剪贴板条目 {} 不存在", id));
+        return Err(crate::error::AppError::from(format!("剪贴板条目 {} 不存在", id)));
     }
     fetch_by_id(&id)
         .await?
-        .ok_or_else(|| format!("剪贴板条目 {} 不存在", id))
+        .ok_or_else(|| crate::error::AppError::from(format!("剪贴板条目 {} 不存在", id)))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_clipboard_entry(id: String) -> Result<(), String> {
+pub async fn delete_clipboard_entry(id: String) -> AppResult<()> {
     sqlx::query("DELETE FROM clipboard_entries WHERE id = ?")
         .bind(&id)
         .execute(pool())
         .await
-        .map_err(|e| format!("删除剪贴板条目失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("删除剪贴板条目失败: {}", e)))?;
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn toggle_pin_clipboard_entry(id: String) -> Result<ClipboardEntry, String> {
+pub async fn toggle_pin_clipboard_entry(id: String) -> AppResult<ClipboardEntry> {
     let result = sqlx::query(
         "UPDATE clipboard_entries
          SET pinned = CASE pinned WHEN 0 THEN 1 ELSE 0 END
@@ -253,14 +254,14 @@ pub async fn toggle_pin_clipboard_entry(id: String) -> Result<ClipboardEntry, St
     .bind(&id)
     .execute(pool())
     .await
-    .map_err(|e| format!("切换置顶失败: {}", e))?;
+    .map_err(|e| crate::error::AppError::from(format!("切换置顶失败: {}", e)))?;
     if result.rows_affected() == 0 {
-        return Err(format!("剪贴板条目 {} 不存在", id));
+        return Err(crate::error::AppError::from(format!("剪贴板条目 {} 不存在", id)));
     }
 
     let updated = fetch_by_id(&id)
         .await?
-        .ok_or_else(|| format!("剪贴板条目 {} 不存在", id))?;
+        .ok_or_else(|| crate::error::AppError::from(format!("剪贴板条目 {} 不存在", id)))?;
 
     // 取消置顶后可能需要裁剪
     if !updated.pinned {
@@ -274,23 +275,23 @@ pub async fn toggle_pin_clipboard_entry(id: String) -> Result<ClipboardEntry, St
 /// 清空非置顶条目；置顶永远保留
 #[tauri::command]
 #[specta::specta]
-pub async fn clear_clipboard_history() -> Result<(), String> {
+pub async fn clear_clipboard_history() -> AppResult<()> {
     sqlx::query("DELETE FROM clipboard_entries WHERE pinned = 0")
         .execute(pool())
         .await
-        .map_err(|e| format!("清空剪贴板历史失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("清空剪贴板历史失败: {}", e)))?;
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_clipboard_settings() -> Result<ClipboardSettings, String> {
+pub async fn get_clipboard_settings() -> AppResult<ClipboardSettings> {
     read_settings_file()
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_clipboard_settings(settings: ClipboardSettings) -> Result<(), String> {
+pub async fn save_clipboard_settings(settings: ClipboardSettings) -> AppResult<()> {
     write_settings_file(&settings)?;
     let max_items = settings.max_items as i64;
     trim_unpinned(max_items).await?;
@@ -299,7 +300,7 @@ pub async fn save_clipboard_settings(settings: ClipboardSettings) -> Result<(), 
 
 #[tauri::command]
 #[specta::specta]
-pub async fn write_to_clipboard(content: String) -> Result<(), String> {
+pub async fn write_to_clipboard(content: String) -> AppResult<()> {
     // 更新哈希以阻止监控线程把这次设置作为新条目记录
     let hash = compute_hash(&content);
     if let Ok(mut last_hash) = LAST_CLIP_HASH.lock() {
@@ -307,10 +308,10 @@ pub async fn write_to_clipboard(content: String) -> Result<(), String> {
     }
 
     let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("无法访问系统剪贴板: {}", e))?;
+        arboard::Clipboard::new().map_err(|e| crate::error::AppError::from(format!("无法访问系统剪贴板: {}", e)))?;
     clipboard
         .set_text(&content)
-        .map_err(|e| format!("写入系统剪贴板失败: {}", e))
+        .map_err(|e| crate::error::AppError::from(format!("写入系统剪贴板失败: {}", e)))
 }
 
 // ============== 后台监控 ==============
