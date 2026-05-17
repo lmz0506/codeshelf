@@ -3,22 +3,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::storage::ChatSession;
-
-pub(super) fn session_path_json(session_id: &str) -> Result<PathBuf, String> {
-    let dir = crate::commands::chat::resolve_chat_history_dir_pub()?;
-    Ok(dir.join(format!("{}.json", session_id)))
-}
-
 pub(super) fn session_tasks_path(session_id: &str) -> Result<PathBuf, String> {
     let dir = crate::commands::chat::resolve_chat_history_dir_pub()?;
     Ok(dir.join(format!("{}.tasks.json", session_id)))
-}
-
-fn load_session(session_id: &str) -> Result<ChatSession, String> {
-    let path = session_path_json(session_id)?;
-    let text = fs::read_to_string(&path).map_err(|e| format!("读取会话失败: {}", e))?;
-    serde_json::from_str(&text).map_err(|e| format!("解析会话失败: {}", e))
 }
 
 /// 当前工具上下文
@@ -27,8 +14,8 @@ pub(super) struct ToolCtx {
     pub allowed_cwd: Option<PathBuf>,
 }
 
-pub(super) fn load_ctx(session_id: &str) -> Result<ToolCtx, String> {
-    let session = load_session(session_id)?;
+pub(super) async fn load_ctx(session_id: &str) -> Result<ToolCtx, String> {
+    let session = crate::commands::chat::get_chat_session(session_id.to_string()).await?;
     Ok(ToolCtx {
         session_id: session_id.to_string(),
         allowed_cwd: session.allowed_cwd.as_ref().map(PathBuf::from),

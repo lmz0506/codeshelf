@@ -517,13 +517,15 @@ pub fn mark_files_migrated(data_dir: &Path) -> Result<(), String> {
 
     let conv = data_dir.join("conversations");
     if conv.exists() {
-        let dst = data_dir.join("conversations.migrated");
-        if dst.exists() {
-            let _ = fs::remove_dir_all(&dst);
-        }
-        if let Err(e) = fs::rename(&conv, &dst) {
-            log::warn!("重命名 conversations 目录失败（数据已成功迁移，可忽略）: {}", e);
-        }
+        // 注意：不重命名整个 conversations 目录！
+        // 该目录除了 chat session JSON 外还存 <id>.tasks.json（工具任务列表），
+        // 任务文件不在本次迁移范围内，目录必须保持可访问。
+        // 备份已在 backup_<ts>/ 中完整保留，原 .json 文件即使留在磁盘上也不会被读取
+        // （chat 命令走 sqlite），用户可手动清理。
+        log::info!(
+            "conversations 目录保留原位置 ({:?})，未迁移的 .tasks.json 仍可工作；旧 chat JSON 已无人引用",
+            conv
+        );
     }
 
     Ok(())
