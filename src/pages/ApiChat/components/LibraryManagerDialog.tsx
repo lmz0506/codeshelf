@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Edit2, FileUp, Link, Plus, Trash2, Upload, X } from "lucide-react";
+import { Download, Edit2, FileUp, Plus, Trash2, Upload, X } from "lucide-react";
 import { showToast } from "@/components/ui";
 import type { ApiEndpoint, ApiGroup } from "@/types";
 import {
@@ -12,6 +12,16 @@ import {
 } from "@/services/api_chat";
 import { GroupEditor } from "./GroupEditor";
 import { EndpointEditor } from "./EndpointEditor";
+import {
+  LibraryImportDraftDialog,
+  type ImportDraft,
+} from "./LibraryImportDraftDialog";
+import {
+  LibraryDeleteConfirmDialog,
+  LibraryDocumentImportChoice,
+  LibraryDocumentImportUrl,
+  type PendingDelete,
+} from "./LibraryDialogs";
 import { exportApiLibrary, importApiLibrary } from "../utils/exportLibrary";
 import { importOpenApiDocument, importOpenApiDocumentFromUrl } from "../utils/importOpenApiDocument";
 
@@ -25,22 +35,6 @@ interface LibraryManagerDialogProps {
 type EditingGroup = { kind: "group"; data?: ApiGroup };
 type EditingEndpoint = { kind: "endpoint"; data?: ApiEndpoint };
 type Editing = EditingGroup | EditingEndpoint | null;
-type ImportStrategy = "overwrite" | "ignore";
-
-interface ImportDraft {
-  title: string;
-  groups: ApiGroup[];
-  endpoints: ApiEndpoint[];
-  selectedGroupIds: Set<string>;
-  selectedEndpointIds: Set<string>;
-  strategy: ImportStrategy;
-}
-
-type PendingDelete =
-  | { kind: "group"; data: ApiGroup }
-  | { kind: "endpoint"; data: ApiEndpoint }
-  | { kind: "endpoints"; data: ApiEndpoint[] }
-  | null;
 
 function normalizeKey(value: string): string {
   return value.trim().toLowerCase();
@@ -56,7 +50,7 @@ export function LibraryManagerDialog({ open, onClose, onChanged }: LibraryManage
   const [documentUrlDialogOpen, setDocumentUrlDialogOpen] = useState(false);
   const [documentUrl, setDocumentUrl] = useState("");
   const [importDraft, setImportDraft] = useState<ImportDraft | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [selectedEndpointIds, setSelectedEndpointIds] = useState<Set<string>>(new Set());
 
   async function reload() {
@@ -612,318 +606,46 @@ export function LibraryManagerDialog({ open, onClose, onChanged }: LibraryManage
         </div>
       </div>
       {pendingDelete && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30"
-          onClick={(e) => {
-            e.stopPropagation();
-            setPendingDelete(null);
-          }}
-        >
-          <div
-            className="w-[380px] max-w-[90vw] rounded-lg bg-white shadow-xl border border-gray-200 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-4 py-3 border-b border-gray-200">
-              <div className="text-sm font-semibold text-gray-900">
-                {pendingDelete.kind === "group"
-                  ? "删除分组"
-                  : pendingDelete.kind === "endpoint"
-                    ? "删除接口"
-                    : "批量删除接口"}
-              </div>
-            </div>
-            <div className="p-4 text-sm text-gray-700">
-              {pendingDelete.kind === "group" ? (
-                <>
-                  <div>确定删除分组「{pendingDelete.data.name}」？</div>
-                  <div className="mt-2 text-xs text-gray-500">组内接口不会删除，会变为独立接口。</div>
-                </>
-              ) : pendingDelete.kind === "endpoint" ? (
-                <div>确定删除接口「{pendingDelete.data.name}」？</div>
-              ) : (
-                <>
-                  <div>确定删除选中的 {pendingDelete.data.length} 个接口？</div>
-                  <div className="mt-2 max-h-32 overflow-auto rounded border border-gray-100 bg-gray-50 p-2 text-xs text-gray-500">
-                    {pendingDelete.data.map((ep) => (
-                      <div key={ep.id} className="truncate" title={ep.name}>{ep.name}</div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-            <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200">
-              <button
-                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
-                onClick={() => setPendingDelete(null)}
-              >
-                取消
-              </button>
-              <button
-                className="px-3 py-1.5 text-xs bg-red-500 text-white rounded-lg disabled:opacity-60"
-                onClick={confirmDelete}
-                disabled={loading}
-              >
-                {loading ? "删除中..." : "确认删除"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <LibraryDeleteConfirmDialog
+          pendingDelete={pendingDelete}
+          loading={loading}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={confirmDelete}
+        />
       )}
       {importDraft && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30"
-          onClick={(e) => {
-            e.stopPropagation();
-            setImportDraft(null);
-          }}
-        >
-          <div
-            className="w-[820px] max-w-[94vw] h-[640px] max-h-[88vh] rounded-lg bg-white shadow-xl border border-gray-200 overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-              <div>
-                <div className="text-sm font-semibold text-gray-800">确认导入：{importDraft.title}</div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  已选择 {importSelectedCount.groups} 个分组 / {importSelectedCount.endpoints} 个接口
-                </div>
-              </div>
-              <button className="text-gray-400 hover:text-gray-700" onClick={() => setImportDraft(null)}>
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-4 text-xs text-gray-700">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={importDraft.strategy === "overwrite"}
-                    onChange={() => setImportDraft((draft) => draft ? { ...draft, strategy: "overwrite" } : draft)}
-                  />
-                  <span>覆盖已有</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={importDraft.strategy === "ignore"}
-                    onChange={() => setImportDraft((draft) => draft ? { ...draft, strategy: "ignore" } : draft)}
-                  />
-                  <span>忽略已有</span>
-                </label>
-              </div>
-              <div className="flex items-center gap-2">
-                <button className="text-xs text-blue-500 hover:underline" onClick={selectAllImportDraft}>
-                  全选
-                </button>
-                <button className="text-xs text-gray-500 hover:underline" onClick={clearImportDraftSelection}>
-                  清空
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 grid grid-cols-[260px_1fr] min-h-0">
-              <div className="border-r border-gray-200 min-h-0 flex flex-col">
-                <div className="px-3 py-2 text-xs font-semibold text-gray-700 border-b border-gray-100">分组</div>
-                <div className="flex-1 overflow-auto p-2 space-y-1">
-                  {importDraft.groups.map((g) => {
-                    const conflict = findGroupConflict(g);
-                    const selected = importDraft.selectedGroupIds.has(g.id);
-                    const endpointCount = importDraft.endpoints.filter((ep) => ep.groupId === g.id).length;
-                    return (
-                      <label
-                        key={g.id}
-                        className={`block rounded border px-2 py-2 text-xs cursor-pointer ${
-                          selected ? "border-blue-200 bg-blue-50" : "border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            onChange={() => toggleImportGroup(g.id)}
-                          />
-                          <span className="flex-1 truncate font-medium text-gray-800" title={g.name}>{g.name}</span>
-                          <span className="text-[10px] text-gray-400">{endpointCount}</span>
-                        </div>
-                        <div className="mt-1 flex items-center gap-2 pl-5">
-                          {conflict ? (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">已有</span>
-                          ) : (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">新增</span>
-                          )}
-                          <span className="truncate text-[10px] text-gray-400" title={g.baseUrl}>{g.baseUrl || "未设置 Base URL"}</span>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="min-h-0 flex flex-col">
-                <div className="px-3 py-2 text-xs font-semibold text-gray-700 border-b border-gray-100">接口</div>
-                <div className="flex-1 overflow-auto">
-                  {importDraft.endpoints.map((ep) => {
-                    const conflict = findEndpointConflict(ep);
-                    const selected = importDraft.selectedEndpointIds.has(ep.id);
-                    const groupName = importDraft.groups.find((g) => g.id === ep.groupId)?.name ?? "独立接口";
-                    return (
-                      <label
-                        key={ep.id}
-                        className={`flex items-center gap-2 px-3 py-2 text-xs border-b border-gray-100 cursor-pointer ${
-                          selected ? "bg-blue-50" : "hover:bg-gray-50"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => toggleImportEndpoint(ep.id)}
-                        />
-                        <span
-                          className={`font-mono px-1.5 py-0.5 rounded text-[10px] ${
-                            ep.method === "GET"
-                              ? "bg-green-100 text-green-700"
-                              : ep.method === "DELETE"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-blue-100 text-blue-700"
-                          }`}
-                        >
-                          {ep.method}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-gray-800" title={ep.name}>{ep.name}</div>
-                          <div className="truncate text-gray-400 font-mono text-[10px]" title={ep.url}>{ep.url}</div>
-                        </div>
-                        <span className="max-w-[120px] truncate text-[10px] text-gray-400" title={groupName}>{groupName}</span>
-                        {conflict ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">已有</span>
-                        ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">新增</span>
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200">
-              <button
-                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
-                onClick={() => setImportDraft(null)}
-              >
-                取消
-              </button>
-              <button
-                className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg disabled:opacity-60"
-                onClick={applyImportDraft}
-                disabled={loading || importSelectedCount.groups + importSelectedCount.endpoints === 0}
-              >
-                {loading ? "导入中..." : "导入所选"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <LibraryImportDraftDialog
+          draft={importDraft}
+          loading={loading}
+          selectedCount={importSelectedCount}
+          findGroupConflict={findGroupConflict}
+          findEndpointConflict={(ep) => findEndpointConflict(ep)}
+          onClose={() => setImportDraft(null)}
+          onStrategyChange={(strategy) =>
+            setImportDraft((draft) => (draft ? { ...draft, strategy } : draft))
+          }
+          onToggleGroup={toggleImportGroup}
+          onToggleEndpoint={toggleImportEndpoint}
+          onSelectAll={selectAllImportDraft}
+          onClearSelection={clearImportDraftSelection}
+          onApply={applyImportDraft}
+        />
       )}
       {documentImportChoiceOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30"
-          onClick={(e) => {
-            e.stopPropagation();
-            setDocumentImportChoiceOpen(false);
-          }}
-        >
-          <div
-            className="w-[360px] max-w-[90vw] rounded-lg bg-white shadow-xl border border-gray-200 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-              <div className="text-sm font-semibold text-gray-800">选择导入方式</div>
-              <button
-                className="text-gray-400 hover:text-gray-700"
-                onClick={() => setDocumentImportChoiceOpen(false)}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div className="p-4 grid gap-2">
-              <button
-                className="w-full text-left px-3 py-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors flex items-center gap-3"
-                onClick={handleImportDocument}
-              >
-                <FileUp size={18} className="text-blue-500" />
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-gray-800">本地文件</div>
-                  <div className="text-xs text-gray-500">选择 JSON / YAML 接口文档</div>
-                </div>
-              </button>
-              <button
-                className="w-full text-left px-3 py-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors flex items-center gap-3"
-                onClick={handleImportDocumentUrl}
-              >
-                <Link size={18} className="text-blue-500" />
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-gray-800">在线链接</div>
-                  <div className="text-xs text-gray-500">输入 RAW JSON / YAML 文档地址</div>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
+        <LibraryDocumentImportChoice
+          onClose={() => setDocumentImportChoiceOpen(false)}
+          onPickLocal={handleImportDocument}
+          onPickUrl={handleImportDocumentUrl}
+        />
       )}
       {documentUrlDialogOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30"
-          onClick={(e) => {
-            e.stopPropagation();
-            setDocumentUrlDialogOpen(false);
-          }}
-        >
-          <div
-            className="w-[460px] max-w-[92vw] rounded-lg bg-white shadow-xl border border-gray-200 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-              <div className="text-sm font-semibold text-gray-800">导入在线接口文档</div>
-              <button
-                className="text-gray-400 hover:text-gray-700"
-                onClick={() => setDocumentUrlDialogOpen(false)}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              <input
-                autoFocus
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono focus:outline-none focus:border-blue-400"
-                placeholder="https://example.com/openapi.json"
-                value={documentUrl}
-                onChange={(e) => setDocumentUrl(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !loading) {
-                    submitImportDocumentUrl();
-                  }
-                }}
-              />
-              <div className="text-xs text-gray-500">请输入可直接访问的 RAW JSON / YAML 文档地址。</div>
-            </div>
-            <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200">
-              <button
-                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
-                onClick={() => setDocumentUrlDialogOpen(false)}
-              >
-                取消
-              </button>
-              <button
-                className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg disabled:opacity-60"
-                onClick={submitImportDocumentUrl}
-                disabled={loading || !documentUrl.trim()}
-              >
-                {loading ? "导入中..." : "导入"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <LibraryDocumentImportUrl
+          value={documentUrl}
+          loading={loading}
+          onChange={setDocumentUrl}
+          onClose={() => setDocumentUrlDialogOpen(false)}
+          onSubmit={submitImportDocumentUrl}
+        />
       )}
     </div>
   );
