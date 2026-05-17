@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, GitBranch, Terminal, RefreshCw, CloudUpload, FolderOpen, Edit2, FileText, Loader2, GitCommit, Copy, ArrowRightLeft, ArrowLeft, Box, MessageSquare } from "lucide-react";
+import { X, GitBranch, RefreshCw, CloudUpload, FolderOpen, Edit2, FileText, Loader2, GitCommit, Copy, ArrowRightLeft, ArrowLeft } from "lucide-react";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import { CategorySelector } from "./CategorySelector";
 import { LabelSelector } from "./LabelSelector";
@@ -11,6 +11,8 @@ import { GitCommitModal } from "./GitCommitModal";
 import { AddRemoteModal } from "./AddRemoteModal";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { TerminalContextMenu } from "./TerminalContextMenu";
+import { ProjectQuickActions } from "./ProjectQuickActions";
+import { useProjectGitActions } from "./useProjectGitActions";
 import { CommitHistoryPanel } from "./git/CommitHistoryPanel";
 import { GitSidebar } from "./git/GitSidebar";
 import { showToast } from "@/components/ui";
@@ -19,27 +21,13 @@ import {
   getGitStatus,
   getCommitHistory,
   getRemotes,
-  gitPull,
-  gitPush,
-  removeRemote,
   searchCommits,
-  gitAdd,
-  gitUnstage,
-  gitDiscardFiles,
-  gitFetch,
-  gitRevertCommit,
-  gitCherryPick,
-  getConflictFileContent,
-  gitCheckoutConflictVersion,
-  gitMarkResolved,
   type ConflictFileContent,
 } from "@/services/git";
-import { openInEditor, openInExplorer, openInTerminal, updateProject } from "@/services/db";
-import { getEditorForProject, getEditorConfigForProject, getEditorIcon } from "@/utils/editor";
+import { updateProject } from "@/services/db";
 import { invoke } from "@tauri-apps/api/core";
 import { useUiStore } from "@/stores/uiStore";
 import { useProjectsStore } from "@/stores/projectsStore";
-import { useEditorsStore } from "@/stores/editorsStore";
 import { useAiProvidersStore } from "@/stores/aiProvidersStore";
 import { createChatSession, saveChatSession } from "@/services/chat";
 
@@ -56,8 +44,6 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
   const [currentRemote, setCurrentRemote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pulling, setPulling] = useState(false);
-  const [pushing, setPushing] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showReadme, setShowReadme] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
@@ -70,15 +56,11 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [readmeContent, setReadmeContent] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>(project.tags);
   const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
-  // 用于显示的本地项目数据（编辑后立即更新）
   const [localProject, setLocalProject] = useState<Project>(project);
-  const editors = useEditorsStore((s) => s.editors);
-  const terminalConfig = useEditorsStore((s) => s.terminalConfig);
   const markProjectDirty = useProjectsStore((s) => s.markProjectDirty);
   const projects = useProjectsStore((s) => s.projects);
   const recentDetailProjectIds = useProjectsStore((s) => s.recentDetailProjectIds);
   const addRecentDetailProject = useProjectsStore((s) => s.addRecentDetailProject);
-  const navigateToDockerTool = useUiStore((s) => s.navigateToDockerTool);
   const navigateToChatSession = useUiStore((s) => s.navigateToChatSession);
   const aiProviders = useAiProvidersStore((s) => s.aiProviders);
   const ensureAiDefaultProvider = useAiProvidersStore((s) => s.ensureAiDefaultProvider);
@@ -92,6 +74,30 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [historyLimit, setHistoryLimit] = useState(20);
   const [searchQuery, setSearchQuery] = useState("");
   const [commitView, setCommitView] = useState<"history" | "ahead" | "behind">("history");
+
+  const {
+    pulling,
+    pushing,
+    handlePull,
+    handlePush,
+    handleStageFiles,
+    handleUnstageFiles,
+    handleDiscardFiles,
+    handleFetchRemote,
+    handleCopyCommitMessage,
+    handleRevertCommit,
+    handleCherryPickCommit,
+    handlePreviewConflict,
+    handleUseConflictVersion,
+    handleMarkResolved,
+    handleRemoveRemote,
+  } = useProjectGitActions({
+    projectPath: project.path,
+    gitStatus,
+    currentRemote,
+    refresh: loadProjectDetails,
+    setConflictPreview,
+  });
 
   // 获取最近打开的项目列表（排除当前项目）
   const recentProjects = recentDetailProjectIds
@@ -243,156 +249,6 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
     }
   }
 
-  async function handlePull() {
-    if (!gitStatus || !currentRemote || pulling) return;
-    try {
-      setPulling(true);
-      await gitPull(project.path, currentRemote, gitStatus.branch);
-      await loadProjectDetails();
-      markProjectDirty(project.path); // Mark for stats refresh
-      showToast("success", "拉取成功", `已从 ${currentRemote}/${gitStatus.branch} 拉取最新代码`);
-    } catch (error) {
-      console.error("Failed to pull:", error);
-      showToast("error", "拉取失败", String(error));
-    } finally {
-      setPulling(false);
-    }
-  }
-
-  async function handlePush() {
-    if (!gitStatus || !currentRemote || pushing) return;
-    try {
-      setPushing(true);
-      await gitPush(project.path, currentRemote, gitStatus.branch);
-      await loadProjectDetails();
-      markProjectDirty(project.path); // Mark for stats refresh
-      showToast("success", "推送成功", `已推送到 ${currentRemote}/${gitStatus.branch}`);
-    } catch (error) {
-      console.error("Failed to push:", error);
-      showToast("error", "推送失败", String(error));
-    } finally {
-      setPushing(false);
-    }
-  }
-
-  async function refreshGitState() {
-    await loadProjectDetails();
-    markProjectDirty(project.path);
-  }
-
-  async function handleStageFiles(files: string[]) {
-    const label = files.length === 1 ? files[0] : `${files.length} 个文件`;
-    if (!confirm(`确认执行 git add 吗？\n\n目标：${label}\n\n说明：git add 会把文件加入暂存区，表示这些改动准备进入下一次 commit。不会创建提交，也不会推送到远程。`)) return;
-    try {
-      await gitAdd(project.path, files);
-      await refreshGitState();
-      showToast("success", "已暂存", label);
-    } catch (error) {
-      console.error("Failed to stage files:", error);
-      showToast("error", "暂存失败", String(error));
-    }
-  }
-
-  async function handleUnstageFiles(files: string[]) {
-    const label = files.length === 1 ? files[0] : `${files.length} 个文件`;
-    if (!confirm(`确认执行 git restore --staged 吗？\n\n目标：${label}\n\n说明：这会把文件从暂存区移回工作区。文件内容不会丢，只是不再进入下一次 commit。`)) return;
-    try {
-      await gitUnstage(project.path, files);
-      await refreshGitState();
-      showToast("success", "已取消暂存", label);
-    } catch (error) {
-      console.error("Failed to unstage files:", error);
-      showToast("error", "取消暂存失败", String(error));
-    }
-  }
-
-  async function handleDiscardFiles(files: string[], includeUntracked: boolean) {
-    const label = files.length === 1 ? files[0] : `${files.length} 个文件`;
-    if (!confirm(`确认执行 git restore / git clean 吗？\n\n目标：${label}\n\n说明：这会丢弃本地未提交改动。已跟踪文件会恢复到 Git 记录中的版本；未跟踪文件会被删除。这个操作通常无法撤销。`)) return;
-
-    try {
-      await gitDiscardFiles(project.path, files, includeUntracked);
-      await refreshGitState();
-      showToast("success", "已丢弃变更", label);
-    } catch (error) {
-      console.error("Failed to discard files:", error);
-      showToast("error", "丢弃失败", String(error));
-    }
-  }
-
-  async function handleFetchRemote() {
-    if (!confirm(`确认执行 git fetch 吗？\n\n说明：git fetch 只更新远程分支信息，不会修改当前工作区文件，也不会合并代码。`)) return;
-    try {
-      await gitFetch(project.path, currentRemote || undefined);
-      await refreshGitState();
-      showToast("success", "git fetch 完成", currentRemote ? `已 fetch ${currentRemote}` : "已 fetch 所有远程仓库");
-    } catch (error) {
-      console.error("Failed to fetch remote:", error);
-      showToast("error", "git fetch 失败", String(error));
-    }
-  }
-
-  async function handleCopyCommitMessage(message: string) {
-    await navigator.clipboard.writeText(message);
-    showToast("success", "已复制", "提交说明已复制到剪贴板");
-  }
-
-  async function handleRevertCommit(commit: CommitInfo) {
-    if (!confirm(`确认执行 git revert 吗？\n\n提交：${commit.shortHash} ${commit.message}\n\n说明：git revert 会新增一个反向提交，用来撤销这个提交造成的改动。它不会删除历史；如果有冲突，需要手动解决。`)) return;
-    try {
-      await gitRevertCommit(project.path, commit.hash);
-      await refreshGitState();
-      showToast("success", "git revert 完成", commit.shortHash);
-    } catch (error) {
-      showToast("error", "git revert 失败", String(error));
-    }
-  }
-
-  async function handleCherryPickCommit(commit: CommitInfo) {
-    if (!confirm(`确认执行 git cherry-pick 吗？\n\n提交：${commit.shortHash} ${commit.message}\n\n说明：git cherry-pick 会把这个提交的改动复制到当前分支，并生成一个新提交。如果有冲突，需要手动解决。`)) return;
-    try {
-      await gitCherryPick(project.path, commit.hash);
-      await refreshGitState();
-      showToast("success", "git cherry-pick 完成", commit.shortHash);
-    } catch (error) {
-      showToast("error", "git cherry-pick 失败", String(error));
-    }
-  }
-
-  async function handlePreviewConflict(file: string) {
-    try {
-      const content = await getConflictFileContent(project.path, file);
-      setConflictPreview(content);
-    } catch (error) {
-      showToast("error", "读取冲突失败", String(error));
-    }
-  }
-
-  async function handleUseConflictVersion(file: string, version: "ours" | "theirs") {
-    const label = version === "ours" ? "当前分支版本" : "传入分支版本";
-    if (!confirm(`确认执行 git checkout --${version} 吗？\n\n文件：${file}\n采用：${label}\n\n说明：这个文件会直接使用${label}，另一边的改动会被丢弃。随后会执行 git add，把该文件标记为冲突已解决。`)) return;
-    try {
-      await gitCheckoutConflictVersion(project.path, file, version);
-      setConflictPreview(null);
-      await refreshGitState();
-      showToast("success", "冲突已处理", `已采用${label}`);
-    } catch (error) {
-      showToast("error", "处理冲突失败", String(error));
-    }
-  }
-
-  async function handleMarkResolved(file: string) {
-    if (!confirm(`确认执行 git add 标记冲突已解决吗？\n\n文件：${file}\n\n说明：只有当你已经手动编辑好冲突内容后才点这个。Git 会把当前文件内容加入暂存区，表示冲突已处理。`)) return;
-    try {
-      await gitMarkResolved(project.path, file);
-      setConflictPreview(null);
-      await refreshGitState();
-      showToast("success", "已标记解决", file);
-    } catch (error) {
-      showToast("error", "标记解决失败", String(error));
-    }
-  }
-
   async function handleOpenProjectChat() {
     const providers = ensureAiDefaultProvider(aiProviders);
     const provider = providers.find((item) => item.enabled && item.isDefaultProvider) || providers.find((item) => item.enabled);
@@ -452,19 +308,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
     }
   }
 
-  async function handleRemoveRemote(remoteName: string) {
-    if (!confirm(`确定要删除远程仓库 "${remoteName}" 吗？`)) {
-      return;
-    }
-    try {
-      await removeRemote(project.path, remoteName);
-      await loadProjectDetails();
-      showToast("success", "删除成功", `远程仓库 ${remoteName} 已删除`);
-    } catch (error) {
-      console.error("Failed to remove remote:", error);
-      showToast("error", "删除失败", String(error));
-    }
-  }
+
 
   return (
     <div className="project-detail-panel">
@@ -652,98 +496,14 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
             onPreviewConflict={handlePreviewConflict}
           />
 
-          {/* 快捷操作 - 固定在侧边栏底部 */}
-          <div className="sidebar-section-bottom">
-            <div className="quick-actions-title">快捷操作</div>
-            <div className="quick-actions-grid">
-              <button
-                onClick={loadReadme}
-                className="quick-action-btn-compact"
-                title="查看 README"
-              >
-                <FileText size={14} />
-                <span>README</span>
-              </button>
-              <button
-                onClick={() => {
-                  const editorPath = getEditorForProject(storeProject, editors);
-                  openInEditor(project.path, editorPath);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setShowEditorMenu({ x: e.clientX, y: e.clientY });
-                }}
-                className="quick-action-btn-compact"
-                title={(() => {
-                  const ed = getEditorConfigForProject(storeProject, editors);
-                  return ed ? `用 ${ed.name} 打开（右键选择）` : "在编辑器中打开（右键选择编辑器）";
-                })()}
-              >
-                <span className="editor-icon-text" style={{ fontSize: 10, width: 14, height: 14, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                  {(() => {
-                    const ed = getEditorConfigForProject(storeProject, editors);
-                    return ed ? getEditorIcon(ed.name) : "Ed";
-                  })()}
-                </span>
-                <span>{(() => {
-                  const ed = getEditorConfigForProject(storeProject, editors);
-                  return ed ? ed.name : "编辑器";
-                })()}</span>
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    await openInExplorer(project.path);
-                  } catch (error) {
-                    console.error("Failed to open explorer:", error);
-                    showToast("error", "打开文件夹失败", String(error));
-                  }
-                }}
-                className="quick-action-btn-compact"
-                title="打开文件夹"
-              >
-                <FolderOpen size={14} />
-                <span>文件夹</span>
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const termType = terminalConfig.type === "default" ? undefined : terminalConfig.type;
-                    const termPath = terminalConfig.paths?.[terminalConfig.type as keyof typeof terminalConfig.paths];
-                    await openInTerminal(project.path, termType, terminalConfig.customPath, termPath);
-                  } catch (error) {
-                    console.error("Failed to open terminal:", error);
-                    showToast("error", "打开终端失败", String(error));
-                  }
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setShowTerminalMenu({ x: e.clientX, y: e.clientY });
-                }}
-                className="quick-action-btn-compact"
-                title="终端（右键打开 Claude Code）"
-              >
-                <Terminal size={14} />
-                <span>终端</span>
-              </button>
-              <button
-                onClick={() => navigateToDockerTool(project.path, project.name)}
-                className="quick-action-btn-compact"
-                title="Docker 镜像"
-              >
-                <Box size={14} />
-                <span>Docker</span>
-              </button>
-              <button
-                onClick={handleOpenProjectChat}
-                className="quick-action-btn-compact"
-                title="新建项目 AI 对话"
-              >
-                <MessageSquare size={14} />
-                <span>对话</span>
-              </button>
-            </div>
-          </div>
+          <ProjectQuickActions
+            project={project}
+            storeProject={storeProject}
+            onLoadReadme={loadReadme}
+            onOpenProjectChat={handleOpenProjectChat}
+            onShowEditorMenu={setShowEditorMenu}
+            onShowTerminalMenu={setShowTerminalMenu}
+          />
         </aside>
 
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
