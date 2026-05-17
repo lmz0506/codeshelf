@@ -142,6 +142,12 @@ export function useChatRunner(deps: ChatRunnerDeps) {
       session = await maybeAutoCompact(session);
     }
 
+    // 锚定当前请求所属的会话 ID。流回调期间用户可能切换会话，
+    // 必须保证所有 setActiveSession / saveChatSession 都只针对这个会话。
+    const targetSessionId = session.id;
+    // 本地维护流过程中的最新 session 快照，避免依赖可能已切走的 activeSessionRef
+    let workingSession: ChatSession = session;
+
     let compaction: { summary: string; sourceMessageCount: number; version: string } | undefined;
     if (session.currentCompactionVersion) {
       try {
@@ -212,49 +218,51 @@ export function useChatRunner(deps: ChatRunnerDeps) {
         },
         {
           onDelta: (full, thinking) => {
+            // 基于 workingSession 计算新消息，UI 仅在当前还在该会话时同步
+            const messages = [...workingSession.messages];
+            const last = messages[messages.length - 1];
+            if (last?.role === "assistant" && !last.toolCalls) {
+              messages[messages.length - 1] = {
+                ...last,
+                content: full,
+                thinkingContent: thinking || last.thinkingContent,
+              };
+            } else {
+              messages.push(makeMessage("assistant", full, { thinkingContent: thinking || undefined }));
+            }
+            workingSession = { ...workingSession, messages };
             setActiveSession((prev) => {
-              if (!prev) return prev;
-              const messages = [...prev.messages];
-              const last = messages[messages.length - 1];
-              if (last?.role === "assistant" && !last.toolCalls) {
-                messages[messages.length - 1] = {
-                  ...last,
-                  content: full,
-                  thinkingContent: thinking || last.thinkingContent,
-                };
-              } else {
-                messages.push(makeMessage("assistant", full, { thinkingContent: thinking || undefined }));
-              }
+              if (!prev || prev.id !== targetSessionId) return prev;
               return { ...prev, messages };
             });
           },
           onThinking: () => {},
           onToolCallDelta: () => {},
           onDone: async (finalContent, finalThinking, toolCalls, finishReason) => {
-            const current = activeSessionRef.current;
-            if (!current) return;
-
             const assistantMsg: ChatMessage = makeMessage("assistant", finalContent, {
               thinkingContent: finalThinking || undefined,
               toolCalls: toolCalls.length > 0 ? toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments })) : undefined,
             });
-            const lastIdx = current.messages.length - 1;
-            const last = current.messages[lastIdx];
+            const lastIdx = workingSession.messages.length - 1;
+            const last = workingSession.messages[lastIdx];
             let nextMessages: ChatMessage[];
             if (last?.role === "assistant" && !last.toolCalls) {
-              nextMessages = [...current.messages];
+              nextMessages = [...workingSession.messages];
               nextMessages[lastIdx] = { ...last, ...assistantMsg, id: last.id, createdAt: last.createdAt };
             } else {
-              nextMessages = [...current.messages, assistantMsg];
+              nextMessages = [...workingSession.messages, assistantMsg];
             }
-            let updatedSession: ChatSession = { ...current, messages: nextMessages };
+            let updatedSession: ChatSession = { ...workingSession, messages: nextMessages };
             if ((updatedSession.title === "新会话" || !updatedSession.title.trim()) && updatedSession.messages.length >= 2) {
               const generated = summarizeTitle(updatedSession.messages);
               if (generated) updatedSession = { ...updatedSession, title: generated };
             }
             try {
               const saved = await saveChatSession(updatedSession);
-              setActiveSession(saved);
+              workingSession = saved;
+              if (activeSessionRef.current?.id === targetSessionId) {
+                setActiveSession(saved);
+              }
               syncSummary(saved);
               updatedSession = saved;
             } catch {
@@ -276,8 +284,9 @@ export function useChatRunner(deps: ChatRunnerDeps) {
   }
 
   async function executeAndContinue(sessionAfterAssistant: ChatSession, calls: ToolCall[], round: number) {
-    const { toolSchemas, setActiveSession, syncSummary, requestApproval } = depsRef.current;
+    const { toolSchemas, activeSessionRef, setActiveSession, syncSummary, requestApproval } = depsRef.current;
     let session = sessionAfterAssistant;
+    const targetSessionId = session.id;
     let allowedTools = new Set<string>(session.allowedTools ?? []);
     const localToolNames = new Set(toolSchemas.map((t) => t.name));
 
@@ -302,7 +311,9 @@ export function useChatRunner(deps: ChatRunnerDeps) {
           session = { ...session, allowedTools: Array.from(allowedTools) };
           try {
             const saved = await saveChatSession(session);
-            setActiveSession(saved);
+            if (activeSessionRef.current?.id === targetSessionId) {
+              setActiveSession(saved);
+            }
             syncSummary(saved);
             session = saved;
           } catch {
@@ -353,7 +364,9 @@ export function useChatRunner(deps: ChatRunnerDeps) {
       session = { ...session, messages: [...session.messages, toolMessage] };
       try {
         const saved = await saveChatSession(session);
-        setActiveSession(saved);
+        if (activeSessionRef.current?.id === targetSessionId) {
+          setActiveSession(saved);
+        }
         syncSummary(saved);
         session = saved;
       } catch {
