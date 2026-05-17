@@ -5,6 +5,7 @@ import { CategorySelector } from "./CategorySelector";
 import { LabelSelector } from "./LabelSelector";
 import { SyncRemoteModal } from "./SyncRemoteModal";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { ReadmeSection } from "./ReadmeSection";
 import { BranchSwitchModal } from "./BranchSwitchModal";
 import { GitCommitModal } from "./GitCommitModal";
 import { AddRemoteModal } from "./AddRemoteModal";
@@ -744,30 +745,43 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
           </div>
         </aside>
 
-        <CommitHistoryPanel
-          projectPath={project.path}
-          commits={commits}
-          remotes={remotes}
-          gitStatus={gitStatus}
-          currentRemote={currentRemote}
-          loading={loading}
-          expandedCommit={expandedCommit}
-          copiedHash={copiedHash}
-          searchQuery={searchQuery}
-          historyLimit={historyLimit}
-          activeView={commitView}
-          onRefresh={loadProjectDetails}
-          onShowHistory={showRecentCommits}
-          onShowAhead={() => loadDivergenceCommits("ahead")}
-          onShowBehind={() => loadDivergenceCommits("behind")}
-          onSearchChange={setSearchQuery}
-          onLoadMore={() => setHistoryLimit((limit) => limit + 20)}
-          onToggleCommit={(hash) => setExpandedCommit(expandedCommit === hash ? null : hash)}
-          onCopyHash={copyHash}
-          onCopyMessage={handleCopyCommitMessage}
-          onRevertCommit={handleRevertCommit}
-          onCherryPickCommit={handleCherryPickCommit}
-        />
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          <div className="ml-72 px-4 pt-3 pb-1 flex-shrink-0">
+            <ReadmeSection
+              projectPath={project.path}
+              onOpenFullView={(c) => {
+                setReadmeContent(c);
+                setShowReadme(true);
+              }}
+            />
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <CommitHistoryPanel
+              projectPath={project.path}
+              commits={commits}
+              remotes={remotes}
+              gitStatus={gitStatus}
+              currentRemote={currentRemote}
+              loading={loading}
+              expandedCommit={expandedCommit}
+              copiedHash={copiedHash}
+              searchQuery={searchQuery}
+              historyLimit={historyLimit}
+              activeView={commitView}
+              onRefresh={loadProjectDetails}
+              onShowHistory={showRecentCommits}
+              onShowAhead={() => loadDivergenceCommits("ahead")}
+              onShowBehind={() => loadDivergenceCommits("behind")}
+              onSearchChange={setSearchQuery}
+              onLoadMore={() => setHistoryLimit((limit) => limit + 20)}
+              onToggleCommit={(hash) => setExpandedCommit(expandedCommit === hash ? null : hash)}
+              onCopyHash={copyHash}
+              onCopyMessage={handleCopyCommitMessage}
+              onRevertCommit={handleRevertCommit}
+              onCherryPickCommit={handleCherryPickCommit}
+            />
+          </div>
+        </div>
       </div>
 
       {/* 快速切换页脚 */}

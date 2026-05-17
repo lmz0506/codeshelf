@@ -9,6 +9,7 @@ export { LabelSelector } from "./LabelSelector";
 export { AddProjectDialog } from "./AddProjectDialog";
 export { SyncRemoteModal } from "./SyncRemoteModal";
 export { MarkdownRenderer } from "./MarkdownRenderer";
+export { ReadmeSection } from "./ReadmeSection";
 export { BranchSwitchModal } from "./BranchSwitchModal";
 export { GitCommitModal } from "./GitCommitModal";
 export { AddRemoteModal } from "./AddRemoteModal";
