@@ -2,7 +2,6 @@
 
 #[allow(unused_imports)]
 use crate::error::AppResult;
-use std::fs;
 use std::path::PathBuf;
 #[allow(unused_imports)]
 use std::process::Command;

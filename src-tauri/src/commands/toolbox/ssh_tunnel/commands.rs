@@ -222,7 +222,7 @@ pub async fn start_ssh_tunnel(tunnel_id: String) -> AppResult<()> {
             log::error!("SSH 隧道服务错误: {}", e);
             let mut tunnels = SSH_TUNNELS.lock().await;
             if let Some(t) = tunnels.get_mut(&id) {
-                t.last_error = Some(e);
+                t.last_error = Some(e.to_string());
             }
         }
 

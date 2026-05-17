@@ -2972,11 +2972,11 @@ export type SessionStatus = "connecting" | "connected" | "listening" | "disconne
  * 快捷键条目
  */
 export type ShortcutEntry = { id: string; category: string; description: string; keys: string; platform: string; isDefault: boolean; isModified: boolean; originalKeys: string | null }
-export type ShortcutInput = { id: string; keys: string }
 /**
  * 添加/编辑快捷键的输入
  */
 export type ShortcutInput = { category: string | null; description: string | null; keys: string | null; platform: string | null }
+export type ShortcutInput = { id: string; keys: string }
 export type Skill = { name: string; description: string; argsHint: string | null; body: string }
 /**
  * SSH 认证方式（前端 tag 区分：key / password / sshConfig）
