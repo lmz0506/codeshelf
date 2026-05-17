@@ -4,7 +4,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/stores/appStore";
 import { getShortcuts, getCurrentPlatform } from "@/services/toolbox";
 import { restoreWindowState } from "@/hooks/useAppShortcuts";
+import { detectPlatform } from "@/utils/platform";
 import type { ShortcutEntry } from "@/types/toolbox";
+
+/** 后端 get_current_platform 把 Linux 也归为 "windows"，所以这里只用 navigator
+ *  检测 macOS，其他都映射为 windows，避免 macOS 用户初次渲染看到 Windows 内容 */
+const INITIAL_PLATFORM: string = detectPlatform() === "macos" ? "mac" : "windows";
 
 const CATEGORY_LABELS: Record<string, string> = {
   system: "系统快捷键",
@@ -61,7 +66,7 @@ export function ShortcutQuickLookup() {
 
   const [shortcuts, setShortcuts] = useState<ShortcutEntry[]>([]);
   const [search, setSearch] = useState("");
-  const [platform, setPlatform] = useState<string>("windows");
+  const [platform, setPlatform] = useState<string>(INITIAL_PLATFORM);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);

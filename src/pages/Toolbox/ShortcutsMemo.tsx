@@ -28,12 +28,17 @@ import {
   getCurrentPlatform,
 } from "@/services/toolbox";
 import type { ShortcutEntry } from "@/types/toolbox";
+import { detectPlatform } from "@/utils/platform";
 
 interface ShortcutsMemoProps {
   onBack: () => void;
 }
 
 type Platform = "mac" | "windows";
+
+/** 后端 get_current_platform 把 Linux 也归为 "windows"（Ctrl 修饰键与 Windows 一致），
+ *  所以这里只用 navigator 检测 macOS，其他都映射为 windows，避免初次渲染闪烁。 */
+const INITIAL_PLATFORM: Platform = detectPlatform() === "macos" ? "mac" : "windows";
 
 const PRESET_CATEGORIES = ["system", "vscode", "idea"];
 const PRESET_LABELS: Record<string, string> = {
@@ -210,7 +215,7 @@ function KeyRecorderInput({
 
 export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
   const [shortcuts, setShortcuts] = useState<ShortcutEntry[]>([]);
-  const [platform, setPlatform] = useState<Platform>("windows");
+  const [platform, setPlatform] = useState<Platform>(INITIAL_PLATFORM);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
