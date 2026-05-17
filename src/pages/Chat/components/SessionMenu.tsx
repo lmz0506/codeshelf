@@ -2,7 +2,8 @@
 
 import { Brain, ListChecks, Settings } from "lucide-react";
 import { showToast } from "@/components/ui";
-import type { ChatSession, Project, ToolSchema } from "@/types";
+import type { ToolSchema } from "@/services/chat";
+import type { ChatSession, Project } from "@/types";
 
 interface SessionMenuProps {
   open: boolean;
