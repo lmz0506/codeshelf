@@ -38,6 +38,7 @@ pub(super) fn parse_wsl_unc_to_linux(unc_path: &str) -> Option<(String, String)>
 
 /// 读取配置文件内容
 #[tauri::command]
+#[specta::specta]
 #[allow(unused_variables)]
 pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: String) -> Result<String, String> {
     // 如果是 UNC 路径，优先用 Windows API 读取，失败则通过 wsl 命令
@@ -90,6 +91,7 @@ pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: 
 
 /// 写入配置文件内容
 #[tauri::command]
+#[specta::specta]
 #[allow(unused_variables)]
 pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path: String, content: String) -> Result<(), String> {
     // 如果是 UNC 路径，优先用 Windows API 写入，失败则通过 wsl 命令
@@ -182,6 +184,7 @@ pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path:
 
 /// 打开配置目录
 #[tauri::command]
+#[specta::specta]
 #[allow(unused_variables)]
 pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_dir: String) -> Result<(), String> {
     // 如果是 UNC 路径，直接用 explorer 打开
@@ -260,7 +263,7 @@ pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_
 }
 
 /// WSL 配置目录结果
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct WslConfigDirResult {
     pub linux_path: String,
     pub unc_path: String,
@@ -269,6 +272,7 @@ pub struct WslConfigDirResult {
 /// 获取 WSL 配置目录（返回 Linux 路径和 UNC 路径）
 #[cfg(target_os = "windows")]
 #[tauri::command]
+#[specta::specta]
 pub async fn get_wsl_config_dir(distro: String) -> Result<WslConfigDirResult, String> {
     // 清理 distro 名称中的特殊字符
     let distro = distro.trim().replace('\r', "").replace('\0', "");
@@ -300,12 +304,14 @@ pub async fn get_wsl_config_dir(distro: String) -> Result<WslConfigDirResult, St
 /// 非 Windows 系统的 stub
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
+#[specta::specta]
 pub async fn get_wsl_config_dir(_distro: String) -> Result<WslConfigDirResult, String> {
     Err("WSL 仅在 Windows 上可用".to_string())
 }
 
 /// 扫描指定配置目录的配置文件
 #[tauri::command]
+#[specta::specta]
 #[allow(unused_variables)]
 pub async fn scan_claude_config_dir(env_type: EnvType, env_name: String, config_dir: String) -> Result<Vec<ConfigFileInfo>, String> {
     // 如果是 UNC 路径，直接用 Windows API 扫描

@@ -66,11 +66,13 @@ pub async fn execute_tool(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn chat_list_tools() -> Result<Vec<ToolSchema>, String> {
     Ok(all_tools())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn chat_execute_tool(
     app: AppHandle,
     session_id: String,

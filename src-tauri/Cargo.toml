@@ -40,6 +40,9 @@ dirs = "5"
 cron = "0.12"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros"] }
 thiserror = "2"
+specta = { version = "=2.0.0-rc.22", features = ["serde_json"] }
+specta-typescript = "0.0.9"
+tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 
 # 工具箱模块依赖
 futures = "0.3"

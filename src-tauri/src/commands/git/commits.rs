@@ -81,6 +81,7 @@ fn get_commit_stats_sync(path: &str, commit_hash: &str) -> Option<(u32, u32, u32
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_commit_history(path: String, limit: Option<u32>, ref_name: Option<String>) -> Result<Vec<CommitInfo>, String> {
     let limit_str = limit.unwrap_or(50).to_string();
 
@@ -157,6 +158,7 @@ pub async fn get_commit_history(path: String, limit: Option<u32>, ref_name: Opti
 
 /// 获取单个提交的详细信息（用于按需加载）
 #[tauri::command]
+#[specta::specta]
 pub async fn get_commit_detail(path: String, commit_hash: String) -> Result<CommitInfo, String> {
     let format = [
         "%H", "%h", "%s", "%an", "%ae", "%aI", "%b", "%D", "%P",
@@ -198,6 +200,7 @@ pub async fn get_commit_detail(path: String, commit_hash: String) -> Result<Comm
 
 /// 获取提交的文件变更列表
 #[tauri::command]
+#[specta::specta]
 pub async fn get_commit_files(
     path: String,
     commit_hash: String,
@@ -237,6 +240,7 @@ pub async fn get_commit_files(
 
 /// 搜索提交历史
 #[tauri::command]
+#[specta::specta]
 pub async fn search_commits(
     path: String,
     query: String,

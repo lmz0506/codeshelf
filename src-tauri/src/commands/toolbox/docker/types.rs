@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerStatus {
     pub available: bool,
@@ -8,7 +8,7 @@ pub struct DockerStatus {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerCommandResult {
     pub success: bool,
@@ -17,7 +17,7 @@ pub struct DockerCommandResult {
     pub command: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerImageInfo {
     pub id: String,
@@ -27,7 +27,7 @@ pub struct DockerImageInfo {
     pub created_since: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerContainerInfo {
     pub id: String,
@@ -43,7 +43,7 @@ pub struct DockerContainerInfo {
     pub compose_config_files: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerBuildInput {
     pub project_path: String,
@@ -53,7 +53,7 @@ pub struct DockerBuildInput {
     pub no_cache: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerRunInput {
     pub image: String,
@@ -71,7 +71,7 @@ pub struct DockerRunInput {
     pub extra_args: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerAiGenerateInput {
     pub project_path: String,
@@ -81,7 +81,7 @@ pub struct DockerAiGenerateInput {
     pub model_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerAiGenerateOutput {
     pub content: String,

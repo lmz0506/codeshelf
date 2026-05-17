@@ -5,6 +5,7 @@ use crate::storage::{current_iso_time, generate_id, ApiEndpoint};
 use super::{load_endpoints, write_endpoints};
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_api_endpoints() -> Result<Vec<ApiEndpoint>, String> {
     let mut endpoints = load_endpoints()?;
     endpoints.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
@@ -12,6 +13,7 @@ pub async fn list_api_endpoints() -> Result<Vec<ApiEndpoint>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_api_endpoint(mut endpoint: ApiEndpoint) -> Result<ApiEndpoint, String> {
     let mut endpoints = load_endpoints()?;
     let now = current_iso_time();
@@ -37,6 +39,7 @@ pub async fn save_api_endpoint(mut endpoint: ApiEndpoint) -> Result<ApiEndpoint,
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_api_endpoint(id: String) -> Result<(), String> {
     let mut endpoints = load_endpoints()?;
     endpoints.retain(|e| e.id != id);

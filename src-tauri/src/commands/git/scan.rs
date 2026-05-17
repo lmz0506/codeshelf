@@ -3,6 +3,7 @@
 use super::{run_git_command, GitRepo};
 
 #[tauri::command]
+#[specta::specta]
 pub async fn scan_directory(path: String, depth: Option<u32>) -> Result<Vec<GitRepo>, String> {
     let mut repos = Vec::new();
     let scan_depth = depth.unwrap_or(3);
@@ -53,12 +54,14 @@ fn scan_for_repos(path: &str, repos: &mut Vec<GitRepo>, depth: u32) -> Result<()
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn is_git_repo(path: String) -> Result<bool, String> {
     let git_dir = std::path::Path::new(&path).join(".git");
     Ok(git_dir.exists())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_init(path: String) -> Result<String, String> {
     run_git_command(&path, &["init"])
 }

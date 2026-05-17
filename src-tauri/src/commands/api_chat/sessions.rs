@@ -11,6 +11,7 @@ use crate::storage::{
 use super::{session_path, sessions_dir};
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_api_chat_sessions() -> Result<Vec<ApiChatSessionSummary>, String> {
     let dir = sessions_dir()?;
     if !dir.exists() {
@@ -46,6 +47,7 @@ pub async fn list_api_chat_sessions() -> Result<Vec<ApiChatSessionSummary>, Stri
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_api_chat_session(session_id: String) -> Result<ApiChatSession, String> {
     let dir = sessions_dir()?;
     let path = session_path(&dir, &session_id);
@@ -56,7 +58,7 @@ pub async fn get_api_chat_session(session_id: String) -> Result<ApiChatSession, 
     serde_json::from_str(&content).map_err(|e| format!("解析会话失败: {}", e))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateApiChatSessionInput {
     pub title: Option<String>,
@@ -67,6 +69,7 @@ pub struct CreateApiChatSessionInput {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn create_api_chat_session(
     input: CreateApiChatSessionInput,
 ) -> Result<ApiChatSession, String> {
@@ -95,6 +98,7 @@ pub async fn create_api_chat_session(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_api_chat_session(
     mut session: ApiChatSession,
 ) -> Result<ApiChatSession, String> {
@@ -109,6 +113,7 @@ pub async fn save_api_chat_session(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn rename_api_chat_session(
     session_id: String,
     title: String,
@@ -119,6 +124,7 @@ pub async fn rename_api_chat_session(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_api_chat_session(session_id: String) -> Result<(), String> {
     let dir = sessions_dir()?;
     let path = session_path(&dir, &session_id);

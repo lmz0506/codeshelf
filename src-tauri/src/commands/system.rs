@@ -15,6 +15,7 @@ const CREATE_NEW_CONSOLE: u32 = 0x00000010;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[tauri::command]
+#[specta::specta]
 pub async fn open_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -51,6 +52,7 @@ pub async fn open_in_explorer(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn open_in_editor(path: String, editor_path: Option<String>) -> Result<(), String> {
     let editor = editor_path.unwrap_or_else(|| {
         // Default to VS Code if no editor specified
@@ -100,6 +102,7 @@ pub async fn open_in_editor(path: String, editor_path: Option<String>) -> Result
 }
 
 #[tauri::command]
+#[specta::specta]
 #[allow(unused_variables)]
 pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custom_path: Option<String>, terminal_path: Option<String>) -> Result<(), String> {
     let term_type = terminal_type.unwrap_or_else(|| "default".to_string());
@@ -272,6 +275,7 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -301,7 +305,7 @@ pub async fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 pub struct TerminalTestResult {
     pub available: bool,
     pub error: Option<String>,
@@ -309,6 +313,7 @@ pub struct TerminalTestResult {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn test_terminal(terminal_type: String, custom_path: Option<String>) -> Result<TerminalTestResult, String> {
     // If custom path provided, test it directly
     if let Some(ref path) = custom_path {
@@ -586,6 +591,7 @@ fn test_default_terminal() -> Result<TerminalTestResult, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn read_readme(path: String) -> Result<String, String> {
     use std::path::PathBuf;
     use std::fs;
@@ -607,6 +613,7 @@ pub async fn read_readme(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn check_git_version() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     let output = Command::new("git")
@@ -632,6 +639,7 @@ pub async fn check_git_version() -> Result<String, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn check_node_version() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     let output = Command::new("node")
@@ -654,7 +662,7 @@ pub async fn check_node_version() -> Result<String, String> {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 pub struct AppPaths {
     pub data_dir: String,
     pub config_dir: String,
@@ -664,6 +672,7 @@ pub struct AppPaths {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_app_paths(app_handle: tauri::AppHandle) -> Result<AppPaths, String> {
     use tauri::Manager;
 
@@ -709,6 +718,7 @@ pub async fn get_app_paths(app_handle: tauri::AppHandle) -> Result<AppPaths, Str
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn clear_logs(app_handle: tauri::AppHandle) -> Result<String, String> {
     use tauri::Manager;
     use std::fs;
@@ -756,7 +766,7 @@ pub async fn clear_logs(app_handle: tauri::AppHandle) -> Result<String, String> 
     Ok(format!("已清除 {} 个日志文件，释放 {}", deleted_count, size_str))
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 pub struct CursorPosition {
     pub x: f64,
     pub y: f64,
@@ -764,6 +774,7 @@ pub struct CursorPosition {
 
 /// 获取鼠标光标的屏幕坐标（同步命令，在主线程执行）
 #[tauri::command]
+#[specta::specta]
 pub fn get_cursor_position() -> Result<CursorPosition, String> {
     #[cfg(target_os = "macos")]
     {
@@ -815,7 +826,7 @@ pub fn get_cursor_position() -> Result<CursorPosition, String> {
 /// macOS 关键场景：Intel 二进制跑在 Apple Silicon 上时（Rosetta 翻译），
 /// 编译时的 ARCH = "x86_64" 但宿主其实是 "aarch64"。Tauri 更新器只会
 /// 按二进制架构去 latest.json 里查链接，永远拿不到匹配宿主的那一份。
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchStatus {
     /// 当前进程的编译目标架构（rust target arch）："x86_64" / "aarch64" / ...
@@ -831,6 +842,7 @@ pub struct ArchStatus {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_arch_status() -> Result<ArchStatus, String> {
     let binary_arch = std::env::consts::ARCH.to_string();
     let os = std::env::consts::OS.to_string();

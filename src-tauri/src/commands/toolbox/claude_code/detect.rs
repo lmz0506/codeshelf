@@ -13,6 +13,7 @@ use super::{
 
 /// 检查所有环境的 Claude Code 安装情况
 #[tauri::command]
+#[specta::specta]
 pub async fn check_all_claude_installations() -> Result<Vec<ClaudeCodeInfo>, String> {
     let mut results = vec![];
 
@@ -36,6 +37,7 @@ pub async fn check_all_claude_installations() -> Result<Vec<ClaudeCodeInfo>, Str
 
 /// 根据指定路径检查 Claude Code 安装
 #[tauri::command]
+#[specta::specta]
 pub async fn check_claude_by_path(claude_path: String) -> Result<ClaudeCodeInfo, String> {
     println!("[DEBUG] check_claude_by_path called with: {:?}", claude_path);
     println!("[DEBUG] Path length: {}", claude_path.len());

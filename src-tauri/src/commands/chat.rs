@@ -16,7 +16,7 @@ use crate::storage::{
     ChatSessionSummary, CompactionIndex, CompactionMeta,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatStreamRequest {
     pub request_id: String,
@@ -38,7 +38,7 @@ pub struct ChatStreamRequest {
     pub tool_choice: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ChatStreamMessage {
     pub role: String,
     /// string 或 OpenAI 多模态内容数组
@@ -51,7 +51,7 @@ pub struct ChatStreamMessage {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolCallDelta {
     pub index: u32,
@@ -60,7 +60,7 @@ pub struct ToolCallDelta {
     pub arguments_delta: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatStreamEvent {
     pub request_id: String,
@@ -131,12 +131,14 @@ pub fn resolve_chat_history_dir_pub() -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_chat_history_dir() -> Result<String, String> {
     let dir = resolve_chat_history_dir()?;
     Ok(dir.to_string_lossy().to_string())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn migrate_chat_history_dir(new_dir: String) -> Result<String, String> {
     // 注意：迁移到 SQLite 后，这个命令只影响 <session_id>.tasks.json 类的物理文件。
     // chat sessions / messages / compactions 都在主 data_dir/codeshelf.db 里，不受影响。
@@ -475,6 +477,7 @@ async fn write_session_full(session: &ChatSession) -> Result<(), String> {
 // ============== session 命令 ==============
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
     let rows: Vec<(
         String,
@@ -528,13 +531,14 @@ pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_chat_session(session_id: String) -> Result<ChatSession, String> {
     read_session_full(&session_id)
         .await?
         .ok_or_else(|| "会话不存在".to_string())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateChatSessionInput {
     pub title: Option<String>,
@@ -543,6 +547,7 @@ pub struct CreateChatSessionInput {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn create_chat_session(input: CreateChatSessionInput) -> Result<ChatSession, String> {
     let now = current_iso_time();
     let session = ChatSession {
@@ -571,6 +576,7 @@ pub async fn create_chat_session(input: CreateChatSessionInput) -> Result<ChatSe
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_chat_session(mut session: ChatSession) -> Result<ChatSession, String> {
     session.updated_at = current_iso_time();
     write_session_full(&session).await?;
@@ -578,6 +584,7 @@ pub async fn save_chat_session(mut session: ChatSession) -> Result<ChatSession, 
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn rename_chat_session(
     session_id: String,
     title: String,
@@ -603,6 +610,7 @@ pub async fn rename_chat_session(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_chat_session(session_id: String) -> Result<(), String> {
     // CASCADE 会自动清理 chat_messages / chat_session_tools / chat_compactions
     sqlx::query("DELETE FROM chat_sessions WHERE id = ?")
@@ -615,7 +623,7 @@ pub async fn delete_chat_session(session_id: String) -> Result<(), String> {
 
 // ============== 上下文压缩 ==============
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveCompactionInput {
     pub session_id: String,
@@ -626,6 +634,7 @@ pub struct SaveCompactionInput {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_compaction(input: SaveCompactionInput) -> Result<CompactionMeta, String> {
     if input.content.trim().is_empty() {
         return Err("压缩内容为空".to_string());
@@ -701,6 +710,7 @@ pub async fn save_compaction(input: SaveCompactionInput) -> Result<CompactionMet
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_compactions(session_id: String) -> Result<CompactionIndex, String> {
     let rows: Vec<(String, String, i64, i64, i64, Option<String>)> = sqlx::query_as(
         "SELECT version, created_at, source_message_count, tail_kept, char_count, model
@@ -742,7 +752,7 @@ pub async fn list_compactions(session_id: String) -> Result<CompactionIndex, Str
     })
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CompactionContent {
     pub version: String,
@@ -751,6 +761,7 @@ pub struct CompactionContent {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_compaction(
     session_id: String,
     version: Option<String>,
@@ -806,6 +817,7 @@ pub async fn get_compaction(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn chat_cancel(request_id: String) -> Result<(), String> {
     let mut map = CHAT_ABORTS.write().await;
     if let Some(handle) = map.remove(&request_id) {
@@ -892,6 +904,7 @@ fn build_chat_payload(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn chat_complete(request: ChatStreamRequest) -> Result<String, String> {
     let (url, headers, body) = build_chat_payload(&request, false)?;
     let client = reqwest::Client::new();
@@ -923,6 +936,7 @@ pub async fn chat_complete(request: ChatStreamRequest) -> Result<String, String>
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> Result<(), String> {
     let request_id = request.request_id.clone();
     let use_stream = request.stream.unwrap_or(true);

@@ -125,6 +125,7 @@ fn extract_filename(url: &str) -> String {
 
 /// 开始下载
 #[tauri::command]
+#[specta::specta]
 pub async fn start_download(config: DownloadConfig) -> Result<String, String> {
     ensure_tasks_loaded().await;
 
@@ -398,6 +399,7 @@ async fn update_task_status(task_id: &str, status: &str, error: Option<String>) 
 
 /// 暂停下载
 #[tauri::command]
+#[specta::specta]
 pub async fn pause_download(task_id: String) -> Result<(), String> {
     ensure_tasks_loaded().await;
 
@@ -417,6 +419,7 @@ pub async fn pause_download(task_id: String) -> Result<(), String> {
 
 /// 恢复下载
 #[tauri::command]
+#[specta::specta]
 pub async fn resume_download(task_id: String) -> Result<(), String> {
     ensure_tasks_loaded().await;
 
@@ -452,6 +455,7 @@ pub async fn resume_download(task_id: String) -> Result<(), String> {
 
 /// 取消下载
 #[tauri::command]
+#[specta::specta]
 pub async fn cancel_download(task_id: String) -> Result<(), String> {
     ensure_tasks_loaded().await;
 
@@ -494,6 +498,7 @@ pub async fn cancel_download(task_id: String) -> Result<(), String> {
 
 /// 获取所有下载任务
 #[tauri::command]
+#[specta::specta]
 pub async fn get_download_tasks() -> Result<Vec<DownloadTask>, String> {
     ensure_tasks_loaded().await;
 
@@ -503,6 +508,7 @@ pub async fn get_download_tasks() -> Result<Vec<DownloadTask>, String> {
 
 /// 获取单个下载任务
 #[tauri::command]
+#[specta::specta]
 pub async fn get_download_task(task_id: String) -> Result<Option<DownloadTask>, String> {
     ensure_tasks_loaded().await;
 
@@ -512,6 +518,7 @@ pub async fn get_download_task(task_id: String) -> Result<Option<DownloadTask>, 
 
 /// 清除已完成的下载任务
 #[tauri::command]
+#[specta::specta]
 pub async fn clear_completed_downloads() -> Result<u32, String> {
     ensure_tasks_loaded().await;
 
@@ -535,6 +542,7 @@ pub async fn clear_completed_downloads() -> Result<u32, String> {
 
 /// 打开下载文件夹
 #[tauri::command]
+#[specta::specta]
 pub async fn open_download_folder(task_id: String) -> Result<(), String> {
     ensure_tasks_loaded().await;
 
@@ -581,6 +589,7 @@ pub async fn open_download_folder(task_id: String) -> Result<(), String> {
 
 /// 删除下载任务（可选删除文件）
 #[tauri::command]
+#[specta::specta]
 pub async fn remove_download_task(task_id: String, delete_file: Option<bool>) -> Result<(), String> {
     ensure_tasks_loaded().await;
 

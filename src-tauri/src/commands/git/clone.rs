@@ -87,6 +87,7 @@ fn kill_process_tree(pid: u32) {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_clone(
     app: tauri::AppHandle,
     url: String,
@@ -216,6 +217,7 @@ pub async fn git_clone(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn cancel_git_clone() -> Result<(), String> {
     CLONE_CANCELLED.store(true, Ordering::SeqCst);
 

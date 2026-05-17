@@ -202,16 +202,19 @@ async fn upsert_entry(content: String) -> Result<ClipboardEntry, String> {
 // ============== Tauri 命令 ==============
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_clipboard_history() -> Result<Vec<ClipboardEntry>, String> {
     fetch_all_sorted().await
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn add_clipboard_entry(content: String) -> Result<ClipboardEntry, String> {
     upsert_entry(content).await
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn update_clipboard_note(id: String, note: String) -> Result<ClipboardEntry, String> {
     let final_note: Option<String> = if note.trim().is_empty() { None } else { Some(note) };
     let result = sqlx::query("UPDATE clipboard_entries SET note = ? WHERE id = ?")
@@ -229,6 +232,7 @@ pub async fn update_clipboard_note(id: String, note: String) -> Result<Clipboard
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_clipboard_entry(id: String) -> Result<(), String> {
     sqlx::query("DELETE FROM clipboard_entries WHERE id = ?")
         .bind(&id)
@@ -239,6 +243,7 @@ pub async fn delete_clipboard_entry(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn toggle_pin_clipboard_entry(id: String) -> Result<ClipboardEntry, String> {
     let result = sqlx::query(
         "UPDATE clipboard_entries
@@ -268,6 +273,7 @@ pub async fn toggle_pin_clipboard_entry(id: String) -> Result<ClipboardEntry, St
 
 /// 清空非置顶条目；置顶永远保留
 #[tauri::command]
+#[specta::specta]
 pub async fn clear_clipboard_history() -> Result<(), String> {
     sqlx::query("DELETE FROM clipboard_entries WHERE pinned = 0")
         .execute(pool())
@@ -277,11 +283,13 @@ pub async fn clear_clipboard_history() -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_clipboard_settings() -> Result<ClipboardSettings, String> {
     read_settings_file()
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_clipboard_settings(settings: ClipboardSettings) -> Result<(), String> {
     write_settings_file(&settings)?;
     let max_items = settings.max_items as i64;
@@ -290,6 +298,7 @@ pub async fn save_clipboard_settings(settings: ClipboardSettings) -> Result<(), 
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn write_to_clipboard(content: String) -> Result<(), String> {
     // 更新哈希以阻止监控线程把这次设置作为新条目记录
     let hash = compute_hash(&content);

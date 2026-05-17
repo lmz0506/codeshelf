@@ -10,7 +10,19 @@ use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
+    let specta_builder = handlers::make_builder();
+
+    // 调试构建时把命令签名导出到 src/bindings.ts，前端可直接 import 获得类型安全的调用。
+    // 发布构建不做导出，避免运行时多余开销。
+    #[cfg(debug_assertions)]
+    specta_builder
+        .export(
+            specta_typescript::Typescript::default(),
+            "../src/bindings.ts",
+        )
+        .expect("failed to export typescript bindings");
+
+    tauri::Builder::default()
         // 单实例插件：防止重复打开应用。
         // 开发模式和正式版使用不同的标识符，可以并行运行。
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -25,16 +37,18 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .setup(app_setup::run_setup)
+        .invoke_handler(specta_builder.invoke_handler())
+        .setup(move |app| {
+            specta_builder.mount_events(app);
+            app_setup::run_setup(app)
+        })
         // 拦截窗口关闭：隐藏到托盘而非退出。
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
             }
-        });
-
-    handlers::register(builder)
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {

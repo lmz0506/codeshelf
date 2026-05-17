@@ -189,7 +189,7 @@ fn trim_response(bytes: &[u8], max_bytes: usize) -> String {
 }
 
 /// 单次接口调用的结构化返回：给前端做"调用链"展示用
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiExecutionResult {
     pub status: u16,
@@ -388,6 +388,7 @@ fn resolve_effective_auth<'a>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn execute_api_endpoint(
     endpoint_id: String,
     arguments_json: String,
@@ -588,6 +589,7 @@ pub async fn execute_api_endpoint(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fetch_api_document_url(url: String) -> Result<String, String> {
     let trimmed = url.trim();
     let parsed = reqwest::Url::parse(trimmed).map_err(|e| format!("URL 不合法: {}", e))?;

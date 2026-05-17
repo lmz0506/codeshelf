@@ -15,6 +15,7 @@ static SCAN_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 /// 扫描端口
 #[tauri::command]
+#[specta::specta]
 pub async fn scan_ports(config: ScanConfig) -> Result<Vec<ScanResult>, String> {
     // 重置取消标志
     SCAN_CANCELLED.store(false, Ordering::SeqCst);
@@ -38,6 +39,7 @@ pub async fn scan_ports(config: ScanConfig) -> Result<Vec<ScanResult>, String> {
 
 /// 停止扫描
 #[tauri::command]
+#[specta::specta]
 pub async fn stop_scan() -> Result<(), String> {
     SCAN_CANCELLED.store(true, Ordering::SeqCst);
     Ok(())
@@ -45,6 +47,7 @@ pub async fn stop_scan() -> Result<(), String> {
 
 /// 获取常用端口列表
 #[tauri::command]
+#[specta::specta]
 pub async fn get_common_ports() -> Result<Vec<u16>, String> {
     Ok(common_ports())
 }
@@ -149,6 +152,7 @@ async fn concurrent_scan(
 
 /// 扫描单个端口（用于快速检测）
 #[tauri::command]
+#[specta::specta]
 pub async fn check_port(
     target: String,
     port: u16,
@@ -176,6 +180,7 @@ pub async fn check_port(
 
 /// 扫描本地常用开发端口
 #[tauri::command]
+#[specta::specta]
 pub async fn scan_local_dev_ports() -> Result<Vec<ScanResult>, String> {
     let dev_ports = vec![
         3000, 3001, 4200, 5000, 5173, 5174, 8000, 8080, 8081, 8888, 9000,

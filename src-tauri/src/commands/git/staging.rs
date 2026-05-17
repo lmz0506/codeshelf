@@ -3,6 +3,7 @@
 use super::{is_system_junk_file, run_git_command};
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_add(path: String, files: Vec<String>) -> Result<String, String> {
     if files.is_empty() {
         // Add all changes while keeping macOS Finder metadata out of commits,
@@ -25,6 +26,7 @@ pub async fn git_add(path: String, files: Vec<String>) -> Result<String, String>
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_unstage(path: String, files: Vec<String>) -> Result<String, String> {
     if files.is_empty() {
         run_git_command(&path, &["reset", "HEAD"])
@@ -36,6 +38,7 @@ pub async fn git_unstage(path: String, files: Vec<String>) -> Result<String, Str
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_discard_files(path: String, files: Vec<String>, include_untracked: bool) -> Result<String, String> {
     if files.is_empty() {
         return Err("请选择要丢弃的文件".to_string());
@@ -53,6 +56,7 @@ pub async fn git_discard_files(path: String, files: Vec<String>, include_untrack
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_stash_push(path: String, message: Option<String>) -> Result<String, String> {
     let label = message
         .filter(|m| !m.trim().is_empty())
@@ -61,26 +65,31 @@ pub async fn git_stash_push(path: String, message: Option<String>) -> Result<Str
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_stash_pop(path: String) -> Result<String, String> {
     run_git_command(&path, &["stash", "pop"])
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_stash_apply(path: String) -> Result<String, String> {
     run_git_command(&path, &["stash", "apply"])
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_revert_commit(path: String, commit_hash: String) -> Result<String, String> {
     run_git_command(&path, &["revert", "--no-edit", &commit_hash])
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_cherry_pick(path: String, commit_hash: String) -> Result<String, String> {
     run_git_command(&path, &["cherry-pick", &commit_hash])
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_commit(path: String, message: String) -> Result<String, String> {
     if message.trim().is_empty() {
         return Err("提交信息不能为空".to_string());
@@ -89,6 +98,7 @@ pub async fn git_commit(path: String, message: String) -> Result<String, String>
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_add_and_commit(path: String, files: Vec<String>, message: String) -> Result<String, String> {
     if message.trim().is_empty() {
         return Err("提交信息不能为空".to_string());

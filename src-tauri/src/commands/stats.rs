@@ -34,7 +34,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // ============== 公开数据结构 ==============
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct DashboardStats {
     pub total_projects: u32,
     pub today_commits: u32,
@@ -44,13 +44,13 @@ pub struct DashboardStats {
     pub last_updated: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct DailyActivity {
     pub date: String,
     pub count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct RecentCommit {
     pub hash: String,
     pub short_hash: String,
@@ -62,7 +62,7 @@ pub struct RecentCommit {
     pub project_path: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct CachedDashboardData {
     pub stats: DashboardStats,
     pub heatmap_data: Vec<DailyActivity>,
@@ -70,7 +70,7 @@ pub struct CachedDashboardData {
 }
 
 /// 持久化的统计缓存结构 — 仅用于从老 JSON 反序列化迁移
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct PersistedStatsCache {
     pub data: CachedDashboardData,
     pub last_updated: i64,
@@ -79,7 +79,7 @@ pub struct PersistedStatsCache {
 }
 
 /// 单个项目的统计缓存 — 同样用于反序列化迁移
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct ProjectStatsCache {
     pub unpushed: u32,
     pub commits_by_date: HashMap<String, u32>,
@@ -87,7 +87,7 @@ pub struct ProjectStatsCache {
     pub last_updated: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct ProjectInfo {
     pub id: Option<String>,
     pub name: String,
@@ -512,11 +512,13 @@ fn aggregate_dashboard(
 // ============== Tauri 命令 ==============
 
 #[tauri::command]
+#[specta::specta]
 pub async fn mark_project_dirty(project_path: String) -> Result<(), String> {
     write_dirty(&project_path).await
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn mark_all_projects_dirty(projects: Vec<ProjectInfo>) -> Result<(), String> {
     let pool = pool();
     let mut conn = pool
@@ -541,6 +543,7 @@ pub async fn mark_all_projects_dirty(projects: Vec<ProjectInfo>) -> Result<(), S
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn has_dirty_stats() -> Result<bool, String> {
     let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM stats_dirty")
         .fetch_one(pool())
@@ -550,12 +553,14 @@ pub async fn has_dirty_stats() -> Result<bool, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_dashboard_stats() -> Result<CachedDashboardData, String> {
     read_dashboard().await
 }
 
 /// 只刷新脏项目的统计数据（增量更新）
 #[tauri::command]
+#[specta::specta]
 pub async fn refresh_dirty_stats(
     projects: Vec<ProjectInfo>,
 ) -> Result<CachedDashboardData, String> {
@@ -603,6 +608,7 @@ pub async fn refresh_dirty_stats(
 
 /// 完整刷新所有项目统计
 #[tauri::command]
+#[specta::specta]
 pub async fn refresh_dashboard_stats(
     projects: Vec<ProjectInfo>,
 ) -> Result<CachedDashboardData, String> {
@@ -648,6 +654,7 @@ pub async fn refresh_dashboard_stats(
 
 /// 启动时调用。如果 sqlite 中已有缓存（24 小时内）就直接用；否则标记所有项目为脏
 #[tauri::command]
+#[specta::specta]
 pub async fn init_stats_cache(
     projects: Vec<ProjectInfo>,
 ) -> Result<CachedDashboardData, String> {
@@ -695,6 +702,7 @@ pub async fn init_stats_cache(
 
 /// 清理已删除项目的缓存
 #[tauri::command]
+#[specta::specta]
 pub async fn cleanup_stats_cache(current_project_paths: Vec<String>) -> Result<(), String> {
     let all_paths: Vec<String> =
         sqlx::query_scalar("SELECT project_path FROM project_stats")

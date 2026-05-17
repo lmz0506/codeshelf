@@ -3,6 +3,7 @@
 use super::{is_system_junk_file, run_git_command, unquote_git_path, ConflictFileContent, GitStatus};
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_git_status(path: String) -> Result<GitStatus, String> {
     // Get current branch
     let branch = run_git_command(&path, &["rev-parse", "--abbrev-ref", "HEAD"])
@@ -87,6 +88,7 @@ fn git_show_stage(path: &str, stage: &str, file: &str) -> Option<String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_conflict_file_content(path: String, file: String) -> Result<ConflictFileContent, String> {
     let worktree = std::fs::read_to_string(std::path::Path::new(&path).join(&file)).ok();
     Ok(ConflictFileContent {
@@ -99,6 +101,7 @@ pub async fn get_conflict_file_content(path: String, file: String) -> Result<Con
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_checkout_conflict_version(path: String, file: String, version: String) -> Result<String, String> {
     match version.as_str() {
         "ours" => run_git_command(&path, &["checkout", "--ours", "--", &file])?,
@@ -109,6 +112,7 @@ pub async fn git_checkout_conflict_version(path: String, file: String, version: 
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_mark_resolved(path: String, file: String) -> Result<String, String> {
     run_git_command(&path, &["add", "--", &file])
 }

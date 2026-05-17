@@ -19,6 +19,7 @@ const TEST_HOST: &str = "127.0.0.1";
 const TEST_TIMEOUT_SECS: u64 = 3;
 
 #[tauri::command]
+#[specta::specta]
 pub async fn test_ssh_tunnel(tunnel_id: String) -> Result<TestPortResult, String> {
     ensure_tunnels_loaded().await;
     let port = {
@@ -30,6 +31,7 @@ pub async fn test_ssh_tunnel(tunnel_id: String) -> Result<TestPortResult, String
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn test_local_port(port: u16) -> Result<TestPortResult, String> {
     Ok(test_local_port_inner(port).await)
 }

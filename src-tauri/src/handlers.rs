@@ -1,14 +1,16 @@
 // Tauri invoke 命令注册中心。
 // 单独抽出是为了让 lib.rs 不被 200+ 行的命令列表撑大；这里按模块分组，方便查找 / 增删。
+// 通过 tauri-specta 注册：调试构建时会把命令签名导出为 src/bindings.ts，供前端类型安全调用。
 
 use crate::commands::{
     api_chat, chat, chat_bridge, extras, git, project, settings, stats, storage_admin,
     system, tools, toolbox, workflows,
 };
 use crate::{keyboard_hook, mcp_gateway};
+use tauri_specta::{collect_commands, Builder};
 
-pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    builder.invoke_handler(tauri::generate_handler![
+pub fn make_builder() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new().commands(collect_commands![
         // Git
         git::scan_directory,
         git::get_git_status,

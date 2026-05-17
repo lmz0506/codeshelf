@@ -9,6 +9,7 @@ use super::{EnvType, QuickConfigOption};
 
 /// 获取快捷配置选项列表
 #[tauri::command]
+#[specta::specta]
 pub async fn get_quick_config_options() -> Result<Vec<QuickConfigOption>, String> {
     Ok(vec![
         // 模型设置
@@ -128,6 +129,7 @@ pub async fn get_quick_config_options() -> Result<Vec<QuickConfigOption>, String
 
 /// 应用快捷配置
 #[tauri::command]
+#[specta::specta]
 pub async fn apply_quick_config(
     env_type: EnvType,
     env_name: String,
@@ -168,6 +170,7 @@ pub async fn apply_quick_config(
 
 /// 获取保存的 Claude 快捷配置
 #[tauri::command]
+#[specta::specta]
 pub async fn get_saved_quick_configs() -> Result<Vec<ClaudeQuickConfig>, String> {
     if let Ok(config) = storage::get_storage_config() {
         let path = config.claude_quick_configs_file();
@@ -186,6 +189,7 @@ pub async fn get_saved_quick_configs() -> Result<Vec<ClaudeQuickConfig>, String>
 
 /// 保存 Claude 快捷配置
 #[tauri::command]
+#[specta::specta]
 pub async fn save_quick_configs(configs: Vec<ClaudeQuickConfig>) -> Result<(), String> {
     let config = storage::get_storage_config()?;
     config.ensure_dirs()?;

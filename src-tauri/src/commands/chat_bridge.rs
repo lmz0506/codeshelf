@@ -25,7 +25,7 @@ use crate::storage::AppSettings;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 struct PendingMessage {
     id: String,
@@ -176,6 +176,7 @@ pub async fn notify_reload(app: &AppHandle) {
 // ========== Tauri 命令 ==========
 
 #[tauri::command]
+#[specta::specta]
 pub async fn chat_bridge_test(relay: String) -> Result<String, String> {
     let url = format!("{}/health", relay.trim_end_matches('/'));
     let client = reqwest::Client::builder()

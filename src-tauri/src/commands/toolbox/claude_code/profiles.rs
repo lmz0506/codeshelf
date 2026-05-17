@@ -8,6 +8,7 @@ use super::{ConfigProfile, EnvType};
 
 /// 获取保存的配置档案列表
 #[tauri::command]
+#[specta::specta]
 pub async fn get_config_profiles(env_type: EnvType, env_name: String) -> Result<Vec<ConfigProfile>, String> {
     let profiles_path = get_profiles_storage_path(&env_type, &env_name);
 
@@ -24,6 +25,7 @@ pub async fn get_config_profiles(env_type: EnvType, env_name: String) -> Result<
 
 /// 保存配置档案（如果名称已存在则更新，否则新建）
 #[tauri::command]
+#[specta::specta]
 pub async fn save_config_profile(
     env_type: EnvType,
     env_name: String,
@@ -67,6 +69,7 @@ pub async fn save_config_profile(
 
 /// 删除配置档案
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_config_profile(env_type: EnvType, env_name: String, profile_id: String) -> Result<(), String> {
     let mut profiles = get_config_profiles(env_type.clone(), env_name.clone()).await?;
     profiles.retain(|p| p.id != profile_id);
@@ -75,6 +78,7 @@ pub async fn delete_config_profile(env_type: EnvType, env_name: String, profile_
 
 /// 应用配置档案
 #[tauri::command]
+#[specta::specta]
 pub async fn apply_config_profile(
     env_type: EnvType,
     env_name: String,
@@ -134,6 +138,7 @@ fn save_profiles(env_type: &EnvType, env_name: &str, profiles: &[ConfigProfile])
 
 /// 从当前配置创建档案
 #[tauri::command]
+#[specta::specta]
 pub async fn create_profile_from_current(
     env_type: EnvType,
     env_name: String,

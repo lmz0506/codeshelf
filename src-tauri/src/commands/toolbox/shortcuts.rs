@@ -222,6 +222,7 @@ fn default_shortcuts() -> Vec<ShortcutEntry> {
 
 /// 获取所有快捷键，首次自动写入默认数据
 #[tauri::command]
+#[specta::specta]
 pub async fn get_shortcuts() -> Result<Vec<ShortcutEntry>, String> {
     let existing = read_shortcuts_file()?;
 
@@ -236,12 +237,14 @@ pub async fn get_shortcuts() -> Result<Vec<ShortcutEntry>, String> {
 
 /// 全量保存快捷键（导入用）
 #[tauri::command]
+#[specta::specta]
 pub async fn save_shortcuts(shortcuts: Vec<ShortcutEntry>) -> Result<(), String> {
     write_shortcuts_file(&shortcuts)
 }
 
 /// 添加用户自定义快捷键
 #[tauri::command]
+#[specta::specta]
 pub async fn add_shortcut(input: ShortcutInput) -> Result<ShortcutEntry, String> {
     let mut shortcuts = read_shortcuts_file()?;
 
@@ -264,6 +267,7 @@ pub async fn add_shortcut(input: ShortcutInput) -> Result<ShortcutEntry, String>
 
 /// 编辑快捷键（默认项首次编辑时保存 originalKeys）
 #[tauri::command]
+#[specta::specta]
 pub async fn update_shortcut(id: String, input: ShortcutInput) -> Result<ShortcutEntry, String> {
     let mut shortcuts = read_shortcuts_file()?;
 
@@ -297,6 +301,7 @@ pub async fn update_shortcut(id: String, input: ShortcutInput) -> Result<Shortcu
 
 /// 删除快捷键（仅允许删除用户添加的）
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_shortcut(id: String) -> Result<(), String> {
     let mut shortcuts = read_shortcuts_file()?;
 
@@ -313,6 +318,7 @@ pub async fn delete_shortcut(id: String) -> Result<(), String> {
 
 /// 恢复所有默认项 + 保留用户自定义项
 #[tauri::command]
+#[specta::specta]
 pub async fn reset_shortcuts() -> Result<Vec<ShortcutEntry>, String> {
     let existing = read_shortcuts_file()?;
 
@@ -333,6 +339,7 @@ pub async fn reset_shortcuts() -> Result<Vec<ShortcutEntry>, String> {
 
 /// 返回当前平台
 #[tauri::command]
+#[specta::specta]
 pub async fn get_current_platform() -> Result<String, String> {
     if cfg!(target_os = "macos") {
         Ok("mac".to_string())

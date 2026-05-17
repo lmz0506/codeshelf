@@ -12,6 +12,7 @@ use crate::storage::{
 // ============== 标签管理 ==============
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_labels() -> Result<Vec<String>, String> {
     let config = get_storage_config()?;
     let path = config.labels_file();
@@ -32,6 +33,7 @@ pub async fn get_labels() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_labels(labels: Vec<String>) -> Result<(), String> {
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -45,6 +47,7 @@ pub async fn save_labels(labels: Vec<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn add_label(label: String) -> Result<Vec<String>, String> {
     let mut labels = get_labels().await?;
     if !labels.contains(&label) {
@@ -55,6 +58,7 @@ pub async fn add_label(label: String) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn remove_label(label: String) -> Result<Vec<String>, String> {
     let mut labels = get_labels().await?;
     labels.retain(|l| l != &label);
@@ -65,6 +69,7 @@ pub async fn remove_label(label: String) -> Result<Vec<String>, String> {
 // ============== 分类管理 ==============
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_categories() -> Result<Vec<String>, String> {
     let config = get_storage_config()?;
     let path = config.categories_file();
@@ -81,6 +86,7 @@ pub async fn get_categories() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_categories(categories: Vec<String>) -> Result<(), String> {
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -94,6 +100,7 @@ pub async fn save_categories(categories: Vec<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn add_category(category: String) -> Result<Vec<String>, String> {
     let mut categories = get_categories().await?;
     if !categories.contains(&category) {
@@ -104,6 +111,7 @@ pub async fn add_category(category: String) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn remove_category(category: String) -> Result<Vec<String>, String> {
     let mut categories = get_categories().await?;
     categories.retain(|c| c != &category);
@@ -113,7 +121,7 @@ pub async fn remove_category(category: String) -> Result<Vec<String>, String> {
 
 // ============== 编辑器配置管理 ==============
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct EditorInput {
     pub name: String,
     pub path: String,
@@ -122,6 +130,7 @@ pub struct EditorInput {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_editors() -> Result<Vec<EditorConfig>, String> {
     let config = get_storage_config()?;
     let path = config.editors_file();
@@ -150,6 +159,7 @@ async fn save_editors(editors: &[EditorConfig]) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn add_editor(input: EditorInput) -> Result<Vec<EditorConfig>, String> {
     let mut editors = get_editors().await?;
     let is_first = editors.is_empty();
@@ -175,6 +185,7 @@ pub async fn add_editor(input: EditorInput) -> Result<Vec<EditorConfig>, String>
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn update_editor(id: String, input: EditorInput) -> Result<Vec<EditorConfig>, String> {
     let mut editors = get_editors().await?;
     let is_default = input.is_default.unwrap_or(false);
@@ -197,6 +208,7 @@ pub async fn update_editor(id: String, input: EditorInput) -> Result<Vec<EditorC
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn remove_editor(id: String) -> Result<Vec<EditorConfig>, String> {
     let mut editors = get_editors().await?;
     let was_default = editors.iter().find(|e| e.id == id).map(|e| e.is_default).unwrap_or(false);
@@ -212,6 +224,7 @@ pub async fn remove_editor(id: String) -> Result<Vec<EditorConfig>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn set_default_editor(id: String) -> Result<Vec<EditorConfig>, String> {
     let mut editors = get_editors().await?;
 
@@ -225,7 +238,7 @@ pub async fn set_default_editor(id: String) -> Result<Vec<EditorConfig>, String>
 
 // ============== 终端配置管理 ==============
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct TerminalInput {
     pub terminal_type: String,
     pub custom_path: Option<String>,
@@ -233,6 +246,7 @@ pub struct TerminalInput {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_terminal_config() -> Result<TerminalConfig, String> {
     let config = get_storage_config()?;
     let path = config.terminal_file();
@@ -249,6 +263,7 @@ pub async fn get_terminal_config() -> Result<TerminalConfig, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_terminal_config(input: TerminalInput) -> Result<(), String> {
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -269,7 +284,7 @@ pub async fn save_terminal_config(input: TerminalInput) -> Result<(), String> {
 
 // ============== 应用设置管理 ==============
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct AppSettingsInput {
     pub theme: Option<String>,
     pub view_mode: Option<String>,
@@ -289,6 +304,7 @@ pub struct AppSettingsInput {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_app_settings() -> Result<AppSettings, String> {
     let config = get_storage_config()?;
     let path = config.app_settings_file();
@@ -305,6 +321,7 @@ pub async fn get_app_settings() -> Result<AppSettings, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_app_settings(app: tauri::AppHandle, input: AppSettingsInput) -> Result<AppSettings, String> {
     let mut settings = get_app_settings().await?;
 
@@ -342,12 +359,13 @@ pub async fn save_app_settings(app: tauri::AppHandle, input: AppSettingsInput) -
 
 // ============== UI 状态管理 ==============
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct UiStateInput {
     pub recent_detail_project_ids: Option<Vec<String>>,
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_ui_state() -> Result<UiState, String> {
     let config = get_storage_config()?;
     let path = config.ui_state_file();
@@ -364,6 +382,7 @@ pub async fn get_ui_state() -> Result<UiState, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_ui_state(input: UiStateInput) -> Result<UiState, String> {
     let mut ui_state = get_ui_state().await?;
 
@@ -385,7 +404,7 @@ pub async fn save_ui_state(input: UiStateInput) -> Result<UiState, String> {
 
 // ============== 通知管理 ==============
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct NotificationInput {
     pub notification_type: String,
     pub title: String,
@@ -394,6 +413,7 @@ pub struct NotificationInput {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_notifications() -> Result<Vec<Notification>, String> {
     let config = get_storage_config()?;
     let path = config.notifications_file();
@@ -422,6 +442,7 @@ async fn save_notifications_internal(notifications: &[Notification]) -> Result<(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn add_notification(input: NotificationInput) -> Result<Vec<Notification>, String> {
     let mut notifications = get_notifications().await?;
 
@@ -443,6 +464,7 @@ pub async fn add_notification(input: NotificationInput) -> Result<Vec<Notificati
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn remove_notification(id: String) -> Result<Vec<Notification>, String> {
     let mut notifications = get_notifications().await?;
     notifications.retain(|n| n.id != id);
@@ -451,18 +473,20 @@ pub async fn remove_notification(id: String) -> Result<Vec<Notification>, String
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn clear_notifications() -> Result<(), String> {
     save_notifications_internal(&[]).await
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_notifications(notifications: Vec<Notification>) -> Result<(), String> {
     save_notifications_internal(&notifications).await
 }
 
 // ============== 应用快捷键管理 ==============
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AppShortcutBinding {
     pub id: String,
@@ -476,6 +500,7 @@ pub struct AppShortcutBinding {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_app_shortcuts() -> Result<Vec<AppShortcutBinding>, String> {
     let config = get_storage_config()?;
     let path = config.app_shortcuts_file();
@@ -496,6 +521,7 @@ pub async fn get_app_shortcuts() -> Result<Vec<AppShortcutBinding>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_app_shortcuts(shortcuts: Vec<AppShortcutBinding>) -> Result<(), String> {
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -515,6 +541,7 @@ fn default_ai_providers() -> Vec<AiProviderConfig> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_ai_providers() -> Result<Vec<AiProviderConfig>, String> {
     let config = get_storage_config()?;
     let path = config.ai_providers_file();
@@ -535,6 +562,7 @@ pub async fn get_ai_providers() -> Result<Vec<AiProviderConfig>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_ai_providers(providers: Vec<AiProviderConfig>) -> Result<Vec<AiProviderConfig>, String> {
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -550,6 +578,7 @@ pub async fn save_ai_providers(providers: Vec<AiProviderConfig>) -> Result<Vec<A
 
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_recommended_template() -> Result<Option<String>, String> {
     let config = get_storage_config()?;
     let path = config.recommended_template_file();
@@ -565,6 +594,7 @@ pub async fn get_recommended_template() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_recommended_template(content: String) -> Result<(), String> {
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -577,6 +607,7 @@ pub async fn save_recommended_template(content: String) -> Result<(), String> {
 // ============== 敏感文件规则管理 ==============
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_sensitive_file_patterns() -> Result<Vec<String>, String> {
     let config = get_storage_config()?;
     let path = config.sensitive_file_patterns_file();
@@ -604,6 +635,7 @@ pub async fn get_sensitive_file_patterns() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_sensitive_file_patterns(patterns: Vec<String>) -> Result<(), String> {
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -617,6 +649,7 @@ pub async fn save_sensitive_file_patterns(patterns: Vec<String>) -> Result<(), S
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn reset_recommended_template() -> Result<(), String> {
     let config = get_storage_config()?;
     let path = config.recommended_template_file();
@@ -631,6 +664,7 @@ pub async fn reset_recommended_template() -> Result<(), String> {
 // ============== 简历数据持久化 ==============
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_resumes() -> Result<serde_json::Value, String> {
     let config = get_storage_config()?;
     let path = config.resumes_file();
@@ -652,6 +686,7 @@ pub async fn get_resumes() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_resumes(data: serde_json::Value) -> Result<(), String> {
     let config = get_storage_config()?;
     config.ensure_dirs()?;

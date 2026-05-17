@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
 /// 协议类型
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {
     Tcp,
@@ -14,7 +14,7 @@ pub enum Protocol {
 }
 
 /// 会话模式
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionMode {
     Client,
@@ -22,7 +22,7 @@ pub enum SessionMode {
 }
 
 /// 数据格式
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum DataFormat {
     Text,
@@ -31,7 +31,7 @@ pub enum DataFormat {
 }
 
 /// 会话状态
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionStatus {
     Connecting,
@@ -42,7 +42,7 @@ pub enum SessionStatus {
 }
 
 /// 自动发送模式
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum AutoSendMode {
     Fixed,
@@ -58,7 +58,7 @@ impl Default for AutoSendMode {
 }
 
 /// 自动发送配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoSendConfig {
     /// 是否启用
@@ -123,7 +123,7 @@ impl Default for AutoSendConfig {
 }
 
 /// 创建会话的输入参数
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NetcatSessionInput {
     pub protocol: Protocol,
@@ -136,7 +136,7 @@ pub struct NetcatSessionInput {
 }
 
 /// 会话配置（持久化存储）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NetcatSessionConfig {
     pub id: String,
@@ -154,7 +154,7 @@ pub struct NetcatSessionConfig {
 }
 
 /// 会话配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NetcatSession {
     pub id: String,
@@ -183,7 +183,7 @@ pub struct NetcatSession {
 }
 
 /// 发送消息的输入
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SendMessageInput {
     pub session_id: String,
@@ -196,7 +196,7 @@ pub struct SendMessageInput {
 }
 
 /// 消息记录
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NetcatMessage {
     pub id: String,
@@ -212,7 +212,7 @@ pub struct NetcatMessage {
 }
 
 /// 消息方向
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageDirection {
     Sent,
@@ -220,7 +220,7 @@ pub enum MessageDirection {
 }
 
 /// 连接的客户端信息（服务器模式）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectedClient {
     pub id: String,
@@ -232,7 +232,7 @@ pub struct ConnectedClient {
 }
 
 /// 会话事件（用于前端实时更新）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type")]
 pub enum NetcatEvent {
     #[serde(rename = "statusChanged")]

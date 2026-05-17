@@ -13,6 +13,7 @@ use super::{
 };
 
 #[tauri::command]
+#[specta::specta]
 pub async fn add_ssh_tunnel(input: SshTunnelInput) -> Result<SshTunnel, String> {
     ensure_tunnels_loaded().await;
 
@@ -73,6 +74,7 @@ pub async fn add_ssh_tunnel(input: SshTunnelInput) -> Result<SshTunnel, String> 
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn update_ssh_tunnel(
     tunnel_id: String,
     input: SshTunnelInput,
@@ -119,6 +121,7 @@ pub async fn update_ssh_tunnel(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn remove_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
     ensure_tunnels_loaded().await;
 
@@ -146,6 +149,7 @@ pub async fn remove_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn start_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
     ensure_tunnels_loaded().await;
 
@@ -238,6 +242,7 @@ pub async fn start_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn stop_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
     log::info!("停止 SSH 隧道: {}", tunnel_id);
 
@@ -265,6 +270,7 @@ pub async fn stop_ssh_tunnel(tunnel_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_ssh_tunnels() -> Result<Vec<SshTunnel>, String> {
     ensure_tunnels_loaded().await;
 
@@ -285,6 +291,7 @@ pub async fn get_ssh_tunnels() -> Result<Vec<SshTunnel>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_ssh_tunnel(tunnel_id: String) -> Result<Option<SshTunnel>, String> {
     ensure_tunnels_loaded().await;
     update_tunnel_stats(&tunnel_id).await;
@@ -293,6 +300,7 @@ pub async fn get_ssh_tunnel(tunnel_id: String) -> Result<Option<SshTunnel>, Stri
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_ssh_tunnel_stats(tunnel_id: String) -> Result<SshTunnelStats, String> {
     let controllers = SSH_CONTROLLERS.lock().await;
     let (connections, bytes_in, bytes_out) = controllers
@@ -308,6 +316,7 @@ pub async fn get_ssh_tunnel_stats(tunnel_id: String) -> Result<SshTunnelStats, S
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_ssh_config_hosts() -> Result<Vec<String>, String> {
     Ok(list_host_aliases_from_config())
 }

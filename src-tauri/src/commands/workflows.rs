@@ -19,7 +19,7 @@ use crate::storage::get_storage_config;
 
 // ========== 数据模型 ==========
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowNode {
     pub id: String,
@@ -29,7 +29,7 @@ pub struct WorkflowNode {
     pub depends_on: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowRun {
     pub started_at: String,
@@ -39,7 +39,7 @@ pub struct WorkflowRun {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Workflow {
     pub id: String,
@@ -378,16 +378,19 @@ async fn notify_reload(app: &AppHandle) {
 // ========== Tauri 命令 ==========
 
 #[tauri::command]
+#[specta::specta]
 pub async fn workflow_list() -> Result<Vec<Workflow>, String> {
     list_workflows_sync()
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn workflow_get(id: String) -> Result<Workflow, String> {
     load_workflow(&id)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn workflow_save(app: AppHandle, workflow: Workflow) -> Result<Workflow, String> {
     let mut wf = workflow;
     if wf.id.trim().is_empty() {
@@ -402,6 +405,7 @@ pub async fn workflow_save(app: AppHandle, workflow: Workflow) -> Result<Workflo
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn workflow_delete(app: AppHandle, id: String) -> Result<(), String> {
     let path = workflow_path(&id)?;
     if path.exists() {
@@ -412,11 +416,13 @@ pub async fn workflow_delete(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn workflow_run_now(app: AppHandle, id: String) -> Result<WorkflowRun, String> {
     execute_workflow(&app, &id).await
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn workflow_set_enabled(app: AppHandle, id: String, enabled: bool) -> Result<Workflow, String> {
     let mut wf = load_workflow(&id)?;
     wf.enabled = enabled;

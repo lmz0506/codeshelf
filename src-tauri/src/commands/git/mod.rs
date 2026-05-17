@@ -26,7 +26,7 @@ pub use status::*;
 #[cfg(target_os = "windows")]
 pub(super) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct GitStatus {
     pub branch: String,
     pub is_clean: bool,
@@ -38,7 +38,7 @@ pub struct GitStatus {
     pub behind: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct ConflictFileContent {
     pub file: String,
     pub base: Option<String>,
@@ -47,7 +47,7 @@ pub struct ConflictFileContent {
     pub worktree: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct CommitInfo {
     pub hash: String,
     pub short_hash: String,
@@ -69,14 +69,14 @@ pub struct CommitInfo {
     pub parent_hashes: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct CommitFileChange {
     pub insertions: u32,
     pub deletions: u32,
     pub filename: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct BranchInfo {
     pub name: String,
     pub is_current: bool,
@@ -84,7 +84,7 @@ pub struct BranchInfo {
     pub upstream: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct RemoteInfo {
     pub name: String,
     pub url: String,
@@ -92,13 +92,13 @@ pub struct RemoteInfo {
     pub push_url: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct GitRepo {
     pub path: String,
     pub name: String,
 }
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, serde::Serialize, specta::Type)]
 pub struct GitCloneProgress {
     pub phase: String,
     pub percent: i32,

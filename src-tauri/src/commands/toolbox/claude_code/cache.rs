@@ -13,6 +13,7 @@ use super::{ClaudeCodeInfo, ConfigFileInfo, EnvType};
 
 /// 获取缓存的 Claude 安装信息
 #[tauri::command]
+#[specta::specta]
 pub async fn get_claude_installations_cache() -> Result<Option<Vec<ClaudeCodeInfo>>, String> {
     if let Ok(config) = storage::get_storage_config() {
         let path = config.claude_installations_cache_file();
@@ -51,6 +52,7 @@ pub async fn get_claude_installations_cache() -> Result<Option<Vec<ClaudeCodeInf
 
 /// 保存 Claude 安装信息缓存
 #[tauri::command]
+#[specta::specta]
 pub async fn save_claude_installations_cache(installs: Vec<ClaudeCodeInfo>) -> Result<(), String> {
     let config = storage::get_storage_config()?;
     config.ensure_dirs()?;
@@ -86,6 +88,7 @@ pub async fn save_claude_installations_cache(installs: Vec<ClaudeCodeInfo>) -> R
 
 /// 清除 Claude 安装信息缓存
 #[tauri::command]
+#[specta::specta]
 pub async fn clear_claude_installations_cache() -> Result<(), String> {
     if let Ok(config) = storage::get_storage_config() {
         let path = config.claude_installations_cache_file();
@@ -101,6 +104,7 @@ pub async fn clear_claude_installations_cache() -> Result<(), String> {
 
 /// 获取保存的 Claude 启动目录列表
 #[tauri::command]
+#[specta::specta]
 pub async fn get_claude_launch_dirs() -> Result<Vec<String>, String> {
     let config = storage::get_storage_config()?;
     let path = config.claude_launch_dirs_file();
@@ -120,6 +124,7 @@ pub async fn get_claude_launch_dirs() -> Result<Vec<String>, String> {
 
 /// 保存 Claude 启动目录列表
 #[tauri::command]
+#[specta::specta]
 pub async fn save_claude_launch_dirs(dirs: Vec<String>) -> Result<(), String> {
     let config = storage::get_storage_config()?;
     let content = serde_json::to_string_pretty(&dirs)

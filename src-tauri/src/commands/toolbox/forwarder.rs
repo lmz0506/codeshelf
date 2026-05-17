@@ -163,6 +163,7 @@ impl ForwardController {
 
 /// 添加转发规则
 #[tauri::command]
+#[specta::specta]
 pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, String> {
     ensure_rules_loaded().await;
 
@@ -222,6 +223,7 @@ pub async fn add_forward_rule(input: ForwardRuleInput) -> Result<ForwardRule, St
 
 /// 移除转发规则
 #[tauri::command]
+#[specta::specta]
 pub async fn remove_forward_rule(rule_id: String) -> Result<(), String> {
     ensure_rules_loaded().await;
 
@@ -256,6 +258,7 @@ pub async fn remove_forward_rule(rule_id: String) -> Result<(), String> {
 
 /// 启动转发
 #[tauri::command]
+#[specta::specta]
 pub async fn start_forwarding(rule_id: String) -> Result<(), String> {
     ensure_rules_loaded().await;
 
@@ -506,6 +509,7 @@ async fn update_rule_stats(rule_id: &str) {
 
 /// 停止转发
 #[tauri::command]
+#[specta::specta]
 pub async fn stop_forwarding(rule_id: String) -> Result<(), String> {
     log::info!("停止转发: {}", rule_id);
 
@@ -543,6 +547,7 @@ pub async fn stop_forwarding(rule_id: String) -> Result<(), String> {
 
 /// 获取所有转发规则
 #[tauri::command]
+#[specta::specta]
 pub async fn get_forward_rules() -> Result<Vec<ForwardRule>, String> {
     ensure_rules_loaded().await;
 
@@ -566,6 +571,7 @@ pub async fn get_forward_rules() -> Result<Vec<ForwardRule>, String> {
 
 /// 获取单个转发规则
 #[tauri::command]
+#[specta::specta]
 pub async fn get_forward_rule(rule_id: String) -> Result<Option<ForwardRule>, String> {
     ensure_rules_loaded().await;
 
@@ -577,6 +583,7 @@ pub async fn get_forward_rule(rule_id: String) -> Result<Option<ForwardRule>, St
 
 /// 获取转发统计
 #[tauri::command]
+#[specta::specta]
 pub async fn get_forward_stats(rule_id: String) -> Result<ForwardStats, String> {
     let controllers = FORWARD_CONTROLLERS.lock().await;
     let (connections, bytes_in, bytes_out) = controllers
@@ -594,6 +601,7 @@ pub async fn get_forward_stats(rule_id: String) -> Result<ForwardStats, String> 
 
 /// 更新转发规则
 #[tauri::command]
+#[specta::specta]
 pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> Result<ForwardRule, String> {
     ensure_rules_loaded().await;
 

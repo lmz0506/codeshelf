@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 // ============== 端口扫描相关结构 ==============
 
 /// 扫描配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanConfig {
     /// 目标 IP 地址
@@ -35,7 +35,7 @@ pub struct ScanConfig {
 }
 
 /// 扫描结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ScanResult {
     pub ip: String,
     pub port: u16,
@@ -45,7 +45,7 @@ pub struct ScanResult {
 
 /// 扫描进度
 #[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanProgress {
     pub scanned: u32,
@@ -56,7 +56,7 @@ pub struct ScanProgress {
 // ============== 文件下载相关结构 ==============
 
 /// 下载任务
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadTask {
     pub id: String,
@@ -79,7 +79,7 @@ pub struct DownloadTask {
 }
 
 /// 下载配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadConfig {
     pub url: String,
@@ -90,7 +90,7 @@ pub struct DownloadConfig {
 
 /// 下载进度
 #[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadProgress {
     pub id: String,
@@ -103,7 +103,7 @@ pub struct DownloadProgress {
 // ============== 进程管理相关结构 ==============
 
 /// 进程信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessInfo {
     pub pid: u32,
@@ -120,7 +120,7 @@ pub struct ProcessInfo {
 }
 
 /// 进程查询过滤
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessFilter {
     pub port: Option<u16>,
@@ -131,7 +131,7 @@ pub struct ProcessFilter {
 // ============== 端口转发相关结构 ==============
 
 /// 转发规则
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardRule {
     pub id: String,
@@ -158,7 +158,7 @@ pub struct ForwardRule {
 }
 
 /// 创建转发规则的输入
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardRuleInput {
     pub name: String,
@@ -170,7 +170,7 @@ pub struct ForwardRuleInput {
 }
 
 /// 转发统计
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardStats {
     pub rule_id: String,
@@ -182,7 +182,7 @@ pub struct ForwardStats {
 // ============== SSH 隧道相关结构 ==============
 
 /// SSH 认证方式（前端 tag 区分：key / password / sshConfig）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum SshAuthMethod {
     /// 私钥文件（含可选 passphrase）
@@ -200,7 +200,7 @@ pub enum SshAuthMethod {
 }
 
 /// SSH 隧道规则
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SshTunnel {
     pub id: String,
@@ -235,7 +235,7 @@ pub struct SshTunnel {
 }
 
 /// 创建/更新 SSH 隧道的输入
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SshTunnelInput {
     pub name: String,
@@ -249,7 +249,7 @@ pub struct SshTunnelInput {
 }
 
 /// SSH 隧道统计
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SshTunnelStats {
     pub tunnel_id: String,
@@ -259,7 +259,7 @@ pub struct SshTunnelStats {
 }
 
 /// 端口连通性测试结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TestPortResult {
     pub success: bool,
@@ -277,7 +277,7 @@ fn default_ssh_port() -> u16 {
 // ============== 静态服务相关结构 ==============
 
 /// 服务配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfig {
     pub id: String,
@@ -304,7 +304,7 @@ pub struct ServerConfig {
 }
 
 /// 代理配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProxyConfig {
     pub prefix: String,
@@ -312,7 +312,7 @@ pub struct ProxyConfig {
 }
 
 /// 创建服务的输入
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfigInput {
     pub name: String,
@@ -331,7 +331,7 @@ pub struct ServerConfigInput {
 
 /// 服务访问日志
 #[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessLog {
     pub timestamp: String,
@@ -419,7 +419,7 @@ pub fn port_service_name(port: u16) -> Option<&'static str> {
 
 // ============== Nginx 配置生成 ==============
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NginxConfigOptions {
     pub service_name: String,
@@ -444,7 +444,7 @@ fn default_stopped() -> String {
 // ============== 快捷键备忘相关结构 ==============
 
 /// 快捷键条目
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutEntry {
     pub id: String,
@@ -458,7 +458,7 @@ pub struct ShortcutEntry {
 }
 
 /// 添加/编辑快捷键的输入
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutInput {
     pub category: Option<String>,

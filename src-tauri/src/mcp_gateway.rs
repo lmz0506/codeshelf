@@ -20,7 +20,7 @@ const DEFAULT_PROTOCOL_VERSION: &str = "2024-11-05";
 
 static APP_HTTP_GATEWAY: Lazy<Mutex<Option<AppHttpGateway>>> = Lazy::new(|| Mutex::new(None));
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct McpGatewayStatus {
     pub running: bool,
@@ -33,7 +33,7 @@ pub struct McpGatewayStatus {
 /// 供前端"以 MCP 客户端身份"调用本地网关时使用：
 /// - url：HTTP 端点（含 scheme/host/port），如果网关未运行则不返回
 /// - api_key：从 mcp_gateway_keys 里挑第一个有效 key。若 keys 为空（网关无鉴权）则为 None
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct McpGatewayInternalEndpoint {
     pub url: String,
@@ -48,7 +48,7 @@ struct AppHttpGateway {
     task: tokio::task::JoinHandle<()>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, specta::Type)]
 struct JsonRpcRequest {
     #[serde(default)]
     jsonrpc: Option<String>,
@@ -59,7 +59,7 @@ struct JsonRpcRequest {
     params: Option<Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 struct JsonRpcResponse {
     jsonrpc: &'static str,
     id: Value,
@@ -69,7 +69,7 @@ struct JsonRpcResponse {
     error: Option<JsonRpcError>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 struct JsonRpcError {
     code: i64,
     message: String,
@@ -77,7 +77,7 @@ struct JsonRpcError {
     data: Option<Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 struct ToolsCallParams {
     name: String,
@@ -103,12 +103,14 @@ fn http_router() -> Router {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn mcp_gateway_status() -> Result<McpGatewayStatus, String> {
     let guard = APP_HTTP_GATEWAY.lock().await;
     Ok(status_from_gateway(guard.as_ref()))
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn mcp_gateway_internal_endpoint() -> Result<Option<McpGatewayInternalEndpoint>, String> {
     let status = {
         let guard = APP_HTTP_GATEWAY.lock().await;

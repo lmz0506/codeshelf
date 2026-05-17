@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 // ============== 项目数据 ==============
 
 /// 项目
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
     pub id: String,
@@ -26,7 +26,7 @@ pub struct Project {
 // ============== 编辑器配置数据 ==============
 
 /// 编辑器配置
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct EditorConfig {
     pub id: String,
     pub name: String,
@@ -38,7 +38,7 @@ pub struct EditorConfig {
 // ============== 终端配置数据 ==============
 
 /// 终端配置
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct TerminalConfig {
     pub terminal_type: String,
     pub custom_path: Option<String>,
@@ -48,7 +48,7 @@ pub struct TerminalConfig {
 // ============== 应用设置数据 ==============
 
 /// 应用设置
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct AppSettings {
     pub theme: String,
     pub view_mode: String,
@@ -87,7 +87,7 @@ pub struct AppSettings {
     pub mcp_gateway_keys: Vec<McpGatewayKey>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct McpGatewayKey {
     pub id: String,
@@ -137,7 +137,7 @@ impl Default for AppSettings {
 // ============== UI 状态数据 ==============
 
 /// UI 状态
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct UiState {
     pub recent_detail_project_ids: Vec<String>,
 }
@@ -145,7 +145,7 @@ pub struct UiState {
 // ============== 通知数据 ==============
 
 /// 单条通知
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct Notification {
     pub id: String,
     pub notification_type: String,
@@ -158,7 +158,7 @@ pub struct Notification {
 // ============== Claude 快捷配置数据 ==============
 
 /// Claude 快捷配置选项
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeQuickConfig {
     pub id: String,
@@ -174,7 +174,7 @@ pub struct ClaudeQuickConfig {
 }
 
 /// 配置选项
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct ClaudeConfigSelectOption {
     pub label: String,
     pub value: serde_json::Value,
@@ -183,7 +183,7 @@ pub struct ClaudeConfigSelectOption {
 // ============== Claude 安装信息缓存数据 ==============
 
 /// Claude Code 安装信息
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeInstallation {
     pub env_type: String,
@@ -195,7 +195,7 @@ pub struct ClaudeInstallation {
 }
 
 /// 配置文件信息
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct ConfigFileInfo {
     pub name: String,
     pub path: String,
@@ -204,7 +204,7 @@ pub struct ConfigFileInfo {
 
 // ============== AI 供应商配置数据 ==============
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiModelConfig {
     pub id: String,
@@ -218,7 +218,7 @@ pub struct AiModelConfig {
     pub vision: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiProviderConfig {
     pub id: String,
@@ -234,7 +234,7 @@ pub struct AiProviderConfig {
 
 // ============== 对话会话数据 ==============
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
     pub id: String,
@@ -268,7 +268,7 @@ pub struct ChatMessage {
     pub attachments: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSession {
     pub id: String,
@@ -313,7 +313,7 @@ pub struct ChatSession {
 // ============== 上下文压缩 ==============
 
 /// 单次压缩的元数据；正文 markdown 单独存放在 <sessionId>/compactions/<version>.md
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CompactionMeta {
     /// 版本号，如 "v1"、"v2"
@@ -331,7 +331,7 @@ pub struct CompactionMeta {
 }
 
 /// 压缩目录的索引文件 <sessionId>/compactions/index.json
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CompactionIndex {
     /// 当前生效版本号；None 表示无版本（不会出现在已写过的索引里）
@@ -340,7 +340,7 @@ pub struct CompactionIndex {
     pub versions: Vec<CompactionMeta>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSessionSummary {
     pub id: String,
@@ -362,7 +362,7 @@ pub fn current_iso_time() -> String {
 
 // ============== 剪贴板历史数据 ==============
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipboardEntry {
     pub id: String,
@@ -375,7 +375,7 @@ pub struct ClipboardEntry {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipboardSettings {
     pub enabled: bool,
@@ -406,7 +406,7 @@ pub fn generate_id() -> String {
 // ============== API 对话（ApiChat）数据 ==============
 
 /// Session 鉴权中 token 如何注入后续请求
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum SessionInject {
     /// 完全依赖 reqwest 的 cookie_store
@@ -420,7 +420,7 @@ pub enum SessionInject {
 }
 
 /// API 鉴权配置
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ApiAuthConfig {
     None,
@@ -455,7 +455,7 @@ impl Default for ApiAuthConfig {
 }
 
 /// 接口分组（同一项目共享鉴权）
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiGroup {
     pub id: String,
@@ -469,7 +469,7 @@ pub struct ApiGroup {
 }
 
 /// 单个 API 接口
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiEndpoint {
     pub id: String,
@@ -498,7 +498,7 @@ pub struct ApiEndpoint {
 }
 
 /// API 对话会话（与 ChatSession 字段大致对齐，额外携带绑定的接口集合）
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiChatSession {
     pub id: String,
@@ -526,7 +526,7 @@ pub struct ApiChatSession {
     pub pinned: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiChatSessionSummary {
     pub id: String,

@@ -11,6 +11,7 @@ use crate::storage::get_storage_config;
 // ========== Memory ==========
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_global_memory() -> Result<String, String> {
     let config = get_storage_config()?;
     let path = config.memory_file();
@@ -21,6 +22,7 @@ pub async fn get_global_memory() -> Result<String, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_global_memory(content: String) -> Result<(), String> {
     let config = get_storage_config()?;
     let path = config.memory_file();
@@ -32,7 +34,7 @@ pub async fn save_global_memory(content: String) -> Result<(), String> {
 
 // ========== Skills ==========
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Skill {
     pub name: String,
@@ -154,6 +156,7 @@ fn ensure_skills_dir() -> Result<std::path::PathBuf, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_skills() -> Result<Vec<Skill>, String> {
     let dir = ensure_skills_dir()?;
     let mut out = Vec::new();
@@ -176,6 +179,7 @@ pub async fn list_skills() -> Result<Vec<Skill>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_skill(skill: Skill) -> Result<(), String> {
     let dir = ensure_skills_dir()?;
     let fname = format!("{}.md", sanitize_name(&skill.name));
@@ -191,6 +195,7 @@ pub async fn save_skill(skill: Skill) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_skill(name: String) -> Result<(), String> {
     let dir = ensure_skills_dir()?;
     let fname = format!("{}.md", sanitize_name(&name));
@@ -209,7 +214,7 @@ fn sanitize_name(s: &str) -> String {
 
 // ========== 文件 @mention：读取文件内容（相对指定根目录） ==========
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MentionFileEntry {
     pub path: String,
@@ -217,6 +222,7 @@ pub struct MentionFileEntry {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_dir_entries(root: String, max: Option<u32>) -> Result<Vec<MentionFileEntry>, String> {
     let cap = max.unwrap_or(5000) as usize;
     let mut out: Vec<MentionFileEntry> = Vec::new();
@@ -376,6 +382,7 @@ fn read_mention_dir(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn read_mention_file(root: String, rel_path: String) -> Result<String, String> {
     const MAX_MENTION_FILE_BYTES: u64 = 1_000_000;
     const MAX_MENTION_DIR_BYTES: u64 = 1_000_000;

@@ -15,7 +15,7 @@ use sqlx::Acquire;
 use crate::storage::db::pool;
 use crate::storage::{current_iso_time, generate_id, Project};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct CreateProjectInput {
     pub name: String,
     pub path: String,
@@ -23,7 +23,7 @@ pub struct CreateProjectInput {
     pub labels: Option<Vec<String>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct UpdateProjectInput {
     pub id: String,
     pub name: Option<String>,
@@ -154,11 +154,13 @@ async fn project_exists(id: &str) -> Result<bool, String> {
 // ============ commands ============
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_projects() -> Result<Vec<Project>, String> {
     fetch_all_projects().await
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn create_project(input: CreateProjectInput) -> Result<Project, String> {
     // 路径唯一性检查
     let exists: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM projects WHERE path = ?")
@@ -237,6 +239,7 @@ pub async fn create_project(input: CreateProjectInput) -> Result<Project, String
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn update_project(input: UpdateProjectInput) -> Result<Project, String> {
     if !project_exists(&input.id).await? {
         return Err("项目不存在".to_string());
@@ -316,6 +319,7 @@ pub async fn update_project(input: UpdateProjectInput) -> Result<Project, String
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_project(id: String) -> Result<(), String> {
     let result = sqlx::query("DELETE FROM projects WHERE id = ?")
         .bind(&id)
@@ -329,6 +333,7 @@ pub async fn delete_project(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_project_directory(id: String) -> Result<(), String> {
     let project = fetch_project_by_id(&id)
         .await?
@@ -352,6 +357,7 @@ pub async fn delete_project_directory(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn toggle_favorite(id: String) -> Result<Project, String> {
     let now = current_iso_time();
     let result = sqlx::query(
@@ -376,6 +382,7 @@ pub async fn toggle_favorite(id: String) -> Result<Project, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn update_last_opened(id: String) -> Result<Project, String> {
     let now = current_iso_time();
     let result = sqlx::query(
@@ -398,6 +405,7 @@ pub async fn update_last_opened(id: String) -> Result<Project, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn batch_update_projects(
     updates: Vec<UpdateProjectInput>,
 ) -> Result<Vec<Project>, String> {
@@ -497,6 +505,7 @@ pub async fn batch_update_projects(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn batch_delete_projects(ids: Vec<String>) -> Result<(), String> {
     if ids.is_empty() {
         return Ok(());
@@ -525,6 +534,7 @@ pub async fn batch_delete_projects(ids: Vec<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn import_projects(
     new_projects: Vec<CreateProjectInput>,
 ) -> Result<Vec<Project>, String> {
@@ -614,11 +624,13 @@ pub async fn import_projects(
 
 /// 兼容旧 API：从持久层重新读取项目列表
 #[tauri::command]
+#[specta::specta]
 pub async fn reload_projects() -> Result<Vec<Project>, String> {
     fetch_all_projects().await
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn set_project_editor(
     id: String,
     editor_id: Option<String>,
@@ -644,6 +656,7 @@ pub async fn set_project_editor(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn set_project_claude_env(
     id: String,
     claude_env_name: Option<String>,

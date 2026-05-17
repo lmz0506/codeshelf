@@ -113,6 +113,7 @@ impl Default for NetcatState {
 
 /// 初始化并加载已保存的会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_init(
     state: State<'_, NetcatState>,
 ) -> Result<(), String> {
@@ -121,6 +122,7 @@ pub async fn netcat_init(
 
 /// 创建新会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_create_session(
     _app: AppHandle,
     state: State<'_, NetcatState>,
@@ -180,6 +182,7 @@ pub async fn netcat_create_session(
 
 /// 启动会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_start_session(
     app: AppHandle,
     state: State<'_, NetcatState>,
@@ -273,6 +276,7 @@ pub async fn netcat_start_session(
 
 /// 停止会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_stop_session(
     state: State<'_, NetcatState>,
     session_id: String,
@@ -367,6 +371,7 @@ async fn stop_session_internal(
 
 /// 删除会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_remove_session(
     state: State<'_, NetcatState>,
     session_id: String,
@@ -385,6 +390,7 @@ pub async fn netcat_remove_session(
 
 /// 更新会话的自动发送配置
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_update_auto_send(
     state: State<'_, NetcatState>,
     session_id: String,
@@ -408,6 +414,7 @@ pub async fn netcat_update_auto_send(
 
 /// 发送消息
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_send_message(
     app: AppHandle,
     state: State<'_, NetcatState>,
@@ -665,6 +672,7 @@ async fn mirror_tcp_server_send_to_local_clients(
 
 /// 获取所有会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_get_sessions(
     state: State<'_, NetcatState>,
 ) -> Result<Vec<NetcatSession>, String> {
@@ -681,6 +689,7 @@ pub async fn netcat_get_sessions(
 
 /// 获取单个会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_get_session(
     state: State<'_, NetcatState>,
     session_id: String,
@@ -693,6 +702,7 @@ pub async fn netcat_get_session(
 
 /// 获取会话消息
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_get_messages(
     state: State<'_, NetcatState>,
     session_id: String,
@@ -719,6 +729,7 @@ pub async fn netcat_get_messages(
 
 /// 获取连接的客户端
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_get_clients(
     state: State<'_, NetcatState>,
     session_id: String,
@@ -732,6 +743,7 @@ pub async fn netcat_get_clients(
 
 /// 清空会话消息
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_clear_messages(
     state: State<'_, NetcatState>,
     session_id: String,
@@ -745,6 +757,7 @@ pub async fn netcat_clear_messages(
 
 /// 断开指定客户端（仅服务器模式）
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_disconnect_client(
     state: State<'_, NetcatState>,
     session_id: String,
@@ -765,7 +778,7 @@ pub async fn netcat_disconnect_client(
 }
 
 /// HTTP 请求配置
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HttpFetchConfig {
     pub url: String,
@@ -781,6 +794,7 @@ pub struct HttpFetchConfig {
 
 /// HTTP 获取数据（用于自动发送的 HTTP 模式）
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_fetch_http(
     config: HttpFetchConfig,
 ) -> Result<String, String> {

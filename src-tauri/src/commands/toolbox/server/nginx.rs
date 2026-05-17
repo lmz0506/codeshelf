@@ -175,6 +175,7 @@ fn build_nginx_config(options: NginxConfigOptions) -> String {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn generate_nginx_config(server_id: String) -> Result<String, String> {
     ensure_servers_loaded().await;
 

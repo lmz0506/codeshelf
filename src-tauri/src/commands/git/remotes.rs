@@ -11,6 +11,7 @@ use super::{run_git_command, RemoteInfo};
 use super::CREATE_NO_WINDOW;
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_remotes(path: String) -> Result<Vec<RemoteInfo>, String> {
     let output = run_git_command(&path, &["remote", "-v"])?;
 
@@ -42,12 +43,14 @@ pub async fn get_remotes(path: String) -> Result<Vec<RemoteInfo>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn add_remote(path: String, name: String, url: String) -> Result<(), String> {
     run_git_command(&path, &["remote", "add", &name, &url])?;
     Ok(())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn verify_remote_url(url: String) -> Result<(), String> {
     // 使用 git ls-remote 验证远程仓库 URL 是否有效 (hide console window on Windows)
     #[cfg(target_os = "windows")]
@@ -72,12 +75,14 @@ pub async fn verify_remote_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn remove_remote(path: String, name: String) -> Result<(), String> {
     run_git_command(&path, &["remote", "remove", &name])?;
     Ok(())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_push(path: String, remote: String, branch: String, force: bool) -> Result<String, String> {
     let mut args = vec!["push", &remote, &branch];
     if force {
@@ -87,11 +92,13 @@ pub async fn git_push(path: String, remote: String, branch: String, force: bool)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_pull(path: String, remote: String, branch: String) -> Result<String, String> {
     run_git_command(&path, &["pull", &remote, &branch])
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn git_fetch(path: String, remote: Option<String>) -> Result<String, String> {
     match remote {
         Some(r) => run_git_command(&path, &["fetch", &r]),
@@ -100,6 +107,7 @@ pub async fn git_fetch(path: String, remote: Option<String>) -> Result<String, S
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn sync_to_remote(
     path: String,
     source_remote: String,

@@ -131,7 +131,7 @@ pub(super) fn get_host_config_dir() -> PathBuf {
 // ============== 共享类型 ==============
 
 /// 环境类型
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
 pub enum EnvType {
     #[serde(rename = "host")]
     Host,
@@ -140,7 +140,7 @@ pub enum EnvType {
 }
 
 /// Claude Code 安装信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ClaudeCodeInfo {
     pub env_type: EnvType,
     pub env_name: String,
@@ -152,7 +152,7 @@ pub struct ClaudeCodeInfo {
 }
 
 /// 配置文件信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ConfigFileInfo {
     pub name: String,
     pub path: String,
@@ -163,7 +163,7 @@ pub struct ConfigFileInfo {
 }
 
 /// 快捷配置选项
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct QuickConfigOption {
     pub id: String,
     pub name: String,
@@ -174,7 +174,7 @@ pub struct QuickConfigOption {
 }
 
 /// 保存的配置档案
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ConfigProfile {
     pub id: String,
     pub name: String,

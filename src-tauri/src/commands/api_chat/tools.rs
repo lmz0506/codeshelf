@@ -9,7 +9,7 @@ use crate::storage::ApiEndpoint;
 
 use super::load_endpoints;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiToolsBundle {
     /// OpenAI function tools 数组
@@ -39,6 +39,7 @@ fn sanitize_tool_name(endpoint_id: &str) -> String {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn build_api_tools(endpoint_ids: Vec<String>) -> Result<ApiToolsBundle, String> {
     let all = load_endpoints()?;
     let by_id: HashMap<String, ApiEndpoint> =

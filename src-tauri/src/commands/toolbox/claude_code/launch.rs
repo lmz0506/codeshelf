@@ -45,6 +45,7 @@ fn windows_path_to_wsl(path: &str) -> String {
 
 /// 在终端中启动 Claude Code
 #[tauri::command]
+#[specta::specta]
 #[allow(unused_variables)]
 pub async fn launch_claude_in_terminal(
     work_dir: Option<String>,

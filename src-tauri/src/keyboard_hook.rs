@@ -6,7 +6,7 @@
 
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, specta::Type)]
 #[allow(dead_code)]
 pub struct ShortcutInput {
     pub id: String,
@@ -480,6 +480,7 @@ pub fn stop_hook_from_manager(_app: &tauri::AppHandle) {}
 
 #[cfg(target_os = "windows")]
 #[tauri::command]
+#[specta::specta]
 pub async fn register_global_shortcuts(
     shortcuts: Vec<ShortcutInput>,
 ) -> Result<(), String> {
@@ -509,6 +510,7 @@ pub async fn register_global_shortcuts(
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
+#[specta::specta]
 pub async fn register_global_shortcuts(
     app: tauri::AppHandle,
     shortcuts: Vec<ShortcutInput>,
@@ -543,6 +545,7 @@ pub async fn register_global_shortcuts(
 
 #[cfg(target_os = "windows")]
 #[tauri::command]
+#[specta::specta]
 pub async fn unregister_all_global_shortcuts() -> Result<(), String> {
     if let Some(bindings_lock) = win::HOOK_SHARED_BINDINGS.get() {
         let mut bindings = bindings_lock
@@ -556,6 +559,7 @@ pub async fn unregister_all_global_shortcuts() -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
+#[specta::specta]
 pub async fn unregister_all_global_shortcuts(
     app: tauri::AppHandle,
 ) -> Result<(), String> {

@@ -47,6 +47,7 @@ fn compose_meta(container_id: &str) -> (Option<String>, Option<String>, Option<S
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_check_available() -> Result<DockerStatus, String> {
     let result = run_docker(&["--version"], None);
     if result.success {
@@ -65,6 +66,7 @@ pub async fn docker_check_available() -> Result<DockerStatus, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_find_dockerfiles(project_path: String) -> Result<Vec<String>, String> {
     let root = project_root(&project_path)?;
     let mut out = Vec::new();
@@ -74,6 +76,7 @@ pub async fn docker_find_dockerfiles(project_path: String) -> Result<Vec<String>
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_read_dockerfile(
     project_path: String,
     dockerfile_path: String,
@@ -84,6 +87,7 @@ pub async fn docker_read_dockerfile(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_write_dockerfile(
     project_path: String,
     dockerfile_path: String,
@@ -95,6 +99,7 @@ pub async fn docker_write_dockerfile(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_generate_dockerfile_template(
     project_path: String,
     template: Option<String>,
@@ -104,6 +109,7 @@ pub async fn docker_generate_dockerfile_template(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_generate_dockerfile_ai(
     input: DockerAiGenerateInput,
 ) -> Result<DockerAiGenerateOutput, String> {
@@ -111,6 +117,7 @@ pub async fn docker_generate_dockerfile_ai(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_build_image(input: DockerBuildInput) -> Result<DockerCommandResult, String> {
     let root = project_root(&input.project_path)?;
     resolve_existing_project_file(&root, &input.dockerfile_path)?;
@@ -138,6 +145,7 @@ pub async fn docker_build_image(input: DockerBuildInput) -> Result<DockerCommand
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_list_images() -> Result<Vec<DockerImageInfo>, String> {
     let result = run_docker(&["image", "ls", "--format", "{{json .}}"], None);
     if !result.success {
@@ -159,6 +167,7 @@ pub async fn docker_list_images() -> Result<Vec<DockerImageInfo>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_remove_image(
     image: String,
     force: Option<bool>,
@@ -172,6 +181,7 @@ pub async fn docker_remove_image(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_run_image(input: DockerRunInput) -> Result<DockerCommandResult, String> {
     let mut args = vec!["run", "-d"];
     if let Some(name) = input
@@ -246,6 +256,7 @@ pub async fn docker_run_image(input: DockerRunInput) -> Result<DockerCommandResu
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_list_containers() -> Result<Vec<DockerContainerInfo>, String> {
     let result = run_docker(&["ps", "-a", "--format", "{{json .}}"], None);
     if !result.success {
@@ -304,21 +315,25 @@ fn infer_state_from_status(status: &str) -> String {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_stop_container(container: String) -> Result<DockerCommandResult, String> {
     Ok(run_docker(&["stop", container.as_str()], None))
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_start_container(container: String) -> Result<DockerCommandResult, String> {
     Ok(run_docker(&["start", container.as_str()], None))
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_restart_container(container: String) -> Result<DockerCommandResult, String> {
     Ok(run_docker(&["restart", container.as_str()], None))
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_remove_container(
     container: String,
     force: Option<bool>,
@@ -332,6 +347,7 @@ pub async fn docker_remove_container(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_push_image(image: String) -> Result<DockerCommandResult, String> {
     Ok(run_docker(&["push", image.as_str()], None))
 }
@@ -391,6 +407,7 @@ fn json_to_yaml(value: &Value, indent: usize) -> String {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_inspect_container_yaml(container: String) -> Result<String, String> {
     let result = run_docker(&["inspect", container.as_str()], None);
     if !result.success {

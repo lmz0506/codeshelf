@@ -3,6 +3,7 @@
 use super::{run_git_command, BranchInfo};
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_branches(path: String) -> Result<Vec<BranchInfo>, String> {
     let output = run_git_command(&path, &["branch", "-a", "-vv"])?;
 
@@ -38,11 +39,13 @@ pub async fn get_branches(path: String) -> Result<Vec<BranchInfo>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn checkout_branch(path: String, branch: String) -> Result<String, String> {
     run_git_command(&path, &["checkout", &branch])
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn create_branch(path: String, branch: String, checkout: bool) -> Result<String, String> {
     if checkout {
         // Create and checkout the new branch

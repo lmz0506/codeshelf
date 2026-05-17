@@ -13,6 +13,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// 获取进程列表
 #[tauri::command]
+#[specta::specta]
 pub async fn get_processes(filter: Option<ProcessFilter>) -> Result<Vec<ProcessInfo>, String> {
     let mut system = System::new_all();
     system.refresh_all();
@@ -262,6 +263,7 @@ async fn get_port_pid_map() -> Result<HashMap<u16, Vec<u32>>, String> {
 
 /// 查询端口占用
 #[tauri::command]
+#[specta::specta]
 pub async fn get_port_processes(port: u16) -> Result<Vec<ProcessInfo>, String> {
     get_processes(Some(ProcessFilter {
         port: Some(port),
@@ -273,6 +275,7 @@ pub async fn get_port_processes(port: u16) -> Result<Vec<ProcessInfo>, String> {
 
 /// 终止进程
 #[tauri::command]
+#[specta::specta]
 pub async fn kill_process(pid: u32, force: Option<bool>) -> Result<(), String> {
     // 获取当前进程 PID，防止用户意外结束 CodeShelf 自身
     let current_pid = std::process::id();
@@ -322,6 +325,7 @@ pub async fn kill_process(pid: u32, force: Option<bool>) -> Result<(), String> {
 
 /// 获取系统资源使用情况
 #[tauri::command]
+#[specta::specta]
 pub async fn get_system_stats() -> Result<SystemStats, String> {
     let mut system = System::new_all();
     system.refresh_all();
@@ -337,7 +341,7 @@ pub async fn get_system_stats() -> Result<SystemStats, String> {
 }
 
 /// 系统统计信息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemStats {
     pub total_memory: u64,
@@ -349,7 +353,7 @@ pub struct SystemStats {
 }
 
 /// 端口占用信息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PortOccupation {
     pub port: u16,
@@ -362,6 +366,7 @@ pub struct PortOccupation {
 
 /// 获取本地端口占用情况
 #[tauri::command]
+#[specta::specta]
 pub async fn get_local_port_occupation() -> Result<Vec<PortOccupation>, String> {
     #[cfg(target_os = "windows")]
     {

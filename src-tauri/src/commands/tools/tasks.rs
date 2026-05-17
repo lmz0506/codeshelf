@@ -10,7 +10,7 @@ use crate::storage::{current_iso_time, generate_id};
 
 use super::ctx::{session_tasks_path, ToolCtx};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatTask {
     pub id: String,
@@ -124,11 +124,13 @@ pub(super) fn tool_task_list(ctx: &ToolCtx) -> Result<String, String> {
 // ========== Tauri 命令 ==========
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_chat_tasks(session_id: String) -> Result<Vec<ChatTask>, String> {
     read_tasks(&session_id)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn create_chat_task(
     app: AppHandle,
     session_id: String,
@@ -154,6 +156,7 @@ pub async fn create_chat_task(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn update_chat_task(
     app: AppHandle,
     session_id: String,
@@ -184,6 +187,7 @@ pub async fn update_chat_task(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_chat_task(
     app: AppHandle,
     session_id: String,

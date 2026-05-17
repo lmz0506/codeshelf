@@ -11,6 +11,7 @@ use super::{
 
 /// 创建服务
 #[tauri::command]
+#[specta::specta]
 pub async fn create_server(input: ServerConfigInput) -> Result<ServerConfig, String> {
     ensure_servers_loaded().await;
 
@@ -94,6 +95,7 @@ pub async fn create_server(input: ServerConfigInput) -> Result<ServerConfig, Str
 
 /// 停止服务
 #[tauri::command]
+#[specta::specta]
 pub async fn stop_server(server_id: String) -> Result<(), String> {
     log::info!("停止服务: {}", server_id);
 
@@ -137,6 +139,7 @@ pub async fn stop_server(server_id: String) -> Result<(), String> {
 
 /// 启动服务
 #[tauri::command]
+#[specta::specta]
 pub async fn start_server(server_id: String) -> Result<String, String> {
     ensure_servers_loaded().await;
 
@@ -233,6 +236,7 @@ pub async fn start_server(server_id: String) -> Result<String, String> {
 
 /// 移除服务
 #[tauri::command]
+#[specta::specta]
 pub async fn remove_server(server_id: String) -> Result<(), String> {
     ensure_servers_loaded().await;
 
@@ -267,6 +271,7 @@ pub async fn remove_server(server_id: String) -> Result<(), String> {
 
 /// 获取所有服务
 #[tauri::command]
+#[specta::specta]
 pub async fn get_servers() -> Result<Vec<ServerConfig>, String> {
     ensure_servers_loaded().await;
 
@@ -276,6 +281,7 @@ pub async fn get_servers() -> Result<Vec<ServerConfig>, String> {
 
 /// 获取单个服务
 #[tauri::command]
+#[specta::specta]
 pub async fn get_server(server_id: String) -> Result<Option<ServerConfig>, String> {
     ensure_servers_loaded().await;
 
@@ -285,6 +291,7 @@ pub async fn get_server(server_id: String) -> Result<Option<ServerConfig>, Strin
 
 /// 更新服务配置
 #[tauri::command]
+#[specta::specta]
 pub async fn update_server(server_id: String, input: ServerConfigInput) -> Result<ServerConfig, String> {
     ensure_servers_loaded().await;
 

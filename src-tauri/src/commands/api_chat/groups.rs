@@ -6,6 +6,7 @@ use super::execute::drop_session_client;
 use super::{load_endpoints, load_groups, write_endpoints, write_groups};
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_api_groups() -> Result<Vec<ApiGroup>, String> {
     let mut groups = load_groups()?;
     groups.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
@@ -13,6 +14,7 @@ pub async fn list_api_groups() -> Result<Vec<ApiGroup>, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_api_group(mut group: ApiGroup) -> Result<ApiGroup, String> {
     let mut groups = load_groups()?;
     let now = current_iso_time();
@@ -40,6 +42,7 @@ pub async fn save_api_group(mut group: ApiGroup) -> Result<ApiGroup, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_api_group(id: String) -> Result<(), String> {
     let mut groups = load_groups()?;
     groups.retain(|g| g.id != id);
