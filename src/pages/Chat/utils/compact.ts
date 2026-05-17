@@ -85,8 +85,8 @@ export async function compactMessages(params: {
         if (event.payload.requestId !== requestId) return;
         if (event.payload.done || event.payload.error) {
           resolve();
+          unlistenDone.then((fn) => fn()).catch(() => {});
         }
-        unlistenDone.then((fn) => fn()).catch(() => {});
       },
     );
   });
