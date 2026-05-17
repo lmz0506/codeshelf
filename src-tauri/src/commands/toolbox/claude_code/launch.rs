@@ -8,7 +8,7 @@ use std::process::Command;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-#[allow(unused_imports)]
+#[cfg(not(target_os = "windows"))]
 use super::get_extra_path_dirs;
 
 #[cfg(target_os = "macos")]
