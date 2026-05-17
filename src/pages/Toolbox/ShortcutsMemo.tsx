@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Keyboard,
   Search,
@@ -29,12 +29,20 @@ import {
 } from "@/services/toolbox";
 import type { ShortcutEntry } from "@/types/toolbox";
 import { detectPlatform } from "@/utils/platform";
+import {
+  KeyRecorderInput,
+  renderKeys,
+  type Platform,
+} from "./ShortcutsKeyRecorder";
+import {
+  ShortcutAddDialog,
+  ShortcutDeleteConfirmDialog,
+  ShortcutResetConfirmDialog,
+} from "./ShortcutsDialogs";
 
 interface ShortcutsMemoProps {
   onBack: () => void;
 }
-
-type Platform = "mac" | "windows";
 
 /** 后端 get_current_platform 把 Linux 也归为 "windows"（Ctrl 修饰键与 Windows 一致），
  *  所以这里只用 navigator 检测 macOS，其他都映射为 windows，避免初次渲染闪烁。 */
@@ -51,168 +59,6 @@ function getCategoryLabel(category: string): string {
   return PRESET_LABELS[category] || category;
 }
 
-// ============== 按键名称格式化 ==============
-
-const KEY_NAME_MAP: Record<string, string> = {
-  " ": "Space",
-  ArrowUp: "Up",
-  ArrowDown: "Down",
-  ArrowLeft: "Left",
-  ArrowRight: "Right",
-  Escape: "Esc",
-  Backspace: "Backspace",
-  Enter: "Enter",
-  Tab: "Tab",
-  Delete: "Delete",
-  Insert: "Insert",
-  Home: "Home",
-  End: "End",
-  PageUp: "PageUp",
-  PageDown: "PageDown",
-  CapsLock: "CapsLock",
-  PrintScreen: "Print Screen",
-  ScrollLock: "ScrollLock",
-  Pause: "Pause",
-  ContextMenu: "Menu",
-};
-
-const MODIFIER_KEYS = new Set(["Control", "Alt", "Shift", "Meta"]);
-
-function formatKeyName(key: string): string {
-  if (KEY_NAME_MAP[key]) return KEY_NAME_MAP[key];
-  if (key.length === 1) return key.toUpperCase();
-  return key;
-}
-
-function getModifierLabel(mod: string, platform: Platform): string {
-  const labels: Record<string, Record<Platform, string>> = {
-    ctrl: { mac: "Control", windows: "Ctrl" },
-    alt: { mac: "Option", windows: "Alt" },
-    shift: { mac: "Shift", windows: "Shift" },
-    meta: { mac: "Command", windows: "Win" },
-  };
-  return labels[mod]?.[platform] || mod;
-}
-
-// ============== 按键录入组件 ==============
-
-function KeyRecorderInput({
-  value,
-  onChange,
-  platform,
-  placeholder,
-  className,
-}: {
-  value: string;
-  onChange: (keys: string) => void;
-  platform: Platform;
-  placeholder?: string;
-  className?: string;
-}) {
-  const [recording, setRecording] = useState(false);
-  const [preview, setPreview] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (!recording) return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (e.key === "Escape") {
-        setRecording(false);
-        setPreview("");
-        return;
-      }
-
-      const parts: string[] = [];
-      if (e.ctrlKey) parts.push(getModifierLabel("ctrl", platform));
-      if (e.altKey) parts.push(getModifierLabel("alt", platform));
-      if (e.shiftKey) parts.push(getModifierLabel("shift", platform));
-      if (e.metaKey) parts.push(getModifierLabel("meta", platform));
-
-      if (!MODIFIER_KEYS.has(e.key)) {
-        parts.push(formatKeyName(e.key));
-        onChange(parts.join(" + "));
-        setRecording(false);
-        setPreview("");
-      } else {
-        setPreview(parts.join(" + ") + " + ...");
-      }
-    },
-    [recording, platform, onChange]
-  );
-
-  const handleKeyUp = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (!recording) return;
-      e.preventDefault();
-      const parts: string[] = [];
-      if (e.ctrlKey) parts.push(getModifierLabel("ctrl", platform));
-      if (e.altKey) parts.push(getModifierLabel("alt", platform));
-      if (e.shiftKey) parts.push(getModifierLabel("shift", platform));
-      if (e.metaKey) parts.push(getModifierLabel("meta", platform));
-      setPreview(parts.length > 0 ? parts.join(" + ") + " + ..." : "");
-    },
-    [recording, platform]
-  );
-
-  function toggleRecording() {
-    const next = !recording;
-    setRecording(next);
-    setPreview("");
-    if (next) inputRef.current?.focus();
-  }
-
-  return (
-    <div className={`relative ${className || ""}`}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={recording ? preview : value}
-        onChange={(e) => {
-          if (!recording) onChange(e.target.value);
-        }}
-        onKeyDown={handleKeyDown}
-        onKeyUp={handleKeyUp}
-        onBlur={() => {
-          if (recording) {
-            setRecording(false);
-            setPreview("");
-          }
-        }}
-        readOnly={recording}
-        placeholder={recording ? "按下快捷键组合..." : placeholder}
-        className={`w-full pr-8 px-2 py-1 text-sm bg-white dark:bg-gray-800 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-          recording
-            ? "border-red-400 dark:border-red-500 bg-red-50/50 dark:bg-red-900/10 placeholder-red-400 dark:placeholder-red-500"
-            : "border-gray-300 dark:border-gray-600"
-        }`}
-      />
-      <button
-        type="button"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          toggleRecording();
-        }}
-        className={`absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded transition-colors ${
-          recording
-            ? "text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30"
-            : "text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-        }`}
-        title={recording ? "停止录制 (Esc)" : "按键录入"}
-      >
-        <Keyboard
-          size={14}
-          className={recording ? "animate-pulse" : ""}
-        />
-      </button>
-    </div>
-  );
-}
-
-// ============== 主组件 ==============
-
 export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
   const [shortcuts, setShortcuts] = useState<ShortcutEntry[]>([]);
   const [platform, setPlatform] = useState<Platform>(INITIAL_PLATFORM);
@@ -220,22 +66,14 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // 编辑状态
+  // 编辑状态（行内编辑，不走弹窗）
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDesc, setEditDesc] = useState("");
   const [editKeys, setEditKeys] = useState("");
 
-  // 添加弹窗
+  // 弹窗开关 / 上下文
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [newDesc, setNewDesc] = useState("");
-  const [newKeys, setNewKeys] = useState("");
-  const [newCategory, setNewCategory] = useState("__new__");
-  const [newCategoryName, setNewCategoryName] = useState("");
-
-  // 删除确认
   const [deleteConfirmEntry, setDeleteConfirmEntry] = useState<ShortcutEntry | null>(null);
-
-  // 重置确认
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // 折叠状态
@@ -346,14 +184,12 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
     return !collapsedCategories.has(cat);
   }
 
-  // 开始编辑
   function startEdit(entry: ShortcutEntry) {
     setEditingId(entry.id);
     setEditDesc(entry.description);
     setEditKeys(entry.keys);
   }
 
-  // 保存编辑
   async function saveEdit() {
     if (!editingId) return;
     try {
@@ -370,7 +206,6 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
     }
   }
 
-  // 重置单个默认项
   async function resetSingle(entry: ShortcutEntry) {
     if (!entry.originalKeys) return;
     try {
@@ -392,7 +227,6 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
     }
   }
 
-  // 删除确认 + 执行
   async function confirmDelete() {
     if (!deleteConfirmEntry) return;
     try {
@@ -406,35 +240,20 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
     }
   }
 
-  // 添加
-  async function handleAdd() {
-    if (!newDesc.trim() || !newKeys.trim()) return;
-    const actualCategory =
-      newCategory === "__new__" ? newCategoryName.trim() : newCategory;
-    if (!actualCategory) return;
+  async function handleAdd(params: {
+    category: string;
+    description: string;
+    keys: string;
+  }) {
     try {
-      const entry = await addShortcut({
-        category: actualCategory,
-        description: newDesc.trim(),
-        keys: newKeys.trim(),
-        platform,
-      });
+      const entry = await addShortcut({ ...params, platform });
       setShortcuts((prev) => [...prev, entry]);
-      closeAddDialog();
+      setShowAddDialog(false);
     } catch (error) {
       console.error("添加快捷键失败:", error);
     }
   }
 
-  function closeAddDialog() {
-    setShowAddDialog(false);
-    setNewDesc("");
-    setNewKeys("");
-    setNewCategory("__new__");
-    setNewCategoryName("");
-  }
-
-  // 重置
   async function handleReset() {
     try {
       const data = await resetShortcuts();
@@ -445,7 +264,6 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
     }
   }
 
-  // 导出
   async function handleExport() {
     try {
       const exportData = shortcuts.filter((s) => s.platform === platform);
@@ -462,7 +280,6 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
     }
   }
 
-  // 导入
   async function handleImport() {
     try {
       const filePath = await open({
@@ -496,31 +313,6 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
       console.error("导入失败:", error);
     }
   }
-
-  // 渲染按键标签
-  function renderKeys(keys: string) {
-    const parts = keys
-      .split("+")
-      .map((k) => k.trim())
-      .filter(Boolean);
-    return (
-      <span className="inline-flex items-center gap-1 flex-wrap">
-        {parts.map((part, i) => (
-          <span key={i} className="inline-flex items-center gap-1">
-            {i > 0 && <span className="text-gray-400 text-xs">+</span>}
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded shadow-sm text-gray-700 dark:text-gray-300 min-w-[1.5rem] text-center">
-              {part}
-            </kbd>
-          </span>
-        ))}
-      </span>
-    );
-  }
-
-  const addDisabled =
-    !newDesc.trim() ||
-    !newKeys.trim() ||
-    (newCategory === "__new__" && !newCategoryName.trim());
 
   if (loading) {
     return (
@@ -582,7 +374,6 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
 
       {/* 工具栏: 平台切换 + 搜索 + 分类过滤 */}
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center gap-3 flex-wrap">
-        {/* 平台切换 */}
         <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
           <button
             onClick={() => setPlatform("mac")}
@@ -606,7 +397,6 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
           </button>
         </div>
 
-        {/* 搜索框 */}
         <div className="flex-1 min-w-[200px] max-w-[320px] relative">
           <Search
             size={14}
@@ -621,7 +411,6 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
           />
         </div>
 
-        {/* 分类过滤 */}
         <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 flex-wrap gap-0.5">
           {categoryOptions.map((opt) => (
             <button
@@ -650,7 +439,6 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
           <div className="space-y-2">
             {Object.entries(grouped).map(([category, items]) => (
               <div key={category} className="re-card overflow-hidden">
-                {/* 分类标题 */}
                 <button
                   onClick={() => toggleCategory(category)}
                   className="w-full flex items-center gap-2 px-4 py-2.5 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left"
@@ -668,7 +456,6 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
                   </span>
                 </button>
 
-                {/* 列表项 */}
                 {isCategoryExpanded(category) && (
                   <div className="divide-y divide-gray-100 dark:divide-gray-800">
                     {items.map((entry) => (
@@ -756,164 +543,28 @@ export function ShortcutsMemo({ onBack }: ShortcutsMemoProps) {
         )}
       </div>
 
-      {/* 添加弹窗 */}
       {showAddDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="re-card w-[420px] p-5 mx-4">
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">
-              添加快捷键
-            </h3>
-
-            <div className="space-y-3">
-              {/* 分类选择 */}
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">
-                  分类
-                </label>
-                <select
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="system">系统</option>
-                  <option value="vscode">VS Code</option>
-                  <option value="idea">IDEA</option>
-                  {existingCustomCategories.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                  <option value="__new__">+ 新建分类...</option>
-                </select>
-              </div>
-
-              {/* 自定义分类名 */}
-              {newCategory === "__new__" && (
-                <div>
-                  <label className="block text-sm text-gray-500 mb-1">
-                    分类名称
-                  </label>
-                  <input
-                    type="text"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    placeholder="输入自定义分类名称"
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    autoFocus
-                  />
-                </div>
-              )}
-
-              {/* 功能描述 */}
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">
-                  功能描述
-                </label>
-                <input
-                  type="text"
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                  placeholder="例如：打开终端"
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* 按键组合 - 支持手动输入或按键录入 */}
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">
-                  按键组合
-                  <span className="text-gray-400 ml-1 font-normal">
-                    (手动输入或点击右侧图标录入)
-                  </span>
-                </label>
-                <KeyRecorderInput
-                  value={newKeys}
-                  onChange={setNewKeys}
-                  platform={platform}
-                  placeholder="例如：Ctrl + Shift + T"
-                  className="[&_input]:!px-3 [&_input]:!py-2 [&_input]:!rounded-lg [&_input]:!border-gray-200 [&_input]:dark:!border-gray-700"
-                />
-              </div>
-
-              <div className="text-xs text-gray-400">
-                平台：{platform === "mac" ? "Mac" : "Windows"}（跟随当前选择）
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 mt-5">
-              <Button variant="secondary" size="sm" onClick={closeAddDialog}>
-                取消
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleAdd}
-                disabled={addDisabled}
-              >
-                添加
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ShortcutAddDialog
+          platform={platform}
+          existingCustomCategories={existingCustomCategories}
+          onClose={() => setShowAddDialog(false)}
+          onSubmit={handleAdd}
+        />
       )}
 
-      {/* 删除确认弹窗 */}
       {deleteConfirmEntry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="re-card w-[380px] p-5 mx-4">
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">
-              删除快捷键
-            </h3>
-            <p className="text-sm text-gray-500 mb-1">
-              确定要删除以下快捷键吗？
-            </p>
-            <div className="flex items-center gap-2 py-2 px-3 my-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
-              <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">
-                {deleteConfirmEntry.description}
-              </span>
-              <span className="text-gray-400 mx-1">-</span>
-              {renderKeys(deleteConfirmEntry.keys)}
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setDeleteConfirmEntry(null)}
-              >
-                取消
-              </Button>
-              <Button variant="danger" size="sm" onClick={confirmDelete}>
-                确认删除
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ShortcutDeleteConfirmDialog
+          entry={deleteConfirmEntry}
+          onCancel={() => setDeleteConfirmEntry(null)}
+          onConfirm={confirmDelete}
+        />
       )}
 
-      {/* 重置确认弹窗 */}
       {showResetConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="re-card w-[380px] p-5 mx-4">
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">
-              重置快捷键
-            </h3>
-            <p className="text-sm text-gray-500 mb-4">
-              恢复所有默认快捷键到初始状态，保留您的自定义快捷键。确定要继续吗？
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowResetConfirm(false)}
-              >
-                取消
-              </Button>
-              <Button variant="danger" size="sm" onClick={handleReset}>
-                确认重置
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ShortcutResetConfirmDialog
+          onCancel={() => setShowResetConfirm(false)}
+          onConfirm={handleReset}
+        />
       )}
     </div>
   );
