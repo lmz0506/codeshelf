@@ -221,7 +221,10 @@ mod win {
     pub fn key_name_to_vk(name: &str) -> Result<u32, String> {
         // 单个字母 a-z
         if name.len() == 1 {
-            let ch = name.chars().next().unwrap();
+            let ch = name
+                .chars()
+                .next()
+                .expect("name.len() == 1 ensures at least one char");
             if ch.is_ascii_lowercase() {
                 return Ok(ch.to_ascii_uppercase() as u32); // VK_A=0x41 .. VK_Z=0x5A
             }
@@ -325,7 +328,10 @@ mod non_win {
     fn key_name_to_code(name: &str) -> Result<Code, String> {
         // 单个字母 a-z
         if name.len() == 1 {
-            let ch = name.chars().next().unwrap();
+            let ch = name
+                .chars()
+                .next()
+                .expect("name.len() == 1 ensures at least one char");
             if ch.is_ascii_lowercase() {
                 return match ch {
                     'a' => Ok(Code::KeyA), 'b' => Ok(Code::KeyB), 'c' => Ok(Code::KeyC),

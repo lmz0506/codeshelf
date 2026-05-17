@@ -1,4 +1,5 @@
 mod commands;
+pub mod error;
 mod keyboard_hook;
 pub mod mcp_gateway;
 mod storage;

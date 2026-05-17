@@ -150,7 +150,9 @@ fn topological_order(nodes: &[WorkflowNode]) -> Result<Vec<String>, String> {
         order.push(id.clone());
         if let Some(outs) = rdeps.get(&id) {
             for o in outs.clone() {
-                let c = indeg.get_mut(&o).unwrap();
+                let c = indeg
+                    .get_mut(&o)
+                    .ok_or_else(|| format!("拓扑排序状态损坏：节点 {} 不在入度表中", o))?;
                 *c -= 1;
                 if *c == 0 { q.push(o); }
             }
@@ -286,7 +288,11 @@ pub async fn execute_workflow(app: &AppHandle, id: &str) -> Result<WorkflowRun, 
     let mut outputs: HashMap<String, String> = HashMap::new();
     let mut error: Option<String> = None;
     for nid in &order {
-        let node = wf.nodes.iter().find(|n| &n.id == nid).unwrap();
+        let node = wf
+            .nodes
+            .iter()
+            .find(|n| &n.id == nid)
+            .expect("nid 来自 topo_order(wf.nodes) 的结果，必然能在 wf.nodes 中找到");
         let result = match node.node_type.as_str() {
             "web_fetch" => run_node_web_fetch(&node.config).await,
             "llm" => run_node_llm(&node.config, &outputs).await,

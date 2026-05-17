@@ -50,7 +50,7 @@ pub async fn save_config_profile(
     let profile = ConfigProfile {
         id: format!("{:x}", std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock before UNIX epoch")
             .as_nanos()),
         name,
         description,

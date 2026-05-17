@@ -39,6 +39,7 @@ chrono = "0.4"
 dirs = "5"
 cron = "0.12"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros"] }
+thiserror = "2"
 
 # 工具箱模块依赖
 futures = "0.3"

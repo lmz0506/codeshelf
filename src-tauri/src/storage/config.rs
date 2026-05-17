@@ -200,9 +200,15 @@ pub fn init_storage() -> Result<&'static StorageConfig, String> {
 
     let _ = STORAGE_CONFIG.set(config);
 
-    log::info!("存储初始化完成，数据目录: {:?}", STORAGE_CONFIG.get().unwrap().data_dir);
+    log::info!(
+        "存储初始化完成，数据目录: {:?}",
+        STORAGE_CONFIG
+            .get()
+            .expect("STORAGE_CONFIG just set above")
+            .data_dir
+    );
 
-    Ok(STORAGE_CONFIG.get().unwrap())
+    Ok(STORAGE_CONFIG.get().expect("STORAGE_CONFIG just set above"))
 }
 
 /// macOS: 将旧目录中的文件迁移到新目录（仅当新目录为空时）

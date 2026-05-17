@@ -420,8 +420,8 @@ pub(super) fn parse_version(raw: &str) -> String {
                 version_start = Some(i);
             }
         } else if *c != '.' && *c != '-' && *c != '_' {
-            if version_start.is_some() {
-                let version: String = re_pattern[version_start.unwrap()..i].iter().collect();
+            if let Some(start) = version_start {
+                let version: String = re_pattern[start..i].iter().collect();
                 if version.contains('.') {
                     return version;
                 }
