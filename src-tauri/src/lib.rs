@@ -60,10 +60,20 @@ pub fn run() {
             }
 
             // 初始化 SQLite（projects/chat/clipboard/stats 的存储后端）
+            //
+            // ⚠️ 注意：当前只初始化连接池，**暂未启用 run_migrations**。
+            // 迁移会重命名旧 JSON 加 .migrated 后缀，但 4 个数据集的 CRUD 还没改造完。
+            // 等 task #7/#12/#13 全部完成后，把下面的 run_migrations 调用打开。
             if let Ok(config) = storage::get_storage_config() {
                 let db_path = config.db_file();
-                if let Err(e) = tauri::async_runtime::block_on(storage::db::init_db(&db_path)) {
+                let _data_dir = config.data_dir.clone();
+                if let Err(e) = tauri::async_runtime::block_on(async {
+                    storage::db::init_db(&db_path).await
+                    // TODO(stage2): 4 个数据集 CRUD 改造完后启用：
+                    // storage::migrations::run_migrations(&_data_dir).await
+                }) {
                     eprintln!("SQLite 初始化失败: {}", e);
+                    log::error!("SQLite 初始化失败: {}", e);
                 }
             }
 
