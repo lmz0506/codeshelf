@@ -10,7 +10,7 @@ import {
 } from "@/services/updater";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-shell";
-import { useAppStore } from "@/stores/appStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { ArchMismatchDialog, type ArchMismatchChoice, showToast } from "@/components/ui";
 
 export function UpdateSettings() {
@@ -21,8 +21,8 @@ export function UpdateSettings() {
   const [error, setError] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string>("...");
   const [archMismatch, setArchMismatch] = useState<ArchStatus | null>(null);
-  const autoUpdate = useAppStore((state) => state.autoUpdate);
-  const setAutoUpdate = useAppStore((state) => state.setAutoUpdate);
+  const autoUpdate = useSettingsStore((state) => state.autoUpdate);
+  const setAutoUpdate = useSettingsStore((state) => state.setAutoUpdate);
 
   useEffect(() => {
     getVersion().then(setCurrentVersion).catch(() => setCurrentVersion("未知"));

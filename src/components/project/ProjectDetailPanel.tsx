@@ -37,7 +37,10 @@ import {
 import { openInEditor, openInExplorer, openInTerminal, updateProject } from "@/services/db";
 import { getEditorForProject, getEditorConfigForProject, getEditorIcon } from "@/utils/editor";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "@/stores/appStore";
+import { useUiStore } from "@/stores/uiStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { useEditorsStore } from "@/stores/editorsStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
 import { createChatSession, saveChatSession } from "@/services/chat";
 
 interface ProjectDetailPanelProps {
@@ -69,19 +72,17 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
   // 用于显示的本地项目数据（编辑后立即更新）
   const [localProject, setLocalProject] = useState<Project>(project);
-  const {
-    editors,
-    terminalConfig,
-    markProjectDirty,
-    projects,
-    recentDetailProjectIds,
-    addRecentDetailProject,
-    navigateToDockerTool,
-    navigateToChatSession,
-    aiProviders,
-    ensureAiDefaultProvider,
-    setCurrentPage,
-  } = useAppStore();
+  const editors = useEditorsStore((s) => s.editors);
+  const terminalConfig = useEditorsStore((s) => s.terminalConfig);
+  const markProjectDirty = useProjectsStore((s) => s.markProjectDirty);
+  const projects = useProjectsStore((s) => s.projects);
+  const recentDetailProjectIds = useProjectsStore((s) => s.recentDetailProjectIds);
+  const addRecentDetailProject = useProjectsStore((s) => s.addRecentDetailProject);
+  const navigateToDockerTool = useUiStore((s) => s.navigateToDockerTool);
+  const navigateToChatSession = useUiStore((s) => s.navigateToChatSession);
+  const aiProviders = useAiProvidersStore((s) => s.aiProviders);
+  const ensureAiDefaultProvider = useAiProvidersStore((s) => s.ensureAiDefaultProvider);
+  const setCurrentPage = useUiStore((s) => s.setCurrentPage);
   // 从 store 读取最新项目数据（编辑器/Claude 环境切换后立即刷新）
   const storeProject = projects.find((p) => p.id === project.id) || project;
 

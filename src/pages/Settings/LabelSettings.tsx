@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import { showToast } from "@/components/ui";
 
 interface LabelSettingsProps {
@@ -42,7 +42,7 @@ const PRESET_LABELS = [
 ];
 
 export function LabelSettings({ onClose }: LabelSettingsProps) {
-  const { labels, addLabel, removeLabel } = useAppStore();
+  const { labels, addLabel, removeLabel } = useProjectsStore();
   const [newLabel, setNewLabel] = useState("");
 
   function handleAddLabel() {

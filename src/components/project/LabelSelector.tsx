@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 
 interface LabelSelectorProps {
   selectedLabels: string[];
@@ -42,7 +42,7 @@ export function LabelSelector({
   onChange,
   multiple = true,
 }: LabelSelectorProps) {
-  const { labels: storeLabels, addLabel } = useAppStore();
+  const { labels: storeLabels, addLabel } = useProjectsStore();
   const [customLabel, setCustomLabel] = useState("");
   const [showCustomInput, setShowCustomInput] = useState(false);
 

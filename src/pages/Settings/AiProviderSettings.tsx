@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { Plus, X, Pencil, FolderOpen, ChevronDown } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useAppStore } from "@/stores/appStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { showToast } from "@/components/ui";
 import { migrateChatHistoryDir } from "@/services/chat";
 import type { AiProviderConfig, AiModelConfig } from "@/types";
@@ -449,7 +450,10 @@ export type AiProviderSettingsHandle = {
 };
 
 export const AiProviderSettings = forwardRef<AiProviderSettingsHandle, AiProviderSettingsProps>((_props, ref) => {
-  const { aiProviders, saveAiProviders, chatHistoryDir, setChatHistoryDir } = useAppStore();
+  const aiProviders = useAiProvidersStore((s) => s.aiProviders);
+  const saveAiProviders = useAiProvidersStore((s) => s.saveAiProviders);
+  const chatHistoryDir = useSettingsStore((s) => s.chatHistoryDir);
+  const setChatHistoryDir = useSettingsStore((s) => s.setChatHistoryDir);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);

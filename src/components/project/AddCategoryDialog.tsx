@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import { AlertTriangle, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown } from "lucide-react";
 
 interface AddCategoryDialogProps {
@@ -7,7 +7,7 @@ interface AddCategoryDialogProps {
 }
 
 export function AddCategoryDialog({ onClose }: AddCategoryDialogProps) {
-  const { categories, addCategory, removeCategory, setCategories } = useAppStore();
+  const { categories, addCategory, removeCategory, setCategories } = useProjectsStore();
   const [newCategory, setNewCategory] = useState("");
   const [error, setError] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);

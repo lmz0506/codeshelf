@@ -1,5 +1,5 @@
 import type { Project } from "@/types";
-import type { EditorConfig } from "@/stores/appStore";
+import type { EditorConfig } from "@/stores/editorsStore";
 
 /**
  * 获取项目应使用的编辑器路径

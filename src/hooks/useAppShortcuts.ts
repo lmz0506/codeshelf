@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useAppStore } from "@/stores/appStore";
+import { useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { showToast } from "@/components/ui/Toast";
 import type { AppShortcutBinding } from "@/types";
 import type { ToolType } from "@/types/toolbox";
@@ -113,21 +114,22 @@ const TOOL_MAP: Record<string, ToolType> = {
 };
 
 function executeAction(actionId: string) {
-  const store = useAppStore.getState();
+  const uiStore = useUiStore.getState();
+  const settingsStore = useSettingsStore.getState();
 
   if (actionId === "tool_shortcuts") {
     // 快捷键备忘：弹出快速查找弹窗
-    store.toggleShortcutQuickLookup();
+    uiStore.toggleShortcutQuickLookup();
   } else if (actionId === "tool_clipboard") {
     // 剪贴板历史：弹出快速访问弹窗
-    store.toggleClipboardQuickAccess();
+    uiStore.toggleClipboardQuickAccess();
   } else if (actionId.startsWith("nav_")) {
     const page = actionId.replace("nav_", "") as "shelf" | "dashboard" | "toolbox" | "settings";
-    store.setCurrentPage(page);
+    uiStore.setCurrentPage(page);
   } else if (actionId.startsWith("tool_") && TOOL_MAP[actionId]) {
-    store.navigateToTool(TOOL_MAP[actionId]);
+    uiStore.navigateToTool(TOOL_MAP[actionId]);
   } else if (actionId === "toggle_sidebar") {
-    store.setSidebarCollapsed(!store.sidebarCollapsed);
+    settingsStore.setSidebarCollapsed(!settingsStore.sidebarCollapsed);
   }
 }
 
@@ -151,7 +153,7 @@ async function handleGlobalAction(actionId: string) {
         await win.hide();
       } else {
         // 显示窗口前，清理可能残留的弹窗状态
-        const store = useAppStore.getState();
+        const store = useUiStore.getState();
         if (store.popupAutoHideWindow) {
           store.setPopupAutoHideWindow(false);
           store.setPopupCursorPosition(null);
@@ -169,7 +171,7 @@ async function handleGlobalAction(actionId: string) {
 
   // 弹窗类动作：不带主窗口，再次按下快捷键可以关闭
   if (POPUP_ACTIONS.has(actionId)) {
-    const store = useAppStore.getState();
+    const store = useUiStore.getState();
     const isPopupShowing =
       (actionId === "tool_clipboard" && store.showClipboardQuickAccess) ||
       (actionId === "tool_shortcuts" && store.showShortcutQuickLookup);
@@ -368,7 +370,7 @@ async function unregisterGlobalShortcuts() {
  * 确保应用快捷键已初始化（首次或旧版升级时补齐新条目）
  */
 export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
-  const { appShortcuts, setAppShortcuts } = useAppStore.getState();
+  const { appShortcuts, setAppShortcuts } = useSettingsStore.getState();
 
   if (appShortcuts.length === 0) {
     // store 为空，先尝试从后端加载已保存的数据
@@ -451,7 +453,7 @@ async function ensureAppShortcutsPatched(
  * - 去重机制：窗口聚焦时 DOM 先处理，OS 钩子事件通过时间戳去重跳过
  */
 export function useAppShortcuts() {
-  const appShortcuts = useAppStore((state) => state.appShortcuts);
+  const appShortcuts = useSettingsStore((state) => state.appShortcuts);
 
   // 基于全局快捷键内容派生稳定 key，只有实际快捷键变化时才重新注册
   const globalShortcutsKey = useMemo(() => {
@@ -477,7 +479,7 @@ export function useAppShortcuts() {
       const pressed = eventToKeys(e);
       if (!pressed) return;
 
-      const { appShortcuts } = useAppStore.getState();
+      const { appShortcuts } = useSettingsStore.getState();
       // 匹配所有已启用的快捷键（全局快捷键在窗口聚焦时也由 DOM 处理）
       const binding = appShortcuts.find(
         (s) => s.enabled && s.keys === pressed

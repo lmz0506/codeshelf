@@ -9,7 +9,7 @@ import {
   X,
   Trash2,
 } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useNotificationsStore } from "@/stores/notificationsStore";
 import type { Notification } from "@/types";
 
 const typeIcons: Record<Notification["type"], typeof CheckCircle> = {
@@ -54,7 +54,7 @@ function formatTime(dateStr: string): string {
 export function NotificationPanel() {
   const [open, setOpen] = useState(false);
   const { notifications, removeNotification, clearAllNotifications } =
-    useAppStore();
+    useNotificationsStore();
 
   // ESC 键关闭
   useEffect(() => {

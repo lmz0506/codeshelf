@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Terminal } from "lucide-react";
 import type { Project } from "@/types";
 import type { ClaudeCodeInfo } from "@/types/toolbox";
-import { useAppStore } from "@/stores/appStore";
+import { useEditorsStore } from "@/stores/editorsStore";
 import { openInTerminal } from "@/services/db";
 import { launchClaudeInTerminal, getClaudeInstallationsCache, checkAllClaudeInstallations, saveClaudeInstallationsCache } from "@/services/toolbox";
 import { showToast } from "@/components/ui";
@@ -14,7 +14,7 @@ interface TerminalContextMenuProps {
 }
 
 export function TerminalContextMenu({ project, position, onClose }: TerminalContextMenuProps) {
-  const { terminalConfig } = useAppStore();
+  const terminalConfig = useEditorsStore((s) => s.terminalConfig);
   const menuRef = useRef<HTMLDivElement>(null);
   const [adjustedPos, setAdjustedPos] = useState(position);
   const [claudeEnvs, setClaudeEnvs] = useState<ClaudeCodeInfo[]>([]);

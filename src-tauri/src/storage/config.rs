@@ -50,10 +50,6 @@ impl StorageConfig {
 
     // ============== 数据文件路径 ==============
 
-    pub fn projects_file(&self) -> PathBuf {
-        self.data_dir.join("projects.json")
-    }
-
     pub fn categories_file(&self) -> PathBuf {
         self.data_dir.join("categories.json")
     }
@@ -80,10 +76,6 @@ impl StorageConfig {
 
     pub fn notifications_file(&self) -> PathBuf {
         self.data_dir.join("notifications.json")
-    }
-
-    pub fn stats_cache_file(&self) -> PathBuf {
-        self.data_dir.join("stats_cache.json")
     }
 
     pub fn claude_quick_configs_file(&self) -> PathBuf {
@@ -148,10 +140,6 @@ impl StorageConfig {
 
     pub fn workflows_dir(&self) -> PathBuf {
         self.data_dir.join("workflows")
-    }
-
-    pub fn clipboard_history_file(&self) -> PathBuf {
-        self.data_dir.join("clipboard_history.json")
     }
 
     pub fn clipboard_settings_file(&self) -> PathBuf {

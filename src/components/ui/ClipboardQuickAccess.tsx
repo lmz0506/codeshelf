@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Search, Pin, PinOff, ExternalLink, ClipboardList, Copy } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useAppStore } from "@/stores/appStore";
+import { useUiStore } from "@/stores/uiStore";
 import { getClipboardHistory, writeToClipboard, togglePinClipboardEntry } from "@/services/toolbox";
 import { showToast } from "@/components/ui/Toast";
 import { restoreWindowState } from "@/hooks/useAppShortcuts";
@@ -26,15 +26,15 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 export function ClipboardQuickAccess() {
-  const show = useAppStore((s) => s.showClipboardQuickAccess);
-  const toggle = useAppStore((s) => s.toggleClipboardQuickAccess);
-  const navigateToTool = useAppStore((s) => s.navigateToTool);
-  const isGlobalPopup = useAppStore((s) => s.popupAutoHideWindow);
+  const show = useUiStore((s) => s.showClipboardQuickAccess);
+  const toggle = useUiStore((s) => s.toggleClipboardQuickAccess);
+  const navigateToTool = useUiStore((s) => s.navigateToTool);
+  const isGlobalPopup = useUiStore((s) => s.popupAutoHideWindow);
 
   // 关闭弹窗：如果是全局快捷键从隐藏状态唤起的，自动藏回窗口
   const closePopup = useCallback(async () => {
     toggle();
-    const { popupAutoHideWindow, setPopupAutoHideWindow, setPopupCursorPosition } = useAppStore.getState();
+    const { popupAutoHideWindow, setPopupAutoHideWindow, setPopupCursorPosition } = useUiStore.getState();
     setPopupCursorPosition(null);
     if (popupAutoHideWindow) {
       setPopupAutoHideWindow(false);
@@ -192,8 +192,8 @@ export function ClipboardQuickAccess() {
 
   async function goToFullPage() {
     // 跳转完整页面时清除自动隐藏标记（用户需要看到主界面）
-    useAppStore.getState().setPopupAutoHideWindow(false);
-    useAppStore.getState().setPopupCursorPosition(null);
+    useUiStore.getState().setPopupAutoHideWindow(false);
+    useUiStore.getState().setPopupCursorPosition(null);
     await restoreWindowState();
     toggle();
     navigateToTool("clipboard");

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import type { GitRepo } from "@/types";
 
 interface ScanResultDialogProps {
@@ -24,7 +24,7 @@ interface HistoryItem {
 }
 
 export function ScanResultDialog({ repos, onConfirm, onCancel }: ScanResultDialogProps) {
-  const { categories: storeCategories, addCategory: addCategoryToStore } = useAppStore();
+  const { categories: storeCategories, addCategory: addCategoryToStore } = useProjectsStore();
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [assignedCategories, setAssignedCategories] = useState<Record<string, string>>({});
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
