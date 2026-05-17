@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Link2, CheckCircle2, XCircle, ArrowDown, ArrowUp, AlertTriangle } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
 import { showToast } from "@/components/ui";
 
 interface AppSettings {
@@ -21,7 +21,7 @@ interface BridgeEvent {
 }
 
 export function ChatBridgeSettings() {
-  const { aiProviders } = useAppStore();
+  const { aiProviders } = useAiProvidersStore();
   const [enabled, setEnabled] = useState(false);
   const [relay, setRelay] = useState("");
   const [providerId, setProviderId] = useState("");

@@ -12,7 +12,8 @@ import {
   Box,
   Network,
 } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useUiStore } from "@/stores/uiStore";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import type { ToolType } from "@/types/toolbox";
 
@@ -96,15 +97,14 @@ const tools = [
 ];
 
 export function ToolboxPage() {
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
   const {
-    sidebarCollapsed,
-    setSidebarCollapsed,
     toolboxDockerProjectName,
     toolboxDockerProjectPath,
     toolboxNavigateTarget,
     clearToolboxDockerProject,
     clearToolboxNavigateTarget,
-  } = useAppStore();
+  } = useUiStore();
   const [activeTool, setActiveTool] = useState<ToolType | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -264,7 +264,7 @@ export function ToolPanelHeader({
   actions?: React.ReactNode;
   beta?: boolean;
 }) {
-  const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
 
   return (
     <header className="re-header sticky top-0 z-20" data-tauri-drag-region>
