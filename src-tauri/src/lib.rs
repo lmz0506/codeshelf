@@ -492,6 +492,9 @@ pub fn run() {
             api_chat::build_api_tools,
             api_chat::execute_api_endpoint,
             api_chat::fetch_api_document_url,
+            // Storage admin (data backup management)
+            storage_admin::list_data_backups,
+            storage_admin::restore_from_backup,
             // MCP gateway
             mcp_gateway::mcp_gateway_status,
             mcp_gateway::mcp_gateway_internal_endpoint,
