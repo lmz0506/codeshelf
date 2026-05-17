@@ -3,10 +3,45 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { Check, Copy } from 'lucide-react';
 import 'highlight.js/styles/github.css';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames || []),
+    'details',
+    'summary',
+    'mark',
+    'figure',
+    'figcaption',
+  ],
+  attributes: {
+    ...defaultSchema.attributes,
+    code: ['className'],
+    pre: ['className'],
+    span: ['className'],
+    div: ['className', 'id'],
+    a: [
+      ...(defaultSchema.attributes?.a || []),
+      'target',
+      'rel',
+      'title',
+    ],
+    img: [
+      ...(defaultSchema.attributes?.img || []),
+      'className',
+      'title',
+      'width',
+      'height',
+    ],
+    th: [...(defaultSchema.attributes?.th || []), 'align'],
+    td: [...(defaultSchema.attributes?.td || []), 'align'],
+  },
+};
 
 interface MarkdownRendererProps {
   content: string;
@@ -68,7 +103,11 @@ export function MarkdownRenderer({ content, basePath }: MarkdownRendererProps) {
     <div className="markdown-body prose prose-sm max-w-none">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight, rehypeRaw]}
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeSanitize, sanitizeSchema],
+          rehypeHighlight,
+        ]}
         components={{
           // Customize rendering for better styling
           h1: ({ node, ...props }) => <h1 className="text-2xl font-bold mt-6 mb-4 pb-2 border-b border-gray-200" {...props} />,
