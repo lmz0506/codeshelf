@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import { getCommitHistory } from "@/services/git";
 import { parseProjectDependencies } from "@/services/resume/dependencyParser";
 import type { Project } from "@/types";
@@ -80,7 +80,7 @@ interface UseResumeDataReturn {
 
 export function useResumeData(options: UseResumeDataOptions = {}): UseResumeDataReturn {
   const { maxCommitsPerProject = 100 } = options;
-  const { projects } = useAppStore();
+  const projects = useProjectsStore((s) => s.projects);
 
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState<{

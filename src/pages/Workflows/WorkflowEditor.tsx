@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { showToast } from "@/components/ui";
-import { useAppStore } from "@/stores/appStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
 import { saveWorkflow, type Workflow, type WorkflowNode } from "@/services/workflows";
 
 interface Props {
@@ -28,7 +28,7 @@ function blankNode(type: string): WorkflowNode {
 }
 
 export function WorkflowEditor({ open, workflow, onClose, onSaved }: Props) {
-  const { aiProviders } = useAppStore();
+  const { aiProviders } = useAiProvidersStore();
   const [name, setName] = useState("");
   const [cron, setCron] = useState("0 9 * * *");
   const [enabled, setEnabled] = useState(true);

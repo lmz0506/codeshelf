@@ -19,7 +19,11 @@ import {
   History,
   Trash2,
 } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
+import { useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useResumeStore } from "@/stores/resumeStore";
 import { formatTimeRange } from "./useResumeData";
 import { ResumeEditor } from "./ResumeEditor";
 import { ResumePreview } from "./ResumePreview";
@@ -34,10 +38,11 @@ interface ResumeGeneratorProps {
 }
 
 export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
+  const projects = useProjectsStore((s) => s.projects);
+  const { aiProviders } = useAiProvidersStore();
+  const setCurrentPage = useUiStore((s) => s.setCurrentPage);
+  const { sensitiveFilePatterns, setSensitiveFilePatterns } = useSettingsStore();
   const {
-    projects,
-    aiProviders,
-    setCurrentPage,
     resumeGeneratorState,
     setResumeGeneratorData,
     setGeneratedResume,
@@ -46,13 +51,11 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     setResumeGeneratorOpen,
     setResumeGeneratorAnalyzing,
     clearResumeGeneratorState,
-    sensitiveFilePatterns,
-    setSensitiveFilePatterns,
     savedResumes,
     saveCurrentResume,
     loadSavedResume,
     deleteSavedResume,
-  } = useAppStore();
+  } = useResumeStore();
 
   // 从 store 恢复状态
   const [selectedDirection, setSelectedDirection] = useState<JobDirection>(
@@ -166,7 +169,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     showToast("success", "简历生成完成");
     // 自动保存到持久化存储
     setTimeout(() => {
-      useAppStore.getState().saveCurrentResume();
+      useResumeStore.getState().saveCurrentResume();
     }, 100);
   };
 
@@ -204,7 +207,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     setGeneratedResume(newResume);
     // 自动保存编辑后的内容
     setTimeout(() => {
-      useAppStore.getState().saveCurrentResume();
+      useResumeStore.getState().saveCurrentResume();
     }, 100);
   }, [resumeGeneratorState.generatedResume]);
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Plus, Trash2, FolderOpen, AlertCircle, Check, X, Star } from "lucide-react";
-import { useAppStore, EditorConfig } from "@/stores/appStore";
+import { useEditorsStore, type EditorConfig } from "@/stores/editorsStore";
 import { open } from "@tauri-apps/plugin-dialog";
 
 interface EditorSettingsProps {
@@ -8,7 +8,7 @@ interface EditorSettingsProps {
 }
 
 export function EditorSettings({ onClose }: EditorSettingsProps) {
-  const { editors, addEditor, removeEditor, setDefaultEditor } = useAppStore();
+  const { editors, addEditor, removeEditor, setDefaultEditor } = useEditorsStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEditor, setNewEditor] = useState({ name: "", path: "" });
 

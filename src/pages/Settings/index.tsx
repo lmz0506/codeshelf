@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
-import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
+import { useSettingsStore, Theme } from "@/stores/settingsStore";
+import { useEditorsStore, TerminalConfig } from "@/stores/editorsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import { Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard, Link2, Server } from "lucide-react";
 import { PageHeader } from "@/components/common";
 import { getVersion } from "@tauri-apps/api/app";
@@ -17,7 +19,14 @@ import { McpGatewaySettings } from "./McpGatewaySettings";
 type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "shortcuts" | "chatBridge" | "mcpGateway" | "update" | "about" | null;
 
 export function SettingsPage() {
-  const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, labels, appShortcuts } = useAppStore();
+  const theme = useSettingsStore((s) => s.theme);
+  const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useSettingsStore((s) => s.setSidebarCollapsed);
+  const scanDepth = useSettingsStore((s) => s.scanDepth);
+  const appShortcuts = useSettingsStore((s) => s.appShortcuts);
+  const editors = useEditorsStore((s) => s.editors);
+  const terminalConfig = useEditorsStore((s) => s.terminalConfig);
+  const labels = useProjectsStore((s) => s.labels);
   const [activeSection, setActiveSection] = useState<SettingsSection>(null);
   const [appVersion, setAppVersion] = useState<string>("...");
 

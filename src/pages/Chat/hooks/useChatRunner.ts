@@ -9,7 +9,7 @@ import {
 } from "@/services/chat";
 import { mcpClient } from "@/services/mcp/client";
 import { buildMcpFunctionTools, extractApiToolMetadata } from "@/services/mcp/toolLoop";
-import type { EditorConfig } from "@/stores/appStore";
+import type { EditorConfig } from "@/stores/editorsStore";
 import type { ChatMessage, ChatSession, ToolCall } from "@/types";
 import { compactMessages } from "../utils/compact";
 import type { ModelOption } from "../utils/chatHelpers";

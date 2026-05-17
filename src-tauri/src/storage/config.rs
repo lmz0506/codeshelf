@@ -50,10 +50,6 @@ impl StorageConfig {
 
     // ============== 数据文件路径 ==============
 
-    pub fn projects_file(&self) -> PathBuf {
-        self.data_dir.join("projects.json")
-    }
-
     pub fn categories_file(&self) -> PathBuf {
         self.data_dir.join("categories.json")
     }
@@ -80,10 +76,6 @@ impl StorageConfig {
 
     pub fn notifications_file(&self) -> PathBuf {
         self.data_dir.join("notifications.json")
-    }
-
-    pub fn stats_cache_file(&self) -> PathBuf {
-        self.data_dir.join("stats_cache.json")
     }
 
     pub fn claude_quick_configs_file(&self) -> PathBuf {
@@ -150,10 +142,6 @@ impl StorageConfig {
         self.data_dir.join("workflows")
     }
 
-    pub fn clipboard_history_file(&self) -> PathBuf {
-        self.data_dir.join("clipboard_history.json")
-    }
-
     pub fn clipboard_settings_file(&self) -> PathBuf {
         self.data_dir.join("clipboard_settings.json")
     }
@@ -176,6 +164,11 @@ impl StorageConfig {
 
     pub fn api_chat_sessions_dir(&self) -> PathBuf {
         self.data_dir.join("api_chat_sessions")
+    }
+
+    /// SQLite 主库文件路径。阶段 2 起作为 projects / chat / clipboard / stats 的存储。
+    pub fn db_file(&self) -> PathBuf {
+        self.data_dir.join("codeshelf.db")
     }
 }
 
@@ -207,9 +200,15 @@ pub fn init_storage() -> Result<&'static StorageConfig, String> {
 
     let _ = STORAGE_CONFIG.set(config);
 
-    log::info!("存储初始化完成，数据目录: {:?}", STORAGE_CONFIG.get().unwrap().data_dir);
+    log::info!(
+        "存储初始化完成，数据目录: {:?}",
+        STORAGE_CONFIG
+            .get()
+            .expect("STORAGE_CONFIG just set above")
+            .data_dir
+    );
 
-    Ok(STORAGE_CONFIG.get().unwrap())
+    Ok(STORAGE_CONFIG.get().expect("STORAGE_CONFIG just set above"))
 }
 
 /// macOS: 将旧目录中的文件迁移到新目录（仅当新目录为空时）

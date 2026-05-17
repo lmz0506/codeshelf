@@ -23,7 +23,10 @@ fn windows_path_to_wsl(path: &str) -> String {
         return path.to_string();
     }
     if path.len() >= 3 && path.as_bytes()[1] == b':' {
-        let drive = (path.as_bytes()[0] as char).to_lowercase().next().unwrap();
+        let drive = (path.as_bytes()[0] as char)
+            .to_lowercase()
+            .next()
+            .expect("char::to_lowercase always yields at least one char");
         let rest = &path[2..];
         let linux_rest = rest.replace('\\', "/");
         return format!("/mnt/{}{}", drive, linux_rest);

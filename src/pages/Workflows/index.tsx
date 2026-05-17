@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Plus, Play, Pencil, Trash2, Power, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
-import { useAppStore } from "@/stores/appStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { showToast } from "@/components/ui";
 import {
   listWorkflows,
@@ -23,7 +23,7 @@ function statusBadge(w: Workflow) {
 }
 
 export function WorkflowsPage() {
-  const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Workflow | null>(null);

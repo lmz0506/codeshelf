@@ -5,7 +5,14 @@ import path from "path";
 
 const TAURI_UA_TOKEN = "CodeShelf-Tauri-Webview/1.0";
 
-// 仅允许 Tauri webview 访问 dev server，浏览器直连返回 403
+// 仅允许 Tauri webview 访问 dev/preview server，浏览器直连返回 403。
+//
+// 注意：这不是安全边界 —— UA 头任何本机进程都能伪造。它的作用只是：
+//   1) 防止开发者误用浏览器打开 http://localhost:1420 调试，看到的资源
+//      路径与 Tauri 内部不一致；
+//   2) 让无意中扫描本地端口的工具拿不到完整页面。
+// 真正的安全控制依赖 Tauri 的 capabilities (fs:scope / shell / asset:scope)
+// 和 tauri.conf.json 里的 CSP。
 const restrictToTauri = () => ({
   name: "restrict-to-tauri",
   configureServer(server: any) {

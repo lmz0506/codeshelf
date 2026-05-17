@@ -5,7 +5,9 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { useAppStore, type PageType } from "@/stores/appStore";
+import { type PageType, useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import { AnimatedLogo } from "@/components/ui/AnimatedLogo";
 import { NotificationPanel } from "@/components/ui/NotificationPanel";
 import { getDashboardStats } from "@/services/stats";
@@ -39,7 +41,10 @@ const navTree: NavNode[] = [
 ];
 
 export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
-  const { sidebarCollapsed, projects, setSelectedProjectId, setCurrentPage } = useAppStore();
+  const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
+  const projects = useProjectsStore((s) => s.projects);
+  const setSelectedProjectId = useProjectsStore((s) => s.setSelectedProjectId);
+  const setCurrentPage = useUiStore((s) => s.setCurrentPage);
   const [showLogoPopup, setShowLogoPopup] = useState(false);
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {

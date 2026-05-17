@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Library, ListPlus } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useUiStore } from "@/stores/uiStore";
 import { showToast } from "@/components/ui";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import type {
@@ -90,7 +92,9 @@ function summarizeTitle(messages: ChatMessage[]): string | null {
 }
 
 export function ApiChatPage() {
-  const { aiProviders, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed, setCurrentPage } = useAppStore();
+  const { aiProviders, ensureAiDefaultProvider } = useAiProvidersStore();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
+  const setCurrentPage = useUiStore((s) => s.setCurrentPage);
 
   const [sessions, setSessions] = useState<ApiChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);

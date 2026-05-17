@@ -1,6 +1,7 @@
 import { ReactNode, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
-import { useAppStore } from "@/stores/appStore";
+import { useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { getVersion } from "@tauri-apps/api/app";
 import { useState } from "react";
 
@@ -9,7 +10,10 @@ interface MainLayoutProps {
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
-  const { theme, sidebarCollapsed, currentPage, setCurrentPage } = useAppStore();
+  const theme = useSettingsStore((s) => s.theme);
+  const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
+  const currentPage = useUiStore((s) => s.currentPage);
+  const setCurrentPage = useUiStore((s) => s.setCurrentPage);
   const [appVersion, setAppVersion] = useState<string>("...");
 
   useEffect(() => {

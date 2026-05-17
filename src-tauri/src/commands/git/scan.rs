@@ -20,7 +20,10 @@ fn scan_for_repos(path: &str, repos: &mut Vec<GitRepo>, depth: u32) -> Result<()
     for entry in entries.flatten() {
         let entry_path = entry.path();
         if entry_path.is_dir() {
-            let dir_name = entry_path.file_name().unwrap().to_string_lossy().to_string();
+            let Some(file_name) = entry_path.file_name() else {
+                continue;
+            };
+            let dir_name = file_name.to_string_lossy().to_string();
 
             // Skip hidden directories except .git
             if dir_name.starts_with('.') && dir_name != ".git" {

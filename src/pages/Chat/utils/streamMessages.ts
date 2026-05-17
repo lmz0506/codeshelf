@@ -1,4 +1,4 @@
-import type { EditorConfig } from "@/stores/appStore";
+import type { EditorConfig } from "@/stores/editorsStore";
 import type { ChatSession } from "@/types";
 import type { ChatStreamMessage } from "@/services/chat";
 import type { ModelOption } from "./chatHelpers";

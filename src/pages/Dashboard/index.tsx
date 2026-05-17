@@ -11,7 +11,9 @@ import {
 } from "lucide-react";
 import { CommitHeatmap } from "@/components/ui";
 import { EmptyState, PageHeader } from "@/components/common";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { navigateToProject } from "@/stores/navigation";
 import {
   initStatsCache,
   refreshDashboardStats,
@@ -22,7 +24,8 @@ import {
 import type { DashboardStats, DailyActivity } from "@/types";
 
 export function DashboardPage() {
-  const { projects, sidebarCollapsed, setSidebarCollapsed, navigateToProject } = useAppStore();
+  const projects = useProjectsStore((s) => s.projects);
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
   const [stats, setStats] = useState<DashboardStats>({
     totalProjects: 0,
     todayCommits: 0,

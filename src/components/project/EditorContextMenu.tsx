@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import type { Project } from "@/types";
-import type { EditorConfig } from "@/stores/appStore";
-import { useAppStore } from "@/stores/appStore";
+import type { EditorConfig } from "@/stores/editorsStore";
+import { useEditorsStore } from "@/stores/editorsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import { openInEditor } from "@/services/db";
 import { getEditorForProject } from "@/utils/editor";
 import { showToast } from "@/components/ui";
@@ -13,7 +14,8 @@ interface EditorContextMenuProps {
 }
 
 export function EditorContextMenu({ project, position, onClose }: EditorContextMenuProps) {
-  const { editors, setProjectEditor } = useAppStore();
+  const editors = useEditorsStore((s) => s.editors);
+  const setProjectEditor = useProjectsStore((s) => s.setProjectEditor);
   const menuRef = useRef<HTMLDivElement>(null);
   const [adjustedPos, setAdjustedPos] = useState(position);
 

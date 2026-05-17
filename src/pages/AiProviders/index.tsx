@@ -1,12 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import { MessageSquare } from "lucide-react";
 import { AiProviderSettings, type AiProviderSettingsHandle } from "@/pages/Settings/AiProviderSettings";
-import { useAppStore } from "@/stores/appStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { PageHeader } from "@/components/common";
 import { ChatOverlay } from "./components/ChatOverlay";
 
 export function AiProvidersPage() {
-  const { aiProviders, ensureAiDefaultProvider, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+  const { aiProviders, ensureAiDefaultProvider } = useAiProvidersStore();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
   const [showChat, setShowChat] = useState(false);
   const settingsRef = useRef<AiProviderSettingsHandle | null>(null);
 

@@ -3,7 +3,9 @@ import { ProjectCard, ScanResultDialog, ProjectDetailPanel, AddProjectDialog, Ad
 import { ResumeGenerator } from "../Toolbox/ResumeGenerator";
 import { FloatingCategoryBall, showToast } from "@/components/ui";
 import { MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark, ChevronLeft, ChevronRight } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import type { Project, GitRepo, GitStatus } from "@/types";
 import { getProjects, addProject, removeProject, updateProject } from "@/services/db";
 import { scanDirectory, getGitStatus } from "@/services/git";
@@ -15,15 +17,14 @@ export function ShelfPage() {
   const {
     projects,
     setProjects,
-    searchQuery,
-    setSearchQuery,
-    scanDepth,
     categories: storedCategories,
     labels: storedLabels,
     markProjectDirty,
     selectedProjectId,
     setSelectedProjectId,
-  } = useAppStore();
+  } = useProjectsStore();
+  const { searchQuery, setSearchQuery } = useUiStore();
+  const scanDepth = useSettingsStore((s) => s.scanDepth);
   const [loading, setLoading] = useState(true);
   const [scanResults, setScanResults] = useState<GitRepo[] | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -33,7 +34,7 @@ export function ShelfPage() {
   const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
   const [showAddCategoryDialog, setShowAddCategoryDialog] = useState(false);
   const [showFloatingBall, setShowFloatingBall] = useState(false);
-  const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
   const categoryBarRef = useRef<HTMLDivElement>(null);
   const catListRef = useRef<HTMLDivElement>(null);
   const [catScrollState, setCatScrollState] = useState({ left: false, right: false });

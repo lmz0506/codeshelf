@@ -12,7 +12,7 @@ import {
 } from "@/services/updater";
 import { showToast } from "@/components/ui/Toast";
 import { ArchMismatchDialog, type ArchMismatchChoice } from "@/components/ui/ArchMismatchDialog";
-import { useAppStore } from "@/stores/appStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 const RELEASES_URL = "https://github.com/en-o/codeshelf/releases/latest";
 const DEFAULT_RELEASE_NOTE = "修复了一些问题";
@@ -32,7 +32,7 @@ export function UpdateNotification() {
   const [showNotes, setShowNotes] = useState(false);
   /** 架构不匹配时阻塞自动下载，等用户确认 */
   const [archMismatch, setArchMismatch] = useState<ArchStatus | null>(null);
-  const autoUpdate = useAppStore((state) => state.autoUpdate);
+  const autoUpdate = useSettingsStore((state) => state.autoUpdate);
 
   // 启动时静默检查更新（仅在自动更新开启时）
   useEffect(() => {

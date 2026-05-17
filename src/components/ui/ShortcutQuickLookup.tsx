@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Search, Keyboard, ExternalLink } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useAppStore } from "@/stores/appStore";
+import { useUiStore } from "@/stores/uiStore";
 import { getShortcuts, getCurrentPlatform } from "@/services/toolbox";
 import { restoreWindowState } from "@/hooks/useAppShortcuts";
 import { detectPlatform } from "@/utils/platform";
@@ -43,15 +43,15 @@ function renderKeys(keys: string) {
 }
 
 export function ShortcutQuickLookup() {
-  const show = useAppStore((s) => s.showShortcutQuickLookup);
-  const toggle = useAppStore((s) => s.toggleShortcutQuickLookup);
-  const navigateToTool = useAppStore((s) => s.navigateToTool);
-  const isGlobalPopup = useAppStore((s) => s.popupAutoHideWindow);
+  const show = useUiStore((s) => s.showShortcutQuickLookup);
+  const toggle = useUiStore((s) => s.toggleShortcutQuickLookup);
+  const navigateToTool = useUiStore((s) => s.navigateToTool);
+  const isGlobalPopup = useUiStore((s) => s.popupAutoHideWindow);
 
   // 关闭弹窗：如果是全局快捷键从隐藏状态唤起的，自动藏回窗口
   const closePopup = useCallback(async () => {
     toggle();
-    const { popupAutoHideWindow, setPopupAutoHideWindow, setPopupCursorPosition } = useAppStore.getState();
+    const { popupAutoHideWindow, setPopupAutoHideWindow, setPopupCursorPosition } = useUiStore.getState();
     setPopupCursorPosition(null);
     if (popupAutoHideWindow) {
       setPopupAutoHideWindow(false);
@@ -141,8 +141,8 @@ export function ShortcutQuickLookup() {
 
   async function goToFullPage() {
     // 跳转完整页面时清除自动隐藏标记（用户需要看到主界面）
-    useAppStore.getState().setPopupAutoHideWindow(false);
-    useAppStore.getState().setPopupCursorPosition(null);
+    useUiStore.getState().setPopupAutoHideWindow(false);
+    useUiStore.getState().setPopupCursorPosition(null);
     await restoreWindowState();
     toggle();
     navigateToTool("shortcuts");

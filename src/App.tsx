@@ -13,12 +13,17 @@ import { WorkflowsPage } from "@/pages/Workflows";
 import { ApiChatPage } from "@/pages/ApiChat";
 import { ToastContainer, UpdateNotification, ShortcutQuickLookup, ClipboardQuickAccess } from "@/components/ui";
 import { ConfirmHost } from "@/components/common/useConfirm";
-import { useAppStore } from "@/stores/appStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
+import { useEditorsStore, type EditorConfig, type TerminalConfig } from "@/stores/editorsStore";
+import { useNotificationsStore } from "@/stores/notificationsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { useResumeStore } from "@/stores/resumeStore";
+import { useSettingsStore, type Theme } from "@/stores/settingsStore";
+import { useUiStore } from "@/stores/uiStore";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import type { Project, Notification, AppShortcutBinding, AiProviderConfig } from "@/types";
 import type { GeneratedResume } from "@/types/resume";
 import type { ToolType } from "@/types/toolbox";
-import type { EditorConfig, TerminalConfig, Theme } from "@/stores/appStore";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -62,8 +67,7 @@ interface NotificationBackend {
 
 // 初始化应用：从后端 data 目录加载所有数据
 async function initializeApp() {
-  const { setInitialized } = useAppStore.getState();
-  const storeSet = useAppStore.setState;
+  const setInitialized = useUiStore.getState().setInitialized;
 
   try {
     // 并行加载所有数据
@@ -100,29 +104,32 @@ async function initializeApp() {
       createdAt: n.created_at,
     }));
 
-    const normalizedAiProviders = useAppStore.getState().ensureAiDefaultProvider(aiProviders || []);
+    const normalizedAiProviders = useAiProvidersStore.getState().ensureAiDefaultProvider(aiProviders || []);
 
-    // 直接设置状态，使用后端返回的数据（后端会处理默认值）
-    storeSet({
+    useSettingsStore.setState({
       theme: (settings.theme || "light") as Theme,
       viewMode: (settings.view_mode || "grid") as "grid" | "list",
       sidebarCollapsed: settings.sidebar_collapsed || false,
       scanDepth: settings.scan_depth || 3,
       autoUpdate: settings.auto_update !== false,
       chatHistoryDir: settings.chat_history_dir,
+      appShortcuts: appShortcuts || [],
+      sensitiveFilePatterns: sensitiveFilePatterns || [],
+    });
+    useProjectsStore.setState({
       labels: labels || [],
       categories: categories || [],
-      editors: editors || [],
-      terminalConfig,
       projects: projects || [],
       recentDetailProjectIds: uiState.recent_detail_project_ids || [],
-      notifications: notificationsFormatted,
-      appShortcuts: appShortcuts || [],
-      aiProviders: normalizedAiProviders,
-      sensitiveFilePatterns: sensitiveFilePatterns || [],
-      savedResumes: savedResumes || [],
-      initialized: true,
     });
+    useEditorsStore.setState({
+      editors: editors || [],
+      terminalConfig,
+    });
+    useNotificationsStore.setState({ notifications: notificationsFormatted });
+    useAiProvidersStore.setState({ aiProviders: normalizedAiProviders });
+    useResumeStore.setState({ savedResumes: savedResumes || [] });
+    useUiStore.setState({ initialized: true });
 
     console.log("应用初始化完成，已从 data 目录加载数据");
   } catch (err) {
@@ -132,8 +139,8 @@ async function initializeApp() {
 }
 
 function AppContent() {
-  const initialized = useAppStore((state) => state.initialized);
-  const popupAutoHideWindow = useAppStore((s) => s.popupAutoHideWindow);
+  const initialized = useUiStore((state) => state.initialized);
+  const popupAutoHideWindow = useUiStore((s) => s.popupAutoHideWindow);
 
   useEffect(() => {
     initializeApp();
@@ -144,7 +151,7 @@ function AppContent() {
   // 监听托盘菜单工具箱导航事件
   useEffect(() => {
     const unlisten = listen<string>("navigate-to-tool", (event) => {
-      useAppStore.getState().navigateToTool(event.payload as ToolType);
+      useUiStore.getState().navigateToTool(event.payload as ToolType);
     });
     return () => { unlisten.then((fn) => fn()); };
   }, []);

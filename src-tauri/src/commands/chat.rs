@@ -1,17 +1,19 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::StreamExt;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use sqlx::Acquire;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
+use crate::storage::db::pool;
 use crate::storage::{
-    current_iso_time, generate_id, get_storage_config, AppSettings, ChatSession,
-    ChatSessionSummary,
+    current_iso_time, generate_id, get_storage_config, AppSettings, ChatMessage, ChatSession,
+    ChatSessionSummary, CompactionIndex, CompactionMeta,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +92,12 @@ impl ChatStreamEvent {
 static CHAT_ABORTS: Lazy<Arc<RwLock<HashMap<String, tokio::task::AbortHandle>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
+// ============== 物理目录（仅 tasks.json 还在用） ==============
+//
+// 注意：chat sessions / messages / compactions 全部走 SQLite。
+// 这个目录现在只用于存 <session_id>.tasks.json（commands/tools/tasks.rs）。
+// chat_history_dir 设置以后仅影响 task 文件位置，不再影响 chat 主数据。
+
 fn get_default_chat_dir() -> Result<PathBuf, String> {
     let config = get_storage_config()?;
     Ok(config.conversations_dir())
@@ -101,8 +109,7 @@ fn get_app_settings() -> Result<AppSettings, String> {
     if !path.exists() {
         return Ok(AppSettings::default());
     }
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("读取应用设置失败: {}", e))?;
+    let content = fs::read_to_string(&path).map_err(|e| format!("读取应用设置失败: {}", e))?;
     let settings: AppSettings = serde_json::from_str(&content).unwrap_or_default();
     Ok(settings)
 }
@@ -118,7 +125,7 @@ fn resolve_chat_history_dir() -> Result<PathBuf, String> {
     get_default_chat_dir()
 }
 
-/// 供 tools 模块访问
+/// 供 tools 模块访问（task 文件路径解析）
 pub fn resolve_chat_history_dir_pub() -> Result<PathBuf, String> {
     resolve_chat_history_dir()
 }
@@ -131,11 +138,12 @@ pub async fn get_chat_history_dir() -> Result<String, String> {
 
 #[tauri::command]
 pub async fn migrate_chat_history_dir(new_dir: String) -> Result<String, String> {
+    // 注意：迁移到 SQLite 后，这个命令只影响 <session_id>.tasks.json 类的物理文件。
+    // chat sessions / messages / compactions 都在主 data_dir/codeshelf.db 里，不受影响。
     let new_path = PathBuf::from(new_dir);
     if !new_path.exists() {
         if let Some(parent) = new_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("创建目标目录失败: {}", e))?;
+            fs::create_dir_all(parent).map_err(|e| format!("创建目标目录失败: {}", e))?;
         }
     } else {
         let is_empty = fs::read_dir(&new_path)
@@ -147,8 +155,7 @@ pub async fn migrate_chat_history_dir(new_dir: String) -> Result<String, String>
             return Err("目标目录必须为空目录".to_string());
         }
 
-        fs::remove_dir(&new_path)
-            .map_err(|e| format!("清理目标目录失败: {}", e))?;
+        fs::remove_dir(&new_path).map_err(|e| format!("清理目标目录失败: {}", e))?;
     }
 
     let old_dir = resolve_chat_history_dir()?;
@@ -160,88 +167,371 @@ pub async fn migrate_chat_history_dir(new_dir: String) -> Result<String, String>
         return Ok(new_path.to_string_lossy().to_string());
     }
 
-    // 迁移整个目录
-    fs::rename(&old_dir, &new_path)
-        .map_err(|e| format!("迁移会话目录失败: {}", e))?;
+    // 迁移 tasks.json 等物理文件；旧的 chat session JSON（如果未清理）也一起搬走
+    fs::rename(&old_dir, &new_path).map_err(|e| format!("迁移会话目录失败: {}", e))?;
 
     Ok(new_path.to_string_lossy().to_string())
 }
 
-fn ensure_chat_dir(dir: &Path) -> Result<(), String> {
-    fs::create_dir_all(dir)
-        .map_err(|e| format!("创建会话目录失败: {}", e))
+// ============== sqlite helpers ==============
+
+#[derive(sqlx::FromRow)]
+struct SessionDbRow {
+    id: String,
+    title: String,
+    provider_id: String,
+    model_id: String,
+    created_at: String,
+    updated_at: String,
+    system_prompt: Option<String>,
+    temperature: Option<f64>,
+    max_tokens: Option<i64>,
+    top_p: Option<f64>,
+    frequency_penalty: Option<f64>,
+    presence_penalty: Option<f64>,
+    pinned: Option<i64>,
+    allowed_cwd: Option<String>,
+    use_mcp_gateway_tools: Option<i64>,
+    current_compaction_version: Option<String>,
 }
 
-fn session_path(dir: &Path, session_id: &str) -> PathBuf {
-    dir.join(format!("{}.json", session_id))
+const SESSION_SELECT: &str = "SELECT id, title, provider_id, model_id, created_at, updated_at,
+    system_prompt, temperature, max_tokens, top_p, frequency_penalty, presence_penalty,
+    pinned, allowed_cwd, use_mcp_gateway_tools, current_compaction_version FROM chat_sessions";
+
+#[derive(sqlx::FromRow)]
+struct MessageDbRow {
+    id: String,
+    role: String,
+    content: String,
+    created_at: String,
+    tokens: Option<i64>,
+    thinking: Option<i64>,
+    thinking_content: Option<String>,
+    edited: Option<i64>,
+    tool_calls_json: Option<String>,
+    tool_call_id: Option<String>,
+    tool_name: Option<String>,
+    tool_status: Option<i64>,
+    tool_method: Option<String>,
+    tool_url: Option<String>,
+    tool_elapsed_ms: Option<i64>,
+    tool_body_bytes: Option<i64>,
+    tool_truncated: Option<i64>,
+    attachments_json: Option<String>,
 }
+
+const MESSAGE_SELECT: &str = "SELECT id, role, content, created_at, tokens, thinking,
+    thinking_content, edited, tool_calls_json, tool_call_id, tool_name, tool_status,
+    tool_method, tool_url, tool_elapsed_ms, tool_body_bytes, tool_truncated, attachments_json
+    FROM chat_messages";
+
+fn parse_json_value(s: &Option<String>) -> Option<serde_json::Value> {
+    s.as_ref()
+        .and_then(|raw| serde_json::from_str(raw).ok())
+}
+
+fn message_from_row(row: MessageDbRow) -> ChatMessage {
+    ChatMessage {
+        id: row.id,
+        role: row.role,
+        content: row.content,
+        created_at: row.created_at,
+        tokens: row.tokens.map(|x| x as u32),
+        thinking: row.thinking.map(|x| x != 0),
+        thinking_content: row.thinking_content,
+        edited: row.edited.map(|x| x != 0),
+        tool_calls: parse_json_value(&row.tool_calls_json),
+        tool_call_id: row.tool_call_id,
+        tool_name: row.tool_name,
+        tool_status: row.tool_status.map(|x| x as u16),
+        tool_method: row.tool_method,
+        tool_url: row.tool_url,
+        tool_elapsed_ms: row.tool_elapsed_ms.map(|x| x as u64),
+        tool_body_bytes: row.tool_body_bytes.map(|x| x as usize),
+        tool_truncated: row.tool_truncated.map(|x| x != 0),
+        attachments: parse_json_value(&row.attachments_json),
+    }
+}
+
+fn session_from_row(row: SessionDbRow) -> ChatSession {
+    ChatSession {
+        id: row.id,
+        title: row.title,
+        provider_id: row.provider_id,
+        model_id: row.model_id,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        messages: Vec::new(),
+        system_prompt: row.system_prompt,
+        temperature: row.temperature.map(|x| x as f32),
+        max_tokens: row.max_tokens.map(|x| x as u32),
+        top_p: row.top_p.map(|x| x as f32),
+        frequency_penalty: row.frequency_penalty.map(|x| x as f32),
+        presence_penalty: row.presence_penalty.map(|x| x as f32),
+        pinned: row.pinned.map(|x| x != 0),
+        allowed_tools: None,
+        enabled_tools: None,
+        allowed_cwd: row.allowed_cwd,
+        use_mcp_gateway_tools: row.use_mcp_gateway_tools.map(|x| x != 0),
+        current_compaction_version: row.current_compaction_version,
+    }
+}
+
+async fn read_session_messages(session_id: &str) -> Result<Vec<ChatMessage>, String> {
+    let rows: Vec<MessageDbRow> = sqlx::query_as(&format!(
+        "{} WHERE session_id = ? ORDER BY sort_order ASC",
+        MESSAGE_SELECT
+    ))
+    .bind(session_id)
+    .fetch_all(pool())
+    .await
+    .map_err(|e| format!("查询消息失败: {}", e))?;
+    Ok(rows.into_iter().map(message_from_row).collect())
+}
+
+async fn read_session_tools(session_id: &str) -> Result<(Vec<String>, Vec<String>), String> {
+    let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+        "SELECT tool_name, is_allowed, is_enabled FROM chat_session_tools WHERE session_id = ?",
+    )
+    .bind(session_id)
+    .fetch_all(pool())
+    .await
+    .map_err(|e| format!("查询工具失败: {}", e))?;
+
+    let mut allowed = Vec::new();
+    let mut enabled = Vec::new();
+    for (name, is_allowed, is_enabled) in rows {
+        if is_allowed != 0 {
+            allowed.push(name.clone());
+        }
+        if is_enabled != 0 {
+            enabled.push(name);
+        }
+    }
+    Ok((allowed, enabled))
+}
+
+async fn read_session_full(session_id: &str) -> Result<Option<ChatSession>, String> {
+    let row: Option<SessionDbRow> = sqlx::query_as(&format!("{} WHERE id = ?", SESSION_SELECT))
+        .bind(session_id)
+        .fetch_optional(pool())
+        .await
+        .map_err(|e| format!("查询会话失败: {}", e))?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let mut session = session_from_row(row);
+    session.messages = read_session_messages(session_id).await?;
+    let (allowed, enabled) = read_session_tools(session_id).await?;
+    session.allowed_tools = if allowed.is_empty() { None } else { Some(allowed) };
+    session.enabled_tools = if enabled.is_empty() { None } else { Some(enabled) };
+    Ok(Some(session))
+}
+
+/// 全量保存 session：upsert sessions 表 + 清空并重插 messages / tools。
+async fn write_session_full(session: &ChatSession) -> Result<(), String> {
+    let pool = pool();
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| format!("获取连接失败: {}", e))?;
+    let mut tx = conn
+        .begin()
+        .await
+        .map_err(|e| format!("开启事务失败: {}", e))?;
+
+    sqlx::query(
+        "INSERT INTO chat_sessions (
+            id, title, provider_id, model_id, created_at, updated_at,
+            system_prompt, temperature, max_tokens, top_p, frequency_penalty,
+            presence_penalty, pinned, allowed_cwd, use_mcp_gateway_tools,
+            current_compaction_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            provider_id = excluded.provider_id,
+            model_id = excluded.model_id,
+            updated_at = excluded.updated_at,
+            system_prompt = excluded.system_prompt,
+            temperature = excluded.temperature,
+            max_tokens = excluded.max_tokens,
+            top_p = excluded.top_p,
+            frequency_penalty = excluded.frequency_penalty,
+            presence_penalty = excluded.presence_penalty,
+            pinned = excluded.pinned,
+            allowed_cwd = excluded.allowed_cwd,
+            use_mcp_gateway_tools = excluded.use_mcp_gateway_tools,
+            current_compaction_version = excluded.current_compaction_version",
+    )
+    .bind(&session.id)
+    .bind(&session.title)
+    .bind(&session.provider_id)
+    .bind(&session.model_id)
+    .bind(&session.created_at)
+    .bind(&session.updated_at)
+    .bind(&session.system_prompt)
+    .bind(session.temperature.map(|x| x as f64))
+    .bind(session.max_tokens.map(|x| x as i64))
+    .bind(session.top_p.map(|x| x as f64))
+    .bind(session.frequency_penalty.map(|x| x as f64))
+    .bind(session.presence_penalty.map(|x| x as f64))
+    .bind(session.pinned.map(|x| x as i64))
+    .bind(&session.allowed_cwd)
+    .bind(session.use_mcp_gateway_tools.map(|x| x as i64))
+    .bind(&session.current_compaction_version)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| format!("upsert chat_sessions 失败: {}", e))?;
+
+    // 全量重插 messages
+    sqlx::query("DELETE FROM chat_messages WHERE session_id = ?")
+        .bind(&session.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("清空旧 messages 失败: {}", e))?;
+
+    for (idx, m) in session.messages.iter().enumerate() {
+        let tool_calls_json = m.tool_calls.as_ref().map(|v| v.to_string());
+        let attachments_json = m.attachments.as_ref().map(|v| v.to_string());
+
+        sqlx::query(
+            "INSERT INTO chat_messages (
+                id, session_id, role, content, created_at, tokens, thinking,
+                thinking_content, edited, tool_calls_json, tool_call_id,
+                tool_name, tool_status, tool_method, tool_url, tool_elapsed_ms,
+                tool_body_bytes, tool_truncated, attachments_json, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&m.id)
+        .bind(&session.id)
+        .bind(&m.role)
+        .bind(&m.content)
+        .bind(&m.created_at)
+        .bind(m.tokens.map(|x| x as i64))
+        .bind(m.thinking.map(|x| x as i64))
+        .bind(&m.thinking_content)
+        .bind(m.edited.map(|x| x as i64))
+        .bind(&tool_calls_json)
+        .bind(&m.tool_call_id)
+        .bind(&m.tool_name)
+        .bind(m.tool_status.map(|x| x as i64))
+        .bind(&m.tool_method)
+        .bind(&m.tool_url)
+        .bind(m.tool_elapsed_ms.map(|x| x as i64))
+        .bind(m.tool_body_bytes.map(|x| x as i64))
+        .bind(m.tool_truncated.map(|x| x as i64))
+        .bind(&attachments_json)
+        .bind(idx as i64)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("插入消息 {} 失败: {}", m.id, e))?;
+    }
+
+    // 全量重插 tools
+    sqlx::query("DELETE FROM chat_session_tools WHERE session_id = ?")
+        .bind(&session.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("清空旧 tools 失败: {}", e))?;
+
+    if let Some(allowed) = &session.allowed_tools {
+        for tn in allowed {
+            sqlx::query(
+                "INSERT INTO chat_session_tools (session_id, tool_name, is_allowed, is_enabled)
+                 VALUES (?, ?, 1, 0)
+                 ON CONFLICT(session_id, tool_name) DO UPDATE SET is_allowed = 1",
+            )
+            .bind(&session.id)
+            .bind(tn)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("插入 allowed_tool 失败: {}", e))?;
+        }
+    }
+    if let Some(enabled) = &session.enabled_tools {
+        for tn in enabled {
+            sqlx::query(
+                "INSERT INTO chat_session_tools (session_id, tool_name, is_allowed, is_enabled)
+                 VALUES (?, ?, 0, 1)
+                 ON CONFLICT(session_id, tool_name) DO UPDATE SET is_enabled = 1",
+            )
+            .bind(&session.id)
+            .bind(tn)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("插入 enabled_tool 失败: {}", e))?;
+        }
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("提交事务失败: {}", e))?;
+    Ok(())
+}
+
+// ============== session 命令 ==============
 
 #[tauri::command]
 pub async fn list_chat_sessions() -> Result<Vec<ChatSessionSummary>, String> {
-    let dir = resolve_chat_history_dir()?;
-    if !dir.exists() {
+    let rows: Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Option<i64>,
+    )> = sqlx::query_as(
+        "SELECT id, title, provider_id, model_id, created_at, updated_at, pinned
+         FROM chat_sessions ORDER BY updated_at DESC",
+    )
+    .fetch_all(pool())
+    .await
+    .map_err(|e| format!("查询 chat_sessions 失败: {}", e))?;
+
+    if rows.is_empty() {
         return Ok(Vec::new());
     }
 
-    let mut summaries: Vec<ChatSessionSummary> = Vec::new();
-    for entry in fs::read_dir(&dir)
-        .map_err(|e| format!("读取会话目录失败: {}", e))? {
-        let entry = entry.map_err(|e| format!("读取会话文件失败: {}", e))?;
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
-        let content = fs::read_to_string(&path)
-            .map_err(|e| format!("读取会话文件失败: {}", e))?;
-        let session: ChatSession = serde_json::from_str(&content).unwrap_or_else(|_| ChatSession {
-            id: path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string(),
-            title: "未命名会话".to_string(),
-            provider_id: "".to_string(),
-            model_id: "".to_string(),
-            created_at: current_iso_time(),
-            updated_at: current_iso_time(),
-            messages: Vec::new(),
-            system_prompt: None,
-            temperature: None,
-            max_tokens: None,
-            top_p: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            pinned: None,
-            allowed_tools: None,
-            enabled_tools: None,
-            allowed_cwd: None,
-            use_mcp_gateway_tools: None,
-            current_compaction_version: None,
-        });
-        summaries.push(ChatSessionSummary {
-            id: session.id,
-            title: session.title,
-            provider_id: session.provider_id,
-            model_id: session.model_id,
-            created_at: session.created_at,
-            updated_at: session.updated_at,
-            message_count: session.messages.len(),
-            pinned: session.pinned,
-        });
+    // 一次性查所有 message_count
+    let count_rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT session_id, COUNT(*) FROM chat_messages GROUP BY session_id",
+    )
+    .fetch_all(pool())
+    .await
+    .map_err(|e| format!("统计消息条数失败: {}", e))?;
+
+    let mut counts: HashMap<String, i64> = HashMap::new();
+    for (sid, c) in count_rows {
+        counts.insert(sid, c);
     }
 
-    summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-    Ok(summaries)
+    Ok(rows
+        .into_iter()
+        .map(|(id, title, provider_id, model_id, created_at, updated_at, pinned)| {
+            let message_count = counts.get(&id).copied().unwrap_or(0) as usize;
+            ChatSessionSummary {
+                id,
+                title,
+                provider_id,
+                model_id,
+                created_at,
+                updated_at,
+                message_count,
+                pinned: pinned.map(|x| x != 0),
+            }
+        })
+        .collect())
 }
 
 #[tauri::command]
 pub async fn get_chat_session(session_id: String) -> Result<ChatSession, String> {
-    let dir = resolve_chat_history_dir()?;
-    let path = session_path(&dir, &session_id);
-    if !path.exists() {
-        return Err("会话不存在".to_string());
-    }
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("读取会话文件失败: {}", e))?;
-    let session: ChatSession = serde_json::from_str(&content)
-        .map_err(|e| format!("解析会话失败: {}", e))?;
-    Ok(session)
+    read_session_full(&session_id)
+        .await?
+        .ok_or_else(|| "会话不存在".to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,9 +544,6 @@ pub struct CreateChatSessionInput {
 
 #[tauri::command]
 pub async fn create_chat_session(input: CreateChatSessionInput) -> Result<ChatSession, String> {
-    let dir = resolve_chat_history_dir()?;
-    ensure_chat_dir(&dir)?;
-
     let now = current_iso_time();
     let session = ChatSession {
         id: generate_id(),
@@ -279,82 +566,54 @@ pub async fn create_chat_session(input: CreateChatSessionInput) -> Result<ChatSe
         use_mcp_gateway_tools: None,
         current_compaction_version: None,
     };
-
-    save_chat_session(session.clone()).await?;
+    write_session_full(&session).await?;
     Ok(session)
 }
 
 #[tauri::command]
 pub async fn save_chat_session(mut session: ChatSession) -> Result<ChatSession, String> {
-    let dir = resolve_chat_history_dir()?;
-    ensure_chat_dir(&dir)?;
     session.updated_at = current_iso_time();
-    let path = session_path(&dir, &session.id);
-    let content = serde_json::to_string_pretty(&session)
-        .map_err(|e| format!("序列化会话失败: {}", e))?;
-    fs::write(&path, content)
-        .map_err(|e| format!("保存会话失败: {}", e))?;
+    write_session_full(&session).await?;
     Ok(session)
 }
 
 #[tauri::command]
-pub async fn rename_chat_session(session_id: String, title: String) -> Result<ChatSession, String> {
-    let mut session = get_chat_session(session_id).await?;
-    session.title = title;
-    save_chat_session(session).await
+pub async fn rename_chat_session(
+    session_id: String,
+    title: String,
+) -> Result<ChatSession, String> {
+    let now = current_iso_time();
+    let result = sqlx::query(
+        "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?",
+    )
+    .bind(&title)
+    .bind(&now)
+    .bind(&session_id)
+    .execute(pool())
+    .await
+    .map_err(|e| format!("重命名会话失败: {}", e))?;
+
+    if result.rows_affected() == 0 {
+        return Err("会话不存在".to_string());
+    }
+
+    read_session_full(&session_id)
+        .await?
+        .ok_or_else(|| "会话不存在".to_string())
 }
 
 #[tauri::command]
 pub async fn delete_chat_session(session_id: String) -> Result<(), String> {
-    let dir = resolve_chat_history_dir()?;
-    let path = session_path(&dir, &session_id);
-    if path.exists() {
-        fs::remove_file(&path)
-            .map_err(|e| format!("删除会话失败: {}", e))?;
-    }
-    // 同时清理压缩目录（哪怕 json 缺失也尝试删，避免孤儿）
-    let compaction_dir = session_compaction_dir(&dir, &session_id);
-    if compaction_dir.exists() {
-        if let Err(e) = fs::remove_dir_all(&compaction_dir) {
-            log::warn!("删除压缩目录失败 {:?}: {}", compaction_dir, e);
-        }
-    }
+    // CASCADE 会自动清理 chat_messages / chat_session_tools / chat_compactions
+    sqlx::query("DELETE FROM chat_sessions WHERE id = ?")
+        .bind(&session_id)
+        .execute(pool())
+        .await
+        .map_err(|e| format!("删除会话失败: {}", e))?;
     Ok(())
 }
 
 // ============== 上下文压缩 ==============
-
-use crate::storage::{CompactionIndex, CompactionMeta};
-
-fn session_compaction_dir(history_dir: &Path, session_id: &str) -> PathBuf {
-    history_dir.join(session_id).join("compactions")
-}
-
-fn read_compaction_index(dir: &Path) -> CompactionIndex {
-    let path = dir.join("index.json");
-    if !path.exists() {
-        return CompactionIndex::default();
-    }
-    let content = match fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(e) => {
-            log::warn!("读取压缩索引失败 {:?}: {}", path, e);
-            return CompactionIndex::default();
-        }
-    };
-    serde_json::from_str(&content).unwrap_or_else(|e| {
-        log::warn!("解析压缩索引失败 {:?}: {}", path, e);
-        CompactionIndex::default()
-    })
-}
-
-fn write_compaction_index(dir: &Path, index: &CompactionIndex) -> Result<(), String> {
-    fs::create_dir_all(dir).map_err(|e| format!("创建压缩目录失败: {}", e))?;
-    let content = serde_json::to_string_pretty(index)
-        .map_err(|e| format!("序列化压缩索引失败: {}", e))?;
-    fs::write(dir.join("index.json"), content)
-        .map_err(|e| format!("写入压缩索引失败: {}", e))
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -371,21 +630,23 @@ pub async fn save_compaction(input: SaveCompactionInput) -> Result<CompactionMet
     if input.content.trim().is_empty() {
         return Err("压缩内容为空".to_string());
     }
-    let dir = resolve_chat_history_dir()?;
-    let compaction_dir = session_compaction_dir(&dir, &input.session_id);
-    fs::create_dir_all(&compaction_dir).map_err(|e| format!("创建压缩目录失败: {}", e))?;
 
-    let mut index = read_compaction_index(&compaction_dir);
-    let next_n = index.versions.iter()
-        .filter_map(|v| v.version.strip_prefix('v').and_then(|s| s.parse::<u32>().ok()))
-        .max()
+    // 查当前最大 vN
+    let max_n: Option<(String,)> = sqlx::query_as(
+        "SELECT version FROM chat_compactions WHERE session_id = ?
+         ORDER BY CAST(SUBSTR(version, 2) AS INTEGER) DESC LIMIT 1",
+    )
+    .bind(&input.session_id)
+    .fetch_optional(pool())
+    .await
+    .map_err(|e| format!("查询当前压缩版本失败: {}", e))?;
+
+    let next_n = max_n
+        .as_ref()
+        .and_then(|(v,)| v.strip_prefix('v').and_then(|s| s.parse::<u32>().ok()))
         .unwrap_or(0)
         + 1;
     let version = format!("v{}", next_n);
-
-    let md_path = compaction_dir.join(format!("{}.md", version));
-    fs::write(&md_path, &input.content)
-        .map_err(|e| format!("写入压缩文件失败: {}", e))?;
 
     let meta = CompactionMeta {
         version: version.clone(),
@@ -393,24 +654,92 @@ pub async fn save_compaction(input: SaveCompactionInput) -> Result<CompactionMet
         source_message_count: input.source_message_count,
         tail_kept: input.tail_kept,
         char_count: input.content.chars().count(),
-        model: input.model,
+        model: input.model.clone(),
     };
 
-    index.versions.push(meta.clone());
-    index.current = Some(version);
-    write_compaction_index(&compaction_dir, &index)?;
+    let pool = pool();
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| format!("获取连接失败: {}", e))?;
+    let mut tx = conn
+        .begin()
+        .await
+        .map_err(|e| format!("开启事务失败: {}", e))?;
+
+    sqlx::query(
+        "INSERT INTO chat_compactions (
+            session_id, version, content, created_at,
+            source_message_count, tail_kept, char_count, model
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&input.session_id)
+    .bind(&meta.version)
+    .bind(&input.content)
+    .bind(&meta.created_at)
+    .bind(meta.source_message_count as i64)
+    .bind(meta.tail_kept as i64)
+    .bind(meta.char_count as i64)
+    .bind(&meta.model)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| format!("插入 compaction 失败: {}", e))?;
+
+    // 更新 session.current_compaction_version 标记
+    sqlx::query("UPDATE chat_sessions SET current_compaction_version = ? WHERE id = ?")
+        .bind(&meta.version)
+        .bind(&input.session_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("更新 current_compaction_version 失败: {}", e))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("提交事务失败: {}", e))?;
 
     Ok(meta)
 }
 
 #[tauri::command]
 pub async fn list_compactions(session_id: String) -> Result<CompactionIndex, String> {
-    let dir = resolve_chat_history_dir()?;
-    let compaction_dir = session_compaction_dir(&dir, &session_id);
-    if !compaction_dir.exists() {
-        return Ok(CompactionIndex::default());
-    }
-    Ok(read_compaction_index(&compaction_dir))
+    let rows: Vec<(String, String, i64, i64, i64, Option<String>)> = sqlx::query_as(
+        "SELECT version, created_at, source_message_count, tail_kept, char_count, model
+         FROM chat_compactions WHERE session_id = ?
+         ORDER BY CAST(SUBSTR(version, 2) AS INTEGER) ASC",
+    )
+    .bind(&session_id)
+    .fetch_all(pool())
+    .await
+    .map_err(|e| format!("查询压缩列表失败: {}", e))?;
+
+    let current: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT current_compaction_version FROM chat_sessions WHERE id = ?",
+    )
+    .bind(&session_id)
+    .fetch_optional(pool())
+    .await
+    .map_err(|e| format!("查询 current_compaction_version 失败: {}", e))?;
+
+    let versions: Vec<CompactionMeta> = rows
+        .into_iter()
+        .map(
+            |(version, created_at, source_message_count, tail_kept, char_count, model)| {
+                CompactionMeta {
+                    version,
+                    created_at,
+                    source_message_count: source_message_count as usize,
+                    tail_kept: tail_kept as usize,
+                    char_count: char_count as usize,
+                    model,
+                }
+            },
+        )
+        .collect();
+
+    Ok(CompactionIndex {
+        current: current.and_then(|(v,)| v),
+        versions,
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -426,27 +755,53 @@ pub async fn get_compaction(
     session_id: String,
     version: Option<String>,
 ) -> Result<Option<CompactionContent>, String> {
-    let dir = resolve_chat_history_dir()?;
-    let compaction_dir = session_compaction_dir(&dir, &session_id);
-    if !compaction_dir.exists() {
-        return Ok(None);
-    }
-    let index = read_compaction_index(&compaction_dir);
-    let target = match version.or(index.current.clone()) {
-        Some(v) => v,
-        None => return Ok(None),
+    // 决定要取的版本：参数优先；否则取 session.current_compaction_version
+    let target = match version {
+        Some(v) => Some(v),
+        None => {
+            let row: Option<(Option<String>,)> = sqlx::query_as(
+                "SELECT current_compaction_version FROM chat_sessions WHERE id = ?",
+            )
+            .bind(&session_id)
+            .fetch_optional(pool())
+            .await
+            .map_err(|e| format!("查询 current_compaction_version 失败: {}", e))?;
+            row.and_then(|(v,)| v)
+        }
     };
-    let md_path = compaction_dir.join(format!("{}.md", target));
-    if !md_path.exists() {
+
+    let Some(target) = target else {
         return Ok(None);
-    }
-    let content = fs::read_to_string(&md_path)
-        .map_err(|e| format!("读取压缩文件失败: {}", e))?;
-    let meta = index.versions.iter().find(|m| m.version == target).cloned();
+    };
+
+    let row: Option<(String, String, i64, i64, i64, Option<String>)> = sqlx::query_as(
+        "SELECT content, created_at, source_message_count, tail_kept, char_count, model
+         FROM chat_compactions WHERE session_id = ? AND version = ?",
+    )
+    .bind(&session_id)
+    .bind(&target)
+    .fetch_optional(pool())
+    .await
+    .map_err(|e| format!("查询 compaction 失败: {}", e))?;
+
+    let Some((content, created_at, source_message_count, tail_kept, char_count, model)) = row
+    else {
+        return Ok(None);
+    };
+
+    let meta = CompactionMeta {
+        version: target.clone(),
+        created_at,
+        source_message_count: source_message_count as usize,
+        tail_kept: tail_kept as usize,
+        char_count: char_count as usize,
+        model,
+    };
+
     Ok(Some(CompactionContent {
         version: target,
         content,
-        meta,
+        meta: Some(meta),
     }))
 }
 

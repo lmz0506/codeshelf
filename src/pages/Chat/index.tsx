@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Trash2 } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
+import { useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { useEditorsStore } from "@/stores/editorsStore";
 import { showToast } from "@/components/ui";
 import { useConfirm } from "@/components/common";
 import {
@@ -41,18 +45,11 @@ import {
 } from "./utils/chatHelpers";
 
 export function ChatPage() {
-  const {
-    aiProviders,
-    setCurrentPage,
-    ensureAiDefaultProvider,
-    sidebarCollapsed,
-    setSidebarCollapsed,
-    projects,
-    saveAiProviders,
-    editors,
-    chatNavigateSessionId,
-    clearChatNavigateSession,
-  } = useAppStore();
+  const { aiProviders, ensureAiDefaultProvider, saveAiProviders } = useAiProvidersStore();
+  const { setCurrentPage, chatNavigateSessionId, clearChatNavigateSession } = useUiStore();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
+  const projects = useProjectsStore((s) => s.projects);
+  const editors = useEditorsStore((s) => s.editors);
 
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);

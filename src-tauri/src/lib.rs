@@ -1,9 +1,10 @@
 mod commands;
+pub mod error;
 mod keyboard_hook;
 pub mod mcp_gateway;
 mod storage;
 
-use commands::{git, project, stats, system, toolbox, settings, chat, tools, extras, api_chat};
+use commands::{git, project, stats, system, toolbox, settings, chat, tools, extras, api_chat, storage_admin};
 use tauri::{
     Emitter, Manager, RunEvent,
     tray::TrayIconBuilder,
@@ -24,7 +25,6 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(tauri_plugin_sql::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -57,6 +57,31 @@ pub fn run() {
             if let Err(e) = storage::init_storage() {
                 eprintln!("存储系统初始化警告: {}", e);
                 // 不阻止应用启动，只是警告
+            }
+
+            // 初始化 SQLite（projects/chat/clipboard/stats 的存储后端）
+            //
+            // 顺序：apply_pending_restore -> init_db -> run_migrations
+            //   1) 检测 .pending_restore 标记，若存在则把 backup_<ts>/ 复制回 data_dir/
+            //      （这是 restore_from_backup 命令的实际执行点）
+            //   2) 创建 / 打开 sqlite 连接池
+            //   3) 跑迁移：schema_version=0 时 自动备份 data_dir → 建表 → 搬迁 JSON → schema_version=1
+            if let Ok(config) = storage::get_storage_config() {
+                let db_path = config.db_file();
+                let data_dir = config.data_dir.clone();
+
+                if let Err(e) = storage::migrations::apply_pending_restore(&data_dir) {
+                    eprintln!("应用 pending restore 失败: {}", e);
+                    log::error!("应用 pending restore 失败: {}", e);
+                }
+
+                if let Err(e) = tauri::async_runtime::block_on(async {
+                    storage::db::init_db(&db_path).await?;
+                    storage::migrations::run_migrations(&data_dir).await
+                }) {
+                    eprintln!("SQLite 初始化或迁移失败: {}", e);
+                    log::error!("SQLite 初始化或迁移失败: {}", e);
+                }
             }
 
             // 获取日志目录路径
@@ -468,6 +493,9 @@ pub fn run() {
             api_chat::build_api_tools,
             api_chat::execute_api_endpoint,
             api_chat::fetch_api_document_url,
+            // Storage admin (data backup management)
+            storage_admin::list_data_backups,
+            storage_admin::restore_from_backup,
             // MCP gateway
             mcp_gateway::mcp_gateway_status,
             mcp_gateway::mcp_gateway_internal_endpoint,

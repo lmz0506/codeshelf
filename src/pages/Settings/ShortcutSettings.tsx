@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RotateCcw, Keyboard, Pencil, X, Globe, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui";
-import { useAppStore } from "@/stores/appStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import {
   DEFAULT_APP_SHORTCUTS,
   displayKeys,
@@ -55,7 +55,7 @@ function getConflictWarning(keys: string): string | null {
 }
 
 export function ShortcutSettings({ onClose }: ShortcutSettingsProps) {
-  const { appShortcuts, setAppShortcuts } = useAppStore();
+  const { appShortcuts, setAppShortcuts } = useSettingsStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [preview, setPreview] = useState("");
   const captureRef = useRef<HTMLDivElement>(null);

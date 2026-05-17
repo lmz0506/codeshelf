@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useAppStore } from "@/stores/appStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
 import {
   dockerBuildImage,
   dockerCheckAvailable,
@@ -39,7 +39,7 @@ interface ConfirmRequest {
 }
 
 export function useDockerImageTool(options: UseDockerImageToolOptions = {}) {
-  const { aiProviders } = useAppStore();
+  const { aiProviders } = useAiProvidersStore();
   const [status, setStatus] = useState<DockerStatus | null>(null);
   const [platform, setPlatform] = useState("");
   const [projectPath, setProjectPath] = useState(options.initialProjectPath || "");

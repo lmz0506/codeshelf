@@ -472,7 +472,7 @@ pub fn generate_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock before UNIX epoch")
         .as_nanos();
     format!("{:x}", timestamp)
 }

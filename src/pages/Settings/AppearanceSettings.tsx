@@ -1,12 +1,12 @@
 import { Sun, Moon, Monitor } from "lucide-react";
-import { useAppStore, Theme } from "@/stores/appStore";
+import { useSettingsStore, type Theme } from "@/stores/settingsStore";
 
 interface AppearanceSettingsProps {
   onClose?: () => void;
 }
 
 export function AppearanceSettings({ onClose }: AppearanceSettingsProps) {
-  const { theme, setTheme } = useAppStore();
+  const { theme, setTheme } = useSettingsStore();
 
   const themes = [
     { value: "light" as Theme, label: "浅色", icon: Sun, description: "明亮的界面主题" },

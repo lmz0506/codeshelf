@@ -37,7 +37,7 @@ pub async fn execute_tool(
     tool_name: &str,
     arguments_json: &str,
 ) -> Result<String, String> {
-    let ctx = ctx::load_ctx(session_id)?;
+    let ctx = ctx::load_ctx(session_id).await?;
     let args: Value =
         serde_json::from_str(arguments_json).unwrap_or(Value::Object(Default::default()));
     match tool_name {

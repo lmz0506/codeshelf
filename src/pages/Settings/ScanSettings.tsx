@@ -1,13 +1,13 @@
 
 import { Info, Check } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 interface ScanSettingsProps {
   onClose?: () => void;
 }
 
 export function ScanSettings({ onClose }: ScanSettingsProps) {
-  const { scanDepth, setScanDepth } = useAppStore();
+  const { scanDepth, setScanDepth } = useSettingsStore();
   const presets = [1, 3, 5, 10];
 
   return (

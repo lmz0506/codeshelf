@@ -37,7 +37,7 @@ import {
   resetRecommendedTemplate,
 } from "@/services/toolbox";
 import type { ClaudeCodeInfo, ConfigFileInfo, ConfigProfile } from "@/types/toolbox";
-import { useAppStore } from "@/stores/appStore";
+import { useEditorsStore } from "@/stores/editorsStore";
 import { type QuickConfigOption, loadQuickConfigs } from "./constants";
 import { ProfileEditor } from "./ProfileEditor";
 import { QuickConfigManager } from "./QuickConfigManager";
@@ -114,7 +114,7 @@ export function ClaudeCodeManager({ onBack }: ClaudeCodeManagerProps) {
   const [showManualLaunchInput, setShowManualLaunchInput] = useState(false);
   const [manualLaunchDir, setManualLaunchDir] = useState("");
 
-  const terminalConfig = useAppStore((s) => s.terminalConfig);
+  const terminalConfig = useEditorsStore((s) => s.terminalConfig);
 
   useEffect(() => {
     loadAll();

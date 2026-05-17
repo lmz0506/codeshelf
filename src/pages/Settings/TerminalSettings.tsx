@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FolderOpen, AlertCircle, Check, Monitor, Command, Apple, Settings, Play, Loader2, X, Wrench, Terminal } from "lucide-react";
-import { useAppStore, TerminalConfig } from "@/stores/appStore";
+import { useEditorsStore, type TerminalConfig } from "@/stores/editorsStore";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { detectPlatform } from "@/utils/platform";
@@ -18,7 +18,7 @@ interface TerminalTestResult {
 type TerminalType = TerminalConfig["type"];
 
 export function TerminalSettings({ onClose }: TerminalSettingsProps) {
-  const { terminalConfig, setTerminalConfig } = useAppStore();
+  const { terminalConfig, setTerminalConfig } = useEditorsStore();
   const [customPath, setCustomPath] = useState(terminalConfig.customPath || "");
   const [testingTerminal, setTestingTerminal] = useState<TerminalType | null>(null);
   const [testResults, setTestResults] = useState<Record<string, TerminalTestResult>>({});
