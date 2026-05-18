@@ -28,7 +28,7 @@ if ! command -v cargo >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> [1/2] Frontend: npm install + tsc + vite build"
+echo "==> [1/3] Frontend: npm install + tsc + vite build"
 if [ -f package-lock.json ]; then
   npm ci
 else
@@ -36,8 +36,28 @@ else
 fi
 npm run build
 
-echo "==> [2/2] Rust: cargo check --release (lib only, 对齐 tauri build)"
+echo "==> [2/3] Rust: cargo check --release (lib only, 对齐 tauri build)"
 (cd src-tauri && cargo check --release --lib --bins)
+
+# Windows 交叉检查：抓 #[cfg(target_os = "windows")] 下的代码错误。
+# Mac 原生 cargo check 会把 Windows-only 代码预处理掉，永远看不到错。
+# 需要先构建镜像（只跑一次）：
+#   docker build -t codeshelf-win-check -f scripts/Dockerfile.win-check .
+# 没装 Docker 或镜像不存在时跳过，不阻塞流程。
+if command -v docker >/dev/null 2>&1 && docker image inspect codeshelf-win-check >/dev/null 2>&1; then
+  echo "==> [3/3] Docker: cargo check --target x86_64-pc-windows-gnu"
+  docker run --rm \
+    -v "$PWD":/work \
+    -v codeshelf-cargo-registry:/usr/local/cargo/registry \
+    -v codeshelf-cargo-target-win:/work/src-tauri/target-win \
+    -e CARGO_TARGET_DIR=/work/src-tauri/target-win \
+    codeshelf-win-check \
+    cargo check --release --lib --bins --target x86_64-pc-windows-gnu
+else
+  echo "==> [3/3] 跳过 Windows 交叉检查（未找到 docker 或镜像 codeshelf-win-check）"
+  echo "         首次构建镜像："
+  echo "         docker build -t codeshelf-win-check -f scripts/Dockerfile.win-check ."
+fi
 
 echo
 echo "✅ verify-release 通过。可以安全推到 release/** 分支。"
