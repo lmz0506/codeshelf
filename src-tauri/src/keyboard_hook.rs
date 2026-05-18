@@ -23,6 +23,8 @@ mod win {
     use std::thread::JoinHandle;
     use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
     use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+
+    use crate::error::AppResult;
     use windows::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
         KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,

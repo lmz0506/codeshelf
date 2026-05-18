@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::error::AppResult;
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 #[allow(unused_imports)]
 use std::process::Command;
