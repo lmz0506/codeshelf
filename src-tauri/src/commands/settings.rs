@@ -5,9 +5,8 @@ use std::fs;
 
 use crate::error::AppResult;
 use crate::storage::{
-    get_storage_config, generate_id, current_iso_time,
-    EditorConfig, TerminalConfig, AppSettings, UiState, Notification,
-    AiProviderConfig, McpGatewayKey,
+    current_iso_time, generate_id, get_storage_config, AiProviderConfig, AppSettings, EditorConfig,
+    McpGatewayKey, Notification, TerminalConfig, UiState,
 };
 
 // ============== 标签管理 ==============
@@ -20,9 +19,14 @@ pub async fn get_labels() -> AppResult<Vec<String>> {
 
     if !path.exists() {
         return Ok(vec![
-            "Java".to_string(), "Python".to_string(), "JavaScript".to_string(),
-            "TypeScript".to_string(), "Rust".to_string(), "Go".to_string(),
-            "Vue".to_string(), "React".to_string(),
+            "Java".to_string(),
+            "Python".to_string(),
+            "JavaScript".to_string(),
+            "TypeScript".to_string(),
+            "Rust".to_string(),
+            "Go".to_string(),
+            "Vue".to_string(),
+            "React".to_string(),
         ]);
     }
 
@@ -76,7 +80,12 @@ pub async fn get_categories() -> AppResult<Vec<String>> {
     let path = config.categories_file();
 
     if !path.exists() {
-        return Ok(vec!["工作".to_string(), "个人".to_string(), "学习".to_string(), "测试".to_string()]);
+        return Ok(vec![
+            "工作".to_string(),
+            "个人".to_string(),
+            "学习".to_string(),
+            "测试".to_string(),
+        ]);
     }
 
     let content = fs::read_to_string(&path)
@@ -212,7 +221,11 @@ pub async fn update_editor(id: String, input: EditorInput) -> AppResult<Vec<Edit
 #[specta::specta]
 pub async fn remove_editor(id: String) -> AppResult<Vec<EditorConfig>> {
     let mut editors = get_editors().await?;
-    let was_default = editors.iter().find(|e| e.id == id).map(|e| e.is_default).unwrap_or(false);
+    let was_default = editors
+        .iter()
+        .find(|e| e.id == id)
+        .map(|e| e.is_default)
+        .unwrap_or(false);
 
     editors.retain(|e| e.id != id);
 
@@ -323,24 +336,57 @@ pub async fn get_app_settings() -> AppResult<AppSettings> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_app_settings(app: tauri::AppHandle, input: AppSettingsInput) -> AppResult<AppSettings> {
+pub async fn save_app_settings(
+    app: tauri::AppHandle,
+    input: AppSettingsInput,
+) -> AppResult<AppSettings> {
     let mut settings = get_app_settings().await?;
 
-    if let Some(theme) = input.theme { settings.theme = theme; }
-    if let Some(view_mode) = input.view_mode { settings.view_mode = view_mode; }
-    if let Some(sidebar_collapsed) = input.sidebar_collapsed { settings.sidebar_collapsed = sidebar_collapsed; }
-    if let Some(scan_depth) = input.scan_depth { settings.scan_depth = scan_depth; }
-    if let Some(auto_update) = input.auto_update { settings.auto_update = auto_update; }
-    if let Some(chat_history_dir) = input.chat_history_dir { settings.chat_history_dir = Some(chat_history_dir); }
-    if let Some(v) = input.chat_bridge_enabled { settings.chat_bridge_enabled = v; }
-    if let Some(v) = input.openclaw_relay_endpoint { settings.openclaw_relay_endpoint = Some(v); }
-    if let Some(v) = input.bridge_provider_id { settings.bridge_provider_id = Some(v); }
-    if let Some(v) = input.bridge_model_id { settings.bridge_model_id = Some(v); }
-    if let Some(v) = input.bridge_client_id { settings.bridge_client_id = Some(v); }
-    if let Some(v) = input.mcp_gateway_enabled { settings.mcp_gateway_enabled = v; }
-    if let Some(v) = input.mcp_gateway_host { settings.mcp_gateway_host = v; }
-    if let Some(v) = input.mcp_gateway_port { settings.mcp_gateway_port = v; }
-    if let Some(v) = input.mcp_gateway_keys { settings.mcp_gateway_keys = v; }
+    if let Some(theme) = input.theme {
+        settings.theme = theme;
+    }
+    if let Some(view_mode) = input.view_mode {
+        settings.view_mode = view_mode;
+    }
+    if let Some(sidebar_collapsed) = input.sidebar_collapsed {
+        settings.sidebar_collapsed = sidebar_collapsed;
+    }
+    if let Some(scan_depth) = input.scan_depth {
+        settings.scan_depth = scan_depth;
+    }
+    if let Some(auto_update) = input.auto_update {
+        settings.auto_update = auto_update;
+    }
+    if let Some(chat_history_dir) = input.chat_history_dir {
+        settings.chat_history_dir = Some(chat_history_dir);
+    }
+    if let Some(v) = input.chat_bridge_enabled {
+        settings.chat_bridge_enabled = v;
+    }
+    if let Some(v) = input.openclaw_relay_endpoint {
+        settings.openclaw_relay_endpoint = Some(v);
+    }
+    if let Some(v) = input.bridge_provider_id {
+        settings.bridge_provider_id = Some(v);
+    }
+    if let Some(v) = input.bridge_model_id {
+        settings.bridge_model_id = Some(v);
+    }
+    if let Some(v) = input.bridge_client_id {
+        settings.bridge_client_id = Some(v);
+    }
+    if let Some(v) = input.mcp_gateway_enabled {
+        settings.mcp_gateway_enabled = v;
+    }
+    if let Some(v) = input.mcp_gateway_host {
+        settings.mcp_gateway_host = v;
+    }
+    if let Some(v) = input.mcp_gateway_port {
+        settings.mcp_gateway_port = v;
+    }
+    if let Some(v) = input.mcp_gateway_keys {
+        settings.mcp_gateway_keys = v;
+    }
 
     let config = get_storage_config()?;
     config.ensure_dirs()?;
@@ -517,8 +563,7 @@ pub async fn get_app_shortcuts() -> AppResult<Vec<AppShortcutBinding>> {
         return Ok(Vec::new());
     }
 
-    serde_json::from_str(&content)
-        .map_err(|e| format!("解析应用快捷键配置失败: {}", e).into())
+    serde_json::from_str(&content).map_err(|e| format!("解析应用快捷键配置失败: {}", e).into())
 }
 
 #[tauri::command]
@@ -564,7 +609,9 @@ pub async fn get_ai_providers() -> AppResult<Vec<AiProviderConfig>> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_ai_providers(providers: Vec<AiProviderConfig>) -> AppResult<Vec<AiProviderConfig>> {
+pub async fn save_ai_providers(
+    providers: Vec<AiProviderConfig>,
+) -> AppResult<Vec<AiProviderConfig>> {
     let config = get_storage_config()?;
     config.ensure_dirs()?;
 
@@ -576,7 +623,6 @@ pub async fn save_ai_providers(providers: Vec<AiProviderConfig>) -> AppResult<Ve
 
     Ok(providers)
 }
-
 
 #[tauri::command]
 #[specta::specta]
@@ -615,16 +661,26 @@ pub async fn get_sensitive_file_patterns() -> AppResult<Vec<String>> {
 
     if !path.exists() {
         return Ok(vec![
-            ".env".to_string(), ".env.*".to_string(),
-            "*.key".to_string(), "*.pem".to_string(), "*.p12".to_string(), "*.pfx".to_string(),
-            "credentials*.json".to_string(), "secrets*.json".to_string(),
-            "*.keystore".to_string(), "*.jks".to_string(),
-            ".npmrc".to_string(), ".pypirc".to_string(),
-            "id_rsa".to_string(), "id_ed25519".to_string(),
+            ".env".to_string(),
+            ".env.*".to_string(),
+            "*.key".to_string(),
+            "*.pem".to_string(),
+            "*.p12".to_string(),
+            "*.pfx".to_string(),
+            "credentials*.json".to_string(),
+            "secrets*.json".to_string(),
+            "*.keystore".to_string(),
+            "*.jks".to_string(),
+            ".npmrc".to_string(),
+            ".pypirc".to_string(),
+            "id_rsa".to_string(),
+            "id_ed25519".to_string(),
             "config.local.json".to_string(),
-            "application*.yml".to_string(), "application*.yaml".to_string(),
+            "application*.yml".to_string(),
+            "application*.yaml".to_string(),
             "application*.properties".to_string(),
-            "bootstrap*.yml".to_string(), "bootstrap*.yaml".to_string(),
+            "bootstrap*.yml".to_string(),
+            "bootstrap*.yaml".to_string(),
         ]);
     }
 
@@ -662,40 +718,4 @@ pub async fn reset_recommended_template() -> AppResult<()> {
     Ok(())
 }
 
-// ============== 简历数据持久化 ==============
-
-#[tauri::command]
-#[specta::specta]
-pub async fn get_resumes() -> AppResult<serde_json::Value> {
-    let config = get_storage_config()?;
-    let path = config.resumes_file();
-
-    if !path.exists() {
-        return Ok(serde_json::json!([]));
-    }
-
-    let content = fs::read_to_string(&path)
-        .map_err(|e| crate::error::AppError::from(format!("读取简历数据失败: {}", e)))?;
-
-    if content.trim().is_empty() {
-        return Ok(serde_json::json!([]));
-    }
-
-    let data: serde_json::Value = serde_json::from_str(&content)
-        .unwrap_or(serde_json::json!([]));
-    Ok(data)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn save_resumes(data: serde_json::Value) -> AppResult<()> {
-    let config = get_storage_config()?;
-    config.ensure_dirs()?;
-
-    let content = serde_json::to_string_pretty(&data)
-        .map_err(|e| crate::error::AppError::from(format!("序列化简历数据失败: {}", e)))?;
-
-    fs::write(config.resumes_file(), content)
-        .map_err(|e| crate::error::AppError::from(format!("保存简历数据失败: {}", e)))?;
-    Ok(())
-}
+// ============== 简历数据持久化已迁移到 commands::resume 模块 ==============

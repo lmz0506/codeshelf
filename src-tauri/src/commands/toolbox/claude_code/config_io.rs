@@ -41,7 +41,11 @@ pub(super) fn parse_wsl_unc_to_linux(unc_path: &str) -> Option<(String, String)>
 #[tauri::command]
 #[specta::specta]
 #[allow(unused_variables)]
-pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: String) -> AppResult<String> {
+pub async fn read_claude_config_file(
+    env_type: EnvType,
+    env_name: String,
+    path: String,
+) -> AppResult<String> {
     // 如果是 UNC 路径，优先用 Windows API 读取，失败则通过 wsl 命令
     if is_wsl_unc_path(&path) {
         if let Ok(content) = std::fs::read_to_string(&path) {
@@ -54,21 +58,27 @@ pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: 
                 let output = new_command("wsl")
                     .args(["-d", &distro, "--", "cat", &linux_path])
                     .output()
-                    .map_err(|e| crate::error::AppError::from(format!("执行 wsl 命令失败: {}", e)))?;
+                    .map_err(|e| {
+                        crate::error::AppError::from(format!("执行 wsl 命令失败: {}", e))
+                    })?;
                 if output.status.success() {
                     return Ok(String::from_utf8_lossy(&output.stdout).to_string());
                 }
-                return Err(crate::error::AppError::from(format!("读取文件失败: {}", String::from_utf8_lossy(&output.stderr))));
+                return Err(crate::error::AppError::from(format!(
+                    "读取文件失败: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )));
             }
         }
-        return Err(crate::error::AppError::from(format!("读取配置文件失败: UNC 路径不可达: {}", path)));
+        return Err(crate::error::AppError::from(format!(
+            "读取配置文件失败: UNC 路径不可达: {}",
+            path
+        )));
     }
 
     match env_type {
-        EnvType::Host => {
-            std::fs::read_to_string(&path)
-                .map_err(|e| crate::error::AppError::from(format!("读取配置文件失败: {}", e)))
-        }
+        EnvType::Host => std::fs::read_to_string(&path)
+            .map_err(|e| crate::error::AppError::from(format!("读取配置文件失败: {}", e))),
         #[cfg(target_os = "windows")]
         EnvType::Wsl => {
             let distro = env_name.strip_prefix("WSL: ").unwrap_or(&env_name);
@@ -80,13 +90,16 @@ pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: 
             if output.status.success() {
                 Ok(String::from_utf8_lossy(&output.stdout).to_string())
             } else {
-                Err(crate::error::AppError::from(format!("读取文件失败: {}", String::from_utf8_lossy(&output.stderr))))
+                Err(crate::error::AppError::from(format!(
+                    "读取文件失败: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )))
             }
         }
         #[cfg(not(target_os = "windows"))]
-        EnvType::Wsl => {
-            Err(crate::error::AppError::from("WSL 仅在 Windows 上可用".to_string()))
-        }
+        EnvType::Wsl => Err(crate::error::AppError::from(
+            "WSL 仅在 Windows 上可用".to_string(),
+        )),
     }
 }
 
@@ -94,7 +107,12 @@ pub async fn read_claude_config_file(env_type: EnvType, env_name: String, path: 
 #[tauri::command]
 #[specta::specta]
 #[allow(unused_variables)]
-pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path: String, content: String) -> AppResult<()> {
+pub async fn write_claude_config_file(
+    env_type: EnvType,
+    env_name: String,
+    path: String,
+    content: String,
+) -> AppResult<()> {
     // 如果是 UNC 路径，优先用 Windows API 写入，失败则通过 wsl 命令
     if is_wsl_unc_path(&path) {
         // 先尝试 UNC 直接写入
@@ -121,7 +139,14 @@ pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path:
                         .output();
                 }
                 let output = new_command("wsl")
-                    .args(["-d", &distro, "--", "bash", "-c", &format!("cat > '{}'", linux_path)])
+                    .args([
+                        "-d",
+                        &distro,
+                        "--",
+                        "bash",
+                        "-c",
+                        &format!("cat > '{}'", linux_path),
+                    ])
                     .stdin(std::process::Stdio::piped())
                     .spawn()
                     .and_then(|mut child| {
@@ -131,14 +156,22 @@ pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path:
                         }
                         child.wait_with_output()
                     })
-                    .map_err(|e| crate::error::AppError::from(format!("执行 wsl 命令失败: {}", e)))?;
+                    .map_err(|e| {
+                        crate::error::AppError::from(format!("执行 wsl 命令失败: {}", e))
+                    })?;
                 if output.status.success() {
                     return Ok(());
                 }
-                return Err(crate::error::AppError::from(format!("写入文件失败: {}", String::from_utf8_lossy(&output.stderr))));
+                return Err(crate::error::AppError::from(format!(
+                    "写入文件失败: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )));
             }
         }
-        return Err(crate::error::AppError::from(format!("写入配置文件失败: UNC 路径不可达: {}", path)));
+        return Err(crate::error::AppError::from(format!(
+            "写入配置文件失败: UNC 路径不可达: {}",
+            path
+        )));
     }
 
     match env_type {
@@ -163,23 +196,31 @@ pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path:
 
             // 使用 echo 和管道写入文件
             let output = new_command("wsl")
-                .args(["-d", distro, "--", "bash", "-c", &format!("cat > '{}'", path)])
+                .args([
+                    "-d",
+                    distro,
+                    "--",
+                    "bash",
+                    "-c",
+                    &format!("cat > '{}'", path),
+                ])
                 .stdin(std::process::Stdio::piped())
                 .spawn()
                 .map_err(|e| crate::error::AppError::from(format!("执行 wsl 命令失败: {}", e)))?;
 
             if let Some(mut stdin) = output.stdin {
                 use std::io::Write;
-                stdin.write_all(content.as_bytes())
+                stdin
+                    .write_all(content.as_bytes())
                     .map_err(|e| crate::error::AppError::from(format!("写入内容失败: {}", e)))?;
             }
 
             Ok(())
         }
         #[cfg(not(target_os = "windows"))]
-        EnvType::Wsl => {
-            Err(crate::error::AppError::from("WSL 仅在 Windows 上可用".to_string()))
-        }
+        EnvType::Wsl => Err(crate::error::AppError::from(
+            "WSL 仅在 Windows 上可用".to_string(),
+        )),
     }
 }
 
@@ -187,7 +228,11 @@ pub async fn write_claude_config_file(env_type: EnvType, env_name: String, path:
 #[tauri::command]
 #[specta::specta]
 #[allow(unused_variables)]
-pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_dir: String) -> AppResult<()> {
+pub async fn open_claude_config_dir(
+    env_type: EnvType,
+    env_name: String,
+    config_dir: String,
+) -> AppResult<()> {
     // 如果是 UNC 路径，直接用 explorer 打开
     if is_wsl_unc_path(&config_dir) {
         let path = PathBuf::from(&config_dir);
@@ -206,8 +251,9 @@ pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_
         EnvType::Host => {
             let path = PathBuf::from(&config_dir);
             if !path.exists() {
-                std::fs::create_dir_all(&path)
-                    .map_err(|e| crate::error::AppError::from(format!("创建配置目录失败: {}", e)))?;
+                std::fs::create_dir_all(&path).map_err(|e| {
+                    crate::error::AppError::from(format!("创建配置目录失败: {}", e))
+                })?;
             }
 
             #[cfg(target_os = "windows")]
@@ -253,13 +299,15 @@ pub async fn open_claude_config_dir(env_type: EnvType, env_name: String, config_
                     .map_err(|e| crate::error::AppError::from(format!("打开目录失败: {}", e)))?;
                 Ok(())
             } else {
-                Err(crate::error::AppError::from("转换 WSL 路径失败".to_string()))
+                Err(crate::error::AppError::from(
+                    "转换 WSL 路径失败".to_string(),
+                ))
             }
         }
         #[cfg(not(target_os = "windows"))]
-        EnvType::Wsl => {
-            Err(crate::error::AppError::from("WSL 仅在 Windows 上可用".to_string()))
-        }
+        EnvType::Wsl => Err(crate::error::AppError::from(
+            "WSL 仅在 Windows 上可用".to_string(),
+        )),
     }
 }
 
@@ -285,13 +333,17 @@ pub async fn get_wsl_config_dir(distro: String) -> AppResult<WslConfigDirResult>
         .map_err(|e| crate::error::AppError::from(format!("执行 wsl 命令失败: {}", e)))?;
 
     if !output.status.success() {
-        return Err(crate::error::AppError::from(format!("获取 WSL home 目录失败: {}", String::from_utf8_lossy(&output.stderr))));
+        return Err(crate::error::AppError::from(format!(
+            "获取 WSL home 目录失败: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
     }
 
     let linux_path = clean_wsl_output(&output.stdout);
 
     // 转换为 UNC 路径
-    let unc_path = format!("\\\\wsl.localhost\\{}{}",
+    let unc_path = format!(
+        "\\\\wsl.localhost\\{}{}",
         distro,
         linux_path.replace('/', "\\")
     );
@@ -307,14 +359,20 @@ pub async fn get_wsl_config_dir(distro: String) -> AppResult<WslConfigDirResult>
 #[tauri::command]
 #[specta::specta]
 pub async fn get_wsl_config_dir(_distro: String) -> AppResult<WslConfigDirResult> {
-    Err(crate::error::AppError::from("WSL 仅在 Windows 上可用".to_string()))
+    Err(crate::error::AppError::from(
+        "WSL 仅在 Windows 上可用".to_string(),
+    ))
 }
 
 /// 扫描指定配置目录的配置文件
 #[tauri::command]
 #[specta::specta]
 #[allow(unused_variables)]
-pub async fn scan_claude_config_dir(env_type: EnvType, env_name: String, config_dir: String) -> AppResult<Vec<ConfigFileInfo>> {
+pub async fn scan_claude_config_dir(
+    env_type: EnvType,
+    env_name: String,
+    config_dir: String,
+) -> AppResult<Vec<ConfigFileInfo>> {
     // 如果是 UNC 路径，直接用 Windows API 扫描
     if is_wsl_unc_path(&config_dir) {
         let path = PathBuf::from(&config_dir);
@@ -332,8 +390,8 @@ pub async fn scan_claude_config_dir(env_type: EnvType, env_name: String, config_
             Ok(super::detect::scan_wsl_config_files(distro, &config_dir))
         }
         #[cfg(not(target_os = "windows"))]
-        EnvType::Wsl => {
-            Err(crate::error::AppError::from("WSL 仅在 Windows 上可用".to_string()))
-        }
+        EnvType::Wsl => Err(crate::error::AppError::from(
+            "WSL 仅在 Windows 上可用".to_string(),
+        )),
     }
 }

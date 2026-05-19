@@ -9,9 +9,13 @@ use serde_json::Value;
 use super::ctx::{require_under_cwd, truncate, ToolCtx};
 
 pub(super) fn tool_read(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
-    let path_str = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
+    let path_str = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or("缺少 path")?;
     let path = require_under_cwd(ctx, Path::new(path_str))?;
-    let text = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))?;
+    let text = fs::read_to_string(&path)
+        .map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))?;
     let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
     let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(2000) as usize;
     let lines: Vec<&str> = text.lines().collect();
@@ -25,21 +29,33 @@ pub(super) fn tool_read(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
 }
 
 pub(super) fn tool_write(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
-    let path_str = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
+    let path_str = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or("缺少 path")?;
     let content = args
         .get("content")
         .and_then(|v| v.as_str())
         .ok_or("缺少 content")?;
     let path = require_under_cwd(ctx, Path::new(path_str))?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
     }
-    fs::write(&path, content).map_err(|e| crate::error::AppError::from(format!("写入失败: {}", e)))?;
-    Ok(format!("已写入 {}（{} 字节）", path.display(), content.len()))
+    fs::write(&path, content)
+        .map_err(|e| crate::error::AppError::from(format!("写入失败: {}", e)))?;
+    Ok(format!(
+        "已写入 {}（{} 字节）",
+        path.display(),
+        content.len()
+    ))
 }
 
 pub(super) fn tool_edit(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
-    let path_str = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
+    let path_str = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or("缺少 path")?;
     let old = args
         .get("oldString")
         .and_then(|v| v.as_str())
@@ -49,16 +65,21 @@ pub(super) fn tool_edit(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
         .and_then(|v| v.as_str())
         .ok_or("缺少 newString")?;
     let path = require_under_cwd(ctx, Path::new(path_str))?;
-    let text = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))?;
+    let text = fs::read_to_string(&path)
+        .map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))?;
     let occurrences = text.matches(old).count();
     if occurrences == 0 {
         return Err("oldString 未在文件中找到".into());
     }
     if occurrences > 1 {
-        return Err(crate::error::AppError::from(format!("oldString 出现 {} 次，必须唯一", occurrences)));
+        return Err(crate::error::AppError::from(format!(
+            "oldString 出现 {} 次，必须唯一",
+            occurrences
+        )));
     }
     let updated = text.replacen(old, new, 1);
-    fs::write(&path, &updated).map_err(|e| crate::error::AppError::from(format!("写入失败: {}", e)))?;
+    fs::write(&path, &updated)
+        .map_err(|e| crate::error::AppError::from(format!("写入失败: {}", e)))?;
     Ok(format!("已替换 {} 中 1 处", path.display()))
 }
 
@@ -248,11 +269,9 @@ pub(super) fn tool_glob(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
         .get("pattern")
         .and_then(|v| v.as_str())
         .ok_or("缺少 pattern")?;
-    let base = ctx
-        .allowed_cwd
-        .as_ref()
-        .ok_or("会话未设置 allowedCwd")?;
-    let base_canon = fs::canonicalize(base).map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
+    let base = ctx.allowed_cwd.as_ref().ok_or("会话未设置 allowedCwd")?;
+    let base_canon = fs::canonicalize(base)
+        .map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
     let files = glob_walk(&base_canon, pattern)?;
     if files.is_empty() {
         return Ok("（无匹配）".into());
@@ -274,11 +293,9 @@ pub(super) fn tool_grep(ctx: &ToolCtx, args: &Value) -> AppResult<String> {
         .and_then(|v| v.as_str())
         .ok_or("缺少 pattern")?;
     let glob = args.get("glob").and_then(|v| v.as_str()).unwrap_or("**/*");
-    let base = ctx
-        .allowed_cwd
-        .as_ref()
-        .ok_or("会话未设置 allowedCwd")?;
-    let base_canon = fs::canonicalize(base).map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
+    let base = ctx.allowed_cwd.as_ref().ok_or("会话未设置 allowedCwd")?;
+    let base_canon = fs::canonicalize(base)
+        .map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
     let files = glob_walk(&base_canon, glob)?;
     let mut out = String::new();
     let mut hits = 0;

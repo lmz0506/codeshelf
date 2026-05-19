@@ -85,8 +85,7 @@ pub(super) fn get_extra_path_dirs() -> Vec<String> {
     ];
 
     // 收集所有 nvm 版本目录
-    let nvm_dir_env = std::env::var("NVM_DIR")
-        .unwrap_or_else(|_| format!("{}/.nvm", home_str));
+    let nvm_dir_env = std::env::var("NVM_DIR").unwrap_or_else(|_| format!("{}/.nvm", home_str));
     let mut nvm_bins: Vec<String> = Vec::new();
     let nvm_versions = PathBuf::from(&nvm_dir_env).join("versions/node");
     if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
@@ -98,7 +97,9 @@ pub(super) fn get_extra_path_dirs() -> Vec<String> {
         }
     }
 
-    extra_dirs.iter().chain(nvm_bins.iter())
+    extra_dirs
+        .iter()
+        .chain(nvm_bins.iter())
         .filter(|d| !current_parts.contains(&d.as_str()))
         .cloned()
         .collect()

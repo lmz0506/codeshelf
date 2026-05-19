@@ -35,8 +35,7 @@ pub(super) async fn run_server(
     controller: Arc<ServerController>,
 ) -> AppResult<()> {
     // 创建静态文件服务
-    let serve_dir = ServeDir::new(&config.root_dir)
-        .append_index_html_on_directories(true);
+    let serve_dir = ServeDir::new(&config.root_dir).append_index_html_on_directories(true);
 
     // 构建路由
     let mut app = Router::new();
@@ -70,9 +69,15 @@ pub(super) async fn run_server(
             format!("/{}", clean_prefix)
         };
 
-        app = app.route(&root_route_path, any(proxy_handler).with_state(proxy_state.clone()));
+        app = app.route(
+            &root_route_path,
+            any(proxy_handler).with_state(proxy_state.clone()),
+        );
         if !root_route_exact.is_empty() && root_route_exact != "/" {
-            app = app.route(&root_route_exact, any(proxy_handler).with_state(proxy_state.clone()));
+            app = app.route(
+                &root_route_exact,
+                any(proxy_handler).with_state(proxy_state.clone()),
+            );
         }
         log::info!("代理规则（全局）: {} -> {}", root_route_path, proxy.target);
 
@@ -89,11 +94,21 @@ pub(super) async fn run_server(
                 format!("{}/{}", url_prefix_clean, clean_prefix)
             };
 
-            app = app.route(&prefixed_route_path, any(proxy_handler).with_state(proxy_state.clone()));
+            app = app.route(
+                &prefixed_route_path,
+                any(proxy_handler).with_state(proxy_state.clone()),
+            );
             if !prefixed_route_exact.is_empty() {
-                app = app.route(&prefixed_route_exact, any(proxy_handler).with_state(proxy_state));
+                app = app.route(
+                    &prefixed_route_exact,
+                    any(proxy_handler).with_state(proxy_state),
+                );
             }
-            log::info!("代理规则（前缀）: {} -> {}", prefixed_route_path, proxy.target);
+            log::info!(
+                "代理规则（前缀）: {} -> {}",
+                prefixed_route_path,
+                proxy.target
+            );
         }
     }
 
@@ -108,9 +123,12 @@ pub(super) async fn run_server(
 
         // 根路径重定向到前缀路径
         let redirect_prefix = config.url_prefix.clone();
-        app = app.route("/", axum::routing::get(move || async move {
-            axum::response::Redirect::permanent(&format!("{}/", redirect_prefix))
-        }));
+        app = app.route(
+            "/",
+            axum::routing::get(move || async move {
+                axum::response::Redirect::permanent(&format!("{}/", redirect_prefix))
+            }),
+        );
     }
 
     // 添加 CORS
@@ -131,8 +149,15 @@ pub(super) async fn run_server(
     // 绑定地址
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
 
-    log::info!("静态服务启动: http://127.0.0.1:{}{}",config.port,
-        if config.url_prefix == "/" { "".to_string() } else { format!("{}/", config.url_prefix) });
+    log::info!(
+        "静态服务启动: http://127.0.0.1:{}{}",
+        config.port,
+        if config.url_prefix == "/" {
+            "".to_string()
+        } else {
+            format!("{}/", config.url_prefix)
+        }
+    );
     log::info!("根目录: {}", config.root_dir);
 
     // 使用 socket2 创建支持 SO_REUSEADDR 的 socket
@@ -140,23 +165,28 @@ pub(super) async fn run_server(
         .map_err(|e| crate::error::AppError::from(format!("创建 socket 失败: {}", e)))?;
 
     // 设置 SO_REUSEADDR，允许在 TIME_WAIT 状态时复用端口
-    socket.set_reuse_address(true)
+    socket
+        .set_reuse_address(true)
         .map_err(|e| crate::error::AppError::from(format!("设置 SO_REUSEADDR 失败: {}", e)))?;
 
     // 设置 SO_LINGER 为 0，使 socket 关闭时立即释放端口（发送 RST 而非 FIN）
-    socket.set_linger(Some(std::time::Duration::from_secs(0)))
+    socket
+        .set_linger(Some(std::time::Duration::from_secs(0)))
         .map_err(|e| crate::error::AppError::from(format!("设置 SO_LINGER 失败: {}", e)))?;
 
     // 设置非阻塞模式
-    socket.set_nonblocking(true)
+    socket
+        .set_nonblocking(true)
         .map_err(|e| crate::error::AppError::from(format!("设置非阻塞模式失败: {}", e)))?;
 
     // 绑定地址
-    socket.bind(&addr.into())
+    socket
+        .bind(&addr.into())
         .map_err(|e| crate::error::AppError::from(format!("绑定端口失败: {}", e)))?;
 
     // 监听
-    socket.listen(1024)
+    socket
+        .listen(1024)
         .map_err(|e| crate::error::AppError::from(format!("监听端口失败: {}", e)))?;
 
     // 转换为 tokio TcpListener
@@ -203,7 +233,11 @@ async fn proxy_handler(
     // 构建目标 URL
     let query = uri.query().map(|q| format!("?{}", q)).unwrap_or_default();
     let target_path = if path.is_empty() {
-        if query.is_empty() { "/".to_string() } else { format!("/{}", query.trim_start_matches('?')) }
+        if query.is_empty() {
+            "/".to_string()
+        } else {
+            format!("/{}", query.trim_start_matches('?'))
+        }
     } else {
         format!("/{}{}", path, query)
     };
@@ -224,7 +258,13 @@ async fn proxy_handler(
     let target_addr = host_port.to_string();
     let full_path = format!("{}{}", base_path, target_path);
 
-    log::info!("代理请求: {} {} -> {}{}", method, uri, target_addr, full_path);
+    log::info!(
+        "代理请求: {} {} -> {}{}",
+        method,
+        uri,
+        target_addr,
+        full_path
+    );
 
     // 读取请求体
     let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
@@ -239,7 +279,11 @@ async fn proxy_handler(
         Ok(s) => s,
         Err(e) => {
             log::error!("连接目标服务器失败: {} -> {}", target_addr, e);
-            return (StatusCode::BAD_GATEWAY, format!("连接目标服务器失败: {}", e)).into_response();
+            return (
+                StatusCode::BAD_GATEWAY,
+                format!("连接目标服务器失败: {}", e),
+            )
+                .into_response();
         }
     };
 
@@ -258,7 +302,11 @@ async fn proxy_handler(
     }
 
     // 设置 Content-Length（POST/PUT/PATCH 必须有）
-    if !body_bytes.is_empty() || method == Method::POST || method == Method::PUT || method == Method::PATCH {
+    if !body_bytes.is_empty()
+        || method == Method::POST
+        || method == Method::PUT
+        || method == Method::PATCH
+    {
         raw_request.push_str(&format!("Content-Length: {}\r\n", body_bytes.len()));
     }
 
@@ -297,7 +345,10 @@ async fn proxy_handler(
     };
 
     // 解析状态码
-    let status_line = header_part.lines().next().unwrap_or("HTTP/1.1 502 Bad Gateway");
+    let status_line = header_part
+        .lines()
+        .next()
+        .unwrap_or("HTTP/1.1 502 Bad Gateway");
     let status_code: u16 = status_line
         .split_whitespace()
         .nth(1)
@@ -321,7 +372,15 @@ async fn proxy_handler(
     };
 
     if !status.is_success() {
-        log::warn!("代理响应: {} -> {} | body: {}", target_addr, status, String::from_utf8_lossy(&body).chars().take(200).collect::<String>());
+        log::warn!(
+            "代理响应: {} -> {} | body: {}",
+            target_addr,
+            status,
+            String::from_utf8_lossy(&body)
+                .chars()
+                .take(200)
+                .collect::<String>()
+        );
     }
 
     // 解析响应头

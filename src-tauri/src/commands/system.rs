@@ -37,15 +37,12 @@ pub async fn open_in_explorer(path: String) -> AppResult<()> {
     #[cfg(target_os = "linux")]
     {
         // Try common file managers
-        let result = Command::new("xdg-open")
-            .arg(&path)
-            .spawn();
+        let result = Command::new("xdg-open").arg(&path).spawn();
 
         if result.is_err() {
-            Command::new("nautilus")
-                .arg(&path)
-                .spawn()
-                .map_err(|e| crate::error::AppError::from(format!("Failed to open file manager: {}", e)))?;
+            Command::new("nautilus").arg(&path).spawn().map_err(|e| {
+                crate::error::AppError::from(format!("Failed to open file manager: {}", e))
+            })?;
         }
     }
 
@@ -74,29 +71,31 @@ pub async fn open_in_editor(path: String, editor_path: Option<String>) -> AppRes
             Command::new("open")
                 .args(["-a", &editor, &path])
                 .spawn()
-                .map_err(|e| crate::error::AppError::from(format!("Failed to open editor '{}': {}", editor, e)))?;
+                .map_err(|e| {
+                    crate::error::AppError::from(format!(
+                        "Failed to open editor '{}': {}",
+                        editor, e
+                    ))
+                })?;
         } else {
-            Command::new(&editor)
-                .arg(&path)
-                .spawn()
-                .map_err(|e| crate::error::AppError::from(format!("Failed to open editor '{}': {}", editor, e)))?;
+            Command::new(&editor).arg(&path).spawn().map_err(|e| {
+                crate::error::AppError::from(format!("Failed to open editor '{}': {}", editor, e))
+            })?;
         }
     }
 
     #[cfg(target_os = "windows")]
     {
-        Command::new(&editor)
-            .arg(&path)
-            .spawn()
-            .map_err(|e| crate::error::AppError::from(format!("Failed to open editor '{}': {}", editor, e)))?;
+        Command::new(&editor).arg(&path).spawn().map_err(|e| {
+            crate::error::AppError::from(format!("Failed to open editor '{}': {}", editor, e))
+        })?;
     }
 
     #[cfg(target_os = "linux")]
     {
-        Command::new(&editor)
-            .arg(&path)
-            .spawn()
-            .map_err(|e| crate::error::AppError::from(format!("Failed to open editor '{}': {}", editor, e)))?;
+        Command::new(&editor).arg(&path).spawn().map_err(|e| {
+            crate::error::AppError::from(format!("Failed to open editor '{}': {}", editor, e))
+        })?;
     }
 
     Ok(())
@@ -105,7 +104,12 @@ pub async fn open_in_editor(path: String, editor_path: Option<String>) -> AppRes
 #[tauri::command]
 #[specta::specta]
 #[allow(unused_variables)]
-pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custom_path: Option<String>, terminal_path: Option<String>) -> AppResult<()> {
+pub async fn open_in_terminal(
+    path: String,
+    terminal_type: Option<String>,
+    custom_path: Option<String>,
+    terminal_path: Option<String>,
+) -> AppResult<()> {
     let term_type = terminal_type.unwrap_or_else(|| "default".to_string());
 
     #[cfg(target_os = "windows")]
@@ -116,7 +120,11 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                 // Use Set-Location with -LiteralPath for paths with special characters
                 let escaped_path = path.replace("'", "''");
                 Command::new(ps_path)
-                    .args(["-NoExit", "-Command", &format!("Set-Location -LiteralPath '{}'", escaped_path)])
+                    .args([
+                        "-NoExit",
+                        "-Command",
+                        &format!("Set-Location -LiteralPath '{}'", escaped_path),
+                    ])
                     .creation_flags(CREATE_NEW_CONSOLE)
                     .spawn()
                     .map_err(|e| crate::error::AppError::from(e.to_string()))?;
@@ -136,22 +144,31 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                         .arg(&path)
                         .creation_flags(CREATE_NEW_CONSOLE)
                         .spawn()
-                        .map_err(|e| crate::error::AppError::from(format!("Failed to open custom terminal '{}': {}", custom, e)))?;
+                        .map_err(|e| {
+                            crate::error::AppError::from(format!(
+                                "Failed to open custom terminal '{}': {}",
+                                custom, e
+                            ))
+                        })?;
                 } else {
-                    return Err(crate::error::AppError::from("Custom terminal path not provided".to_string()));
+                    return Err(crate::error::AppError::from(
+                        "Custom terminal path not provided".to_string(),
+                    ));
                 }
             }
             _ => {
                 // Default: Windows Terminal if available, otherwise PowerShell
                 let wt_path = terminal_path.as_deref().unwrap_or("wt");
-                let wt_result = Command::new(wt_path)
-                    .args(["-d", &path])
-                    .spawn();
+                let wt_result = Command::new(wt_path).args(["-d", &path]).spawn();
 
                 if wt_result.is_err() {
                     let escaped_path = path.replace("'", "''");
                     Command::new("powershell")
-                        .args(["-NoExit", "-Command", &format!("Set-Location -LiteralPath '{}'", escaped_path)])
+                        .args([
+                            "-NoExit",
+                            "-Command",
+                            &format!("Set-Location -LiteralPath '{}'", escaped_path),
+                        ])
                         .creation_flags(CREATE_NEW_CONSOLE)
                         .spawn()
                         .map_err(|e| crate::error::AppError::from(e.to_string()))?;
@@ -176,15 +193,24 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                         Command::new("open")
                             .args(["-a", &custom, &path])
                             .spawn()
-                            .map_err(|e| crate::error::AppError::from(format!("Failed to open custom terminal '{}': {}", custom, e)))?;
+                            .map_err(|e| {
+                                crate::error::AppError::from(format!(
+                                    "Failed to open custom terminal '{}': {}",
+                                    custom, e
+                                ))
+                            })?;
                     } else {
-                        Command::new(&custom)
-                            .arg(&path)
-                            .spawn()
-                            .map_err(|e| crate::error::AppError::from(format!("Failed to open custom terminal '{}': {}", custom, e)))?;
+                        Command::new(&custom).arg(&path).spawn().map_err(|e| {
+                            crate::error::AppError::from(format!(
+                                "Failed to open custom terminal '{}': {}",
+                                custom, e
+                            ))
+                        })?;
                     }
                 } else {
-                    return Err(crate::error::AppError::from("Custom terminal path not provided".to_string()));
+                    return Err(crate::error::AppError::from(
+                        "Custom terminal path not provided".to_string(),
+                    ));
                 }
             }
             _ => {
@@ -205,9 +231,16 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                     Command::new(&custom)
                         .current_dir(&path)
                         .spawn()
-                        .map_err(|e| crate::error::AppError::from(format!("Failed to open custom terminal '{}': {}", custom, e)))?;
+                        .map_err(|e| {
+                            crate::error::AppError::from(format!(
+                                "Failed to open custom terminal '{}': {}",
+                                custom, e
+                            ))
+                        })?;
                 } else {
-                    return Err(crate::error::AppError::from("Custom terminal path not provided".to_string()));
+                    return Err(crate::error::AppError::from(
+                        "Custom terminal path not provided".to_string(),
+                    ));
                 }
             }
             "powershell" => {
@@ -240,9 +273,7 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
             _ => {
                 // Default: try Windows Terminal (WSL) with custom path, then common Linux terminals
                 let wt_path = terminal_path.as_deref().unwrap_or("wt.exe");
-                let wt_result = Command::new(wt_path)
-                    .args(["-d", &path])
-                    .spawn();
+                let wt_result = Command::new(wt_path).args(["-d", &path]).spawn();
 
                 if wt_result.is_err() {
                     let terminals = ["gnome-terminal", "konsole", "xterm", "xfce4-terminal"];
@@ -253,9 +284,7 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                             "gnome-terminal" => Command::new(term)
                                 .args(["--working-directory", &path])
                                 .spawn(),
-                            _ => Command::new(term)
-                                .current_dir(&path)
-                                .spawn(),
+                            _ => Command::new(term).current_dir(&path).spawn(),
                         };
 
                         if result.is_ok() {
@@ -265,7 +294,9 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                     }
 
                     if !opened {
-                        return Err(crate::error::AppError::from("No supported terminal emulator found".to_string()));
+                        return Err(crate::error::AppError::from(
+                            "No supported terminal emulator found".to_string(),
+                        ));
                     }
                 }
             }
@@ -315,7 +346,10 @@ pub struct TerminalTestResult {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn test_terminal(terminal_type: String, custom_path: Option<String>) -> AppResult<TerminalTestResult> {
+pub async fn test_terminal(
+    terminal_type: String,
+    custom_path: Option<String>,
+) -> AppResult<TerminalTestResult> {
     // If custom path provided, test it directly
     if let Some(ref path) = custom_path {
         #[cfg(target_os = "windows")]
@@ -325,9 +359,7 @@ pub async fn test_terminal(terminal_type: String, custom_path: Option<String>) -
             .output();
 
         #[cfg(not(target_os = "windows"))]
-        let result = Command::new(path)
-            .arg("--version")
-            .output();
+        let result = Command::new(path).arg("--version").output();
 
         return Ok(match result {
             Ok(_) => TerminalTestResult {
@@ -386,10 +418,7 @@ fn test_powershell() -> AppResult<TerminalTestResult> {
             .output();
 
         #[cfg(not(target_os = "windows"))]
-        let result = Command::new(path)
-            .arg("-Command")
-            .arg("echo test")
-            .output();
+        let result = Command::new(path).arg("-Command").arg("echo test").output();
 
         if result.is_ok() {
             return Ok(TerminalTestResult {
@@ -413,17 +442,10 @@ fn test_powershell() -> AppResult<TerminalTestResult> {
 
 fn test_cmd() -> AppResult<TerminalTestResult> {
     let paths_to_try = if cfg!(target_os = "windows") {
-        vec![
-            "cmd",
-            "cmd.exe",
-            "C:\\Windows\\System32\\cmd.exe",
-        ]
+        vec!["cmd", "cmd.exe", "C:\\Windows\\System32\\cmd.exe"]
     } else {
         // Linux/WSL
-        vec![
-            "cmd.exe",
-            "/mnt/c/Windows/System32/cmd.exe",
-        ]
+        vec!["cmd.exe", "/mnt/c/Windows/System32/cmd.exe"]
     };
 
     for path in &paths_to_try {
@@ -435,10 +457,7 @@ fn test_cmd() -> AppResult<TerminalTestResult> {
             .output();
 
         #[cfg(not(target_os = "windows"))]
-        let result = Command::new(path)
-            .arg("/c")
-            .arg("echo test")
-            .output();
+        let result = Command::new(path).arg("/c").arg("echo test").output();
 
         if result.is_ok() {
             return Ok(TerminalTestResult {
@@ -549,9 +568,7 @@ fn test_default_terminal() -> AppResult<TerminalTestResult> {
     #[cfg(target_os = "linux")]
     {
         // Try Windows Terminal (WSL) first
-        let wt_result = Command::new("wt.exe")
-            .arg("--version")
-            .output();
+        let wt_result = Command::new("wt.exe").arg("--version").output();
 
         if wt_result.is_ok() {
             return Ok(TerminalTestResult {
@@ -570,9 +587,7 @@ fn test_default_terminal() -> AppResult<TerminalTestResult> {
         ];
 
         for (term, arg) in terminals {
-            let result = Command::new(term)
-                .arg(arg)
-                .output();
+            let result = Command::new(term).arg(arg).output();
 
             if result.is_ok() {
                 return Ok(TerminalTestResult {
@@ -594,23 +609,33 @@ fn test_default_terminal() -> AppResult<TerminalTestResult> {
 #[tauri::command]
 #[specta::specta]
 pub async fn read_readme(path: String) -> AppResult<String> {
-    use std::path::PathBuf;
     use std::fs;
+    use std::path::PathBuf;
 
     let project_path = PathBuf::from(&path);
 
     // Try different README file names
-    let readme_names = vec!["README.md", "readme.md", "Readme.md", "README.MD", "README", "readme"];
+    let readme_names = vec![
+        "README.md",
+        "readme.md",
+        "Readme.md",
+        "README.MD",
+        "README",
+        "readme",
+    ];
 
     for name in readme_names {
         let readme_path = project_path.join(name);
         if readme_path.exists() {
-            return fs::read_to_string(readme_path)
-                .map_err(|e| crate::error::AppError::from(format!("Failed to read README: {}", e)));
+            return fs::read_to_string(readme_path).map_err(|e| {
+                crate::error::AppError::from(format!("Failed to read README: {}", e))
+            });
         }
     }
 
-    Err(crate::error::AppError::from("README file not found".to_string()))
+    Err(crate::error::AppError::from(
+        "README file not found".to_string(),
+    ))
 }
 
 #[tauri::command]
@@ -635,7 +660,9 @@ pub async fn check_git_version() -> AppResult<String> {
         let version = version.replace("git version ", "");
         Ok(version)
     } else {
-        Err(crate::error::AppError::from("Git not installed".to_string()))
+        Err(crate::error::AppError::from(
+            "Git not installed".to_string(),
+        ))
     }
 }
 
@@ -659,7 +686,9 @@ pub async fn check_node_version() -> AppResult<String> {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(version)
     } else {
-        Err(crate::error::AppError::from("Node.js not installed".to_string()))
+        Err(crate::error::AppError::from(
+            "Node.js not installed".to_string(),
+        ))
     }
 }
 
@@ -687,26 +716,34 @@ pub async fn get_app_paths(app_handle: tauri::AppHandle) -> AppResult<AppPaths> 
         )
     } else {
         (
-            path_resolver.app_data_dir()
+            path_resolver
+                .app_data_dir()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| "未知".to_string()),
-            path_resolver.app_log_dir()
+            path_resolver
+                .app_log_dir()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| "未知".to_string()),
         )
     };
 
-    let config_dir = path_resolver.app_config_dir()
+    let config_dir = path_resolver
+        .app_config_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| "未知".to_string());
 
-    let cache_dir = path_resolver.app_cache_dir()
+    let cache_dir = path_resolver
+        .app_cache_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| "未知".to_string());
 
     // 获取当前可执行文件路径
     let install_dir = std::env::current_exe()
-        .map(|p| p.parent().map(|parent| parent.to_string_lossy().to_string()).unwrap_or_else(|| "未知".to_string()))
+        .map(|p| {
+            p.parent()
+                .map(|parent| parent.to_string_lossy().to_string())
+                .unwrap_or_else(|| "未知".to_string())
+        })
         .unwrap_or_else(|_| "未知".to_string());
 
     Ok(AppPaths {
@@ -721,15 +758,16 @@ pub async fn get_app_paths(app_handle: tauri::AppHandle) -> AppResult<AppPaths> 
 #[tauri::command]
 #[specta::specta]
 pub async fn clear_logs(app_handle: tauri::AppHandle) -> AppResult<String> {
-    use tauri::Manager;
     use std::fs;
+    use tauri::Manager;
 
     // 优先使用新的日志路径
     let log_dir = if let Ok(config) = storage::get_storage_config() {
         config.logs_dir.clone()
     } else {
         let path_resolver = app_handle.path();
-        path_resolver.app_log_dir()
+        path_resolver
+            .app_log_dir()
             .map_err(|e| crate::error::AppError::from(format!("无法获取日志目录: {}", e)))?
     };
 
@@ -764,7 +802,10 @@ pub async fn clear_logs(app_handle: tauri::AppHandle) -> AppResult<String> {
         format!("{} B", total_size)
     };
 
-    Ok(format!("已清除 {} 个日志文件，释放 {}", deleted_count, size_str))
+    Ok(format!(
+        "已清除 {} 个日志文件，释放 {}",
+        deleted_count, size_str
+    ))
 }
 
 #[derive(serde::Serialize, specta::Type)]
@@ -800,8 +841,8 @@ pub fn get_cursor_position() -> AppResult<CursorPosition> {
 
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
         use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
         let mut point = POINT { x: 0, y: 0 };
         unsafe {
@@ -816,7 +857,9 @@ pub fn get_cursor_position() -> AppResult<CursorPosition> {
 
     #[cfg(target_os = "linux")]
     {
-        Err(crate::error::AppError::from("Linux 暂不支持获取光标位置".to_string()))
+        Err(crate::error::AppError::from(
+            "Linux 暂不支持获取光标位置".to_string(),
+        ))
     }
 }
 

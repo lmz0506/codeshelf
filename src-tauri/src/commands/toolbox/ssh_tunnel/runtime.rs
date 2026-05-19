@@ -81,9 +81,15 @@ pub(super) async fn run_tunnel_server(
                     ctrl.inc_connections();
                     update_tunnel_stats(&id).await;
 
-                    if let Err(e) =
-                        handle_tunnel_connection(inbound, peer_addr, handle, &rhost, rport, ctrl.clone())
-                            .await
+                    if let Err(e) = handle_tunnel_connection(
+                        inbound,
+                        peer_addr,
+                        handle,
+                        &rhost,
+                        rport,
+                        ctrl.clone(),
+                    )
+                    .await
                     {
                         log::debug!("SSH 隧道连接错误 {}: {}", peer_addr, e);
                     }
@@ -138,7 +144,12 @@ async fn handle_tunnel_connection(
             if ctrl1.is_stopped() {
                 break;
             }
-            match timeout(check_interval, tokio::io::AsyncReadExt::read(&mut ri, &mut buf)).await {
+            match timeout(
+                check_interval,
+                tokio::io::AsyncReadExt::read(&mut ri, &mut buf),
+            )
+            .await
+            {
                 Ok(Ok(0)) => break,
                 Ok(Ok(n)) => {
                     ctrl1.add_bytes_out(n as u64);
@@ -162,7 +173,12 @@ async fn handle_tunnel_connection(
             if ctrl2.is_stopped() {
                 break;
             }
-            match timeout(check_interval, tokio::io::AsyncReadExt::read(&mut ro, &mut buf)).await {
+            match timeout(
+                check_interval,
+                tokio::io::AsyncReadExt::read(&mut ro, &mut buf),
+            )
+            .await
+            {
                 Ok(Ok(0)) => break,
                 Ok(Ok(n)) => {
                     ctrl2.add_bytes_in(n as u64);

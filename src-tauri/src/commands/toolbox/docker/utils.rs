@@ -1,5 +1,5 @@
-use crate::error::AppResult;
 use super::types::DockerCommandResult;
+use crate::error::AppResult;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -38,7 +38,13 @@ fn docker_program() -> PathBuf {
     docker_candidates()
         .into_iter()
         .find(|candidate| candidate.exists())
-        .unwrap_or_else(|| PathBuf::from(if cfg!(target_os = "windows") { "docker.exe" } else { "docker" }))
+        .unwrap_or_else(|| {
+            PathBuf::from(if cfg!(target_os = "windows") {
+                "docker.exe"
+            } else {
+                "docker"
+            })
+        })
 }
 
 fn quote_arg(arg: &str) -> String {
@@ -69,7 +75,10 @@ pub(super) fn run_docker(args: &[&str], cwd: Option<&Path>) -> DockerCommandResu
     let command_text = format!(
         "{} {}",
         quote_arg(&program.to_string_lossy()),
-        args.iter().map(|arg| quote_arg(arg)).collect::<Vec<_>>().join(" ")
+        args.iter()
+            .map(|arg| quote_arg(arg))
+            .collect::<Vec<_>>()
+            .join(" ")
     );
 
     match command.output() {
@@ -92,7 +101,8 @@ pub(super) fn run_docker(args: &[&str], cwd: Option<&Path>) -> DockerCommandResu
 }
 
 pub(super) fn project_root(project_path: &str) -> AppResult<PathBuf> {
-    let root = fs::canonicalize(project_path).map_err(|e| crate::error::AppError::from(format!("项目目录无效: {}", e)))?;
+    let root = fs::canonicalize(project_path)
+        .map_err(|e| crate::error::AppError::from(format!("项目目录无效: {}", e)))?;
     if !root.is_dir() {
         return Err("项目路径不是目录".into());
     }
@@ -118,12 +128,17 @@ fn validate_relative_project_path(rel_path: &str) -> AppResult<PathBuf> {
 pub(super) fn resolve_project_file(root: &Path, rel_path: &str) -> AppResult<PathBuf> {
     let rel = validate_relative_project_path(rel_path)?;
     let full = root.join(rel);
-    let parent = full.parent().ok_or_else(|| crate::error::AppError::from("文件路径无效".to_string()))?;
+    let parent = full
+        .parent()
+        .ok_or_else(|| crate::error::AppError::from("文件路径无效".to_string()))?;
     let parent_canon = if parent.exists() {
-        fs::canonicalize(parent).map_err(|e| crate::error::AppError::from(format!("父目录无效: {}", e)))?
+        fs::canonicalize(parent)
+            .map_err(|e| crate::error::AppError::from(format!("父目录无效: {}", e)))?
     } else {
-        fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
-        fs::canonicalize(parent).map_err(|e| crate::error::AppError::from(format!("父目录无效: {}", e)))?
+        fs::create_dir_all(parent)
+            .map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
+        fs::canonicalize(parent)
+            .map_err(|e| crate::error::AppError::from(format!("父目录无效: {}", e)))?
     };
     if !parent_canon.starts_with(root) {
         return Err("路径越界".into());
@@ -134,7 +149,8 @@ pub(super) fn resolve_project_file(root: &Path, rel_path: &str) -> AppResult<Pat
 pub(super) fn resolve_existing_project_file(root: &Path, rel_path: &str) -> AppResult<PathBuf> {
     let rel = validate_relative_project_path(rel_path)?;
     let full = root.join(rel);
-    let canon = fs::canonicalize(&full).map_err(|e| crate::error::AppError::from(format!("文件无效: {}", e)))?;
+    let canon = fs::canonicalize(&full)
+        .map_err(|e| crate::error::AppError::from(format!("文件无效: {}", e)))?;
     if !canon.starts_with(root) {
         return Err("路径越界".into());
     }

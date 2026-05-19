@@ -5,8 +5,8 @@
 // - runtime: start_server 与底层 axum 运行/代理处理
 // - nginx:   生成等价 nginx 配置
 
-use crate::error::AppResult;
 use super::ServerConfig;
+use crate::error::AppResult;
 use crate::storage;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -27,7 +27,8 @@ pub(super) static SERVERS: Lazy<Arc<Mutex<HashMap<String, ServerConfig>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 /// 是否已从文件加载
-pub(super) static SERVERS_LOADED: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+pub(super) static SERVERS_LOADED: Lazy<Arc<Mutex<bool>>> =
+    Lazy::new(|| Arc::new(Mutex::new(false)));
 
 /// 服务控制器
 pub(super) static SERVER_CONTROLLERS: Lazy<Arc<Mutex<HashMap<String, Arc<ServerController>>>>> =
@@ -70,7 +71,11 @@ fn load_servers_from_file() -> AppResult<HashMap<String, ServerConfig>> {
     let servers_arr: Vec<ServerConfig> = match serde_json::from_str(&content) {
         Ok(arr) => arr,
         Err(e) => {
-            log::error!("解析服务配置 JSON 失败: {}，内容: {}", e, &content[..content.len().min(200)]);
+            log::error!(
+                "解析服务配置 JSON 失败: {}，内容: {}",
+                e,
+                &content[..content.len().min(200)]
+            );
             Vec::new()
         }
     };

@@ -42,7 +42,10 @@ async fn run_web_fetch(args: &Value) -> AppResult<String> {
             }
         }
     }
-    let resp = req.send().await.map_err(|e| crate::error::AppError::from(format!("请求失败: {}", e)))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("请求失败: {}", e)))?;
     let status = resp.status();
     let final_url = resp.url().to_string();
     let content_type = resp
@@ -51,7 +54,10 @@ async fn run_web_fetch(args: &Value) -> AppResult<String> {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let bytes = resp.bytes().await.map_err(|e| crate::error::AppError::from(format!("读取响应失败: {}", e)))?;
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("读取响应失败: {}", e)))?;
     let total_len = bytes.len();
     let truncated = total_len > max_bytes;
     let slice = &bytes[..total_len.min(max_bytes)];
@@ -96,7 +102,10 @@ async fn run_web_fetch(args: &Value) -> AppResult<String> {
     };
 
     let trailer = if truncated && !is_binary_ct {
-        format!("\n\n[已截断，原始 {} 字节；max_bytes={}]", total_len, max_bytes)
+        format!(
+            "\n\n[已截断，原始 {} 字节；max_bytes={}]",
+            total_len, max_bytes
+        )
     } else {
         String::new()
     };
@@ -119,8 +128,12 @@ fn html_to_text(html: &str) -> String {
             let open = format!("<{}", tag);
             let close = format!("</{}>", tag);
             let lower = s.to_lowercase();
-            let Some(start) = lower.find(&open) else { break };
-            let Some(end_rel) = lower[start..].find(&close) else { break };
+            let Some(start) = lower.find(&open) else {
+                break;
+            };
+            let Some(end_rel) = lower[start..].find(&close) else {
+                break;
+            };
             let end = start + end_rel + close.len();
             s.replace_range(start..end, "");
         }
@@ -142,7 +155,11 @@ fn html_to_text(html: &str) -> String {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#39;", "'");
-    let mut lines: Vec<&str> = out.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    let mut lines: Vec<&str> = out
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
     lines.dedup();
     lines.join("\n")
 }

@@ -1,7 +1,7 @@
 // 暂存/还原/stash/commit/revert/cherry-pick
 
-use crate::error::AppResult;
 use super::{is_system_junk_file, run_git_command};
+use crate::error::AppResult;
 
 #[tauri::command]
 #[specta::specta]
@@ -9,7 +9,17 @@ pub async fn git_add(path: String, files: Vec<String>) -> AppResult<String> {
     if files.is_empty() {
         // Add all changes while keeping macOS Finder metadata out of commits,
         // even when the target project has not configured its own .gitignore.
-        run_git_command(&path, &["add", "-A", "--", ".", ":(exclude).DS_Store", ":(exclude)**/.DS_Store"])
+        run_git_command(
+            &path,
+            &[
+                "add",
+                "-A",
+                "--",
+                ".",
+                ":(exclude).DS_Store",
+                ":(exclude)**/.DS_Store",
+            ],
+        )
     } else {
         // Add specific files
         let files_to_add: Vec<String> = files
@@ -40,9 +50,15 @@ pub async fn git_unstage(path: String, files: Vec<String>) -> AppResult<String> 
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_discard_files(path: String, files: Vec<String>, include_untracked: bool) -> AppResult<String> {
+pub async fn git_discard_files(
+    path: String,
+    files: Vec<String>,
+    include_untracked: bool,
+) -> AppResult<String> {
     if files.is_empty() {
-        return Err(crate::error::AppError::from("请选择要丢弃的文件".to_string()));
+        return Err(crate::error::AppError::from(
+            "请选择要丢弃的文件".to_string(),
+        ));
     }
 
     if include_untracked {
@@ -100,7 +116,11 @@ pub async fn git_commit(path: String, message: String) -> AppResult<String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_add_and_commit(path: String, files: Vec<String>, message: String) -> AppResult<String> {
+pub async fn git_add_and_commit(
+    path: String,
+    files: Vec<String>,
+    message: String,
+) -> AppResult<String> {
     if message.trim().is_empty() {
         return Err(crate::error::AppError::from("提交信息不能为空".to_string()));
     }

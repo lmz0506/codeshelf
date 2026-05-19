@@ -23,7 +23,11 @@ impl StorageConfig {
         // macOS: 使用系统标准路径，避免更新时 .app bundle 被替换导致数据丢失
         #[cfg(target_os = "macos")]
         let base_dir = dirs::data_dir()
-            .ok_or_else(|| crate::error::AppError::from("无法获取系统数据目录 (Application Support)".to_string()))?
+            .ok_or_else(|| {
+                crate::error::AppError::from(
+                    "无法获取系统数据目录 (Application Support)".to_string(),
+                )
+            })?
             .join("com.codeshelf.desktop");
 
         // Windows/Linux: 使用安装目录
@@ -129,7 +133,7 @@ impl StorageConfig {
 
     pub fn conversations_dir(&self) -> PathBuf {
         self.data_dir.join("conversations")
-      }
+    }
 
     pub fn memory_file(&self) -> PathBuf {
         self.data_dir.join("MEMORY.md")
@@ -155,6 +159,20 @@ impl StorageConfig {
         self.data_dir.join("resumes.json")
     }
 
+    pub fn resume_knowledge_dir(&self) -> PathBuf {
+        self.data_dir.join("resume_knowledge")
+    }
+
+    pub fn resume_knowledge_file(&self, project_id: &str) -> PathBuf {
+        self.resume_knowledge_dir()
+            .join(format!("{}.md", sanitize_id(project_id)))
+    }
+
+    pub fn resume_knowledge_history_dir(&self, project_id: &str) -> PathBuf {
+        self.resume_knowledge_dir()
+            .join(format!("{}.history", sanitize_id(project_id)))
+    }
+
     pub fn api_groups_file(&self) -> PathBuf {
         self.data_dir.join("api_groups.json")
     }
@@ -171,6 +189,20 @@ impl StorageConfig {
     pub fn db_file(&self) -> PathBuf {
         self.data_dir.join("codeshelf.db")
     }
+}
+
+/// 把 project_id 之类的标识符压成可以安全做文件名的形式：
+/// 只保留字母、数字、`-`、`_`，其它字符替换为 `_`。
+fn sanitize_id(id: &str) -> String {
+    id.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 /// 初始化存储配置
@@ -232,11 +264,17 @@ fn migrate_dir(src: &std::path::Path, dst: &std::path::Path) -> AppResult<()> {
         .map_err(|e| crate::error::AppError::from(format!("读取旧目录失败: {}", e)))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| crate::error::AppError::from(format!("读取目录条目失败: {}", e)))?;
+        let entry =
+            entry.map_err(|e| crate::error::AppError::from(format!("读取目录条目失败: {}", e)))?;
         if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
             let dest_file = dst.join(entry.file_name());
-            fs::copy(entry.path(), &dest_file)
-                .map_err(|e| crate::error::AppError::from(format!("迁移文件 {:?} 失败: {}", entry.file_name(), e)))?;
+            fs::copy(entry.path(), &dest_file).map_err(|e| {
+                crate::error::AppError::from(format!(
+                    "迁移文件 {:?} 失败: {}",
+                    entry.file_name(),
+                    e
+                ))
+            })?;
         }
     }
 

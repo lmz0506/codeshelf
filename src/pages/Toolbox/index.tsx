@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Box,
   Network,
+  FileText,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -27,6 +28,7 @@ import { ShortcutsMemo } from "./ShortcutsMemo";
 import { ClipboardManager } from "./ClipboardManager";
 import { DockerImageTool } from "./DockerImageTool";
 import { SshTunnel } from "./SshTunnel";
+import { ResumeGenerator } from "./ResumeGenerator";
 
 const tools = [
   {
@@ -85,6 +87,14 @@ const tools = [
     description: "自动记录复制内容，支持搜索、置顶、持久化存储，快捷键快速呼出",
     icon: ClipboardList,
     color: "bg-teal-500",
+  },
+  {
+    id: "resume" as ToolType,
+    name: "简历生成",
+    description: "基于 LangChain Deep Agents 分析项目代码，生成项目背景知识和 STAR 简历经历",
+    icon: FileText,
+    color: "bg-indigo-500",
+    beta: true,
   },
   {
     id: "sshTunnel" as ToolType,
@@ -149,6 +159,8 @@ export function ToolboxPage() {
         return <ShortcutsMemo onBack={() => setActiveTool(null)} />;
       case "clipboard":
         return <ClipboardManager onBack={() => setActiveTool(null)} />;
+      case "resume":
+        return <ResumeGenerator onBack={() => setActiveTool(null)} />;
       case "sshTunnel":
         return <SshTunnel onBack={() => setActiveTool(null)} />;
       default:

@@ -16,7 +16,8 @@ use super::CREATE_NO_WINDOW;
 pub async fn get_remotes(path: String) -> AppResult<Vec<RemoteInfo>> {
     let output = run_git_command(&path, &["remote", "-v"])?;
 
-    let mut remotes: std::collections::HashMap<String, RemoteInfo> = std::collections::HashMap::new();
+    let mut remotes: std::collections::HashMap<String, RemoteInfo> =
+        std::collections::HashMap::new();
 
     for line in output.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -71,7 +72,10 @@ pub async fn verify_remote_url(url: String) -> AppResult<()> {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(crate::error::AppError::from(format!("无法连接到远程仓库: {}", stderr.trim())))
+        Err(crate::error::AppError::from(format!(
+            "无法连接到远程仓库: {}",
+            stderr.trim()
+        )))
     }
 }
 
@@ -84,7 +88,12 @@ pub async fn remove_remote(path: String, name: String) -> AppResult<()> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_push(path: String, remote: String, branch: String, force: bool) -> AppResult<String> {
+pub async fn git_push(
+    path: String,
+    remote: String,
+    branch: String,
+    force: bool,
+) -> AppResult<String> {
     let mut args = vec!["push", &remote, &branch];
     if force {
         args.push("--force");
@@ -121,12 +130,18 @@ pub async fn sync_to_remote(
 
     if sync_all_branches {
         // Get the default branch of source remote (HEAD points to)
-        let default_branch = run_git_command(&path, &["symbolic-ref", &format!("refs/remotes/{}/HEAD", source_remote)])
-            .ok()
-            .and_then(|output| {
-                // Output is like: refs/remotes/origin/main
-                output.trim().split('/').last().map(|s| s.to_string())
-            });
+        let default_branch = run_git_command(
+            &path,
+            &[
+                "symbolic-ref",
+                &format!("refs/remotes/{}/HEAD", source_remote),
+            ],
+        )
+        .ok()
+        .and_then(|output| {
+            // Output is like: refs/remotes/origin/main
+            output.trim().split('/').last().map(|s| s.to_string())
+        });
 
         // Get all branches from source remote (excluding HEAD)
         let branches_output = run_git_command(&path, &["branch", "-r"])?;
@@ -135,7 +150,11 @@ pub async fn sync_to_remote(
             .filter_map(|line| {
                 let branch = line.trim();
                 if branch.starts_with(&format!("{}/", source_remote)) && !branch.contains("HEAD") {
-                    Some(branch.trim_start_matches(&format!("{}/", source_remote)).to_string())
+                    Some(
+                        branch
+                            .trim_start_matches(&format!("{}/", source_remote))
+                            .to_string(),
+                    )
                 } else {
                     None
                 }
@@ -143,7 +162,9 @@ pub async fn sync_to_remote(
             .collect();
 
         if branches.is_empty() {
-            return Err(crate::error::AppError::from("No branches found to sync".to_string()));
+            return Err(crate::error::AppError::from(
+                "No branches found to sync".to_string(),
+            ));
         }
 
         // Sort branches to push default branch first (important for new repos)
@@ -163,7 +184,10 @@ pub async fn sync_to_remote(
         // Use: refs/remotes/origin/branch:refs/heads/branch
         let mut results = Vec::new();
         for branch in &branches {
-            let refspec = format!("refs/remotes/{}/{}:refs/heads/{}", source_remote, branch, branch);
+            let refspec = format!(
+                "refs/remotes/{}/{}:refs/heads/{}",
+                source_remote, branch, branch
+            );
             let mut args = vec!["push", &target_remote, &refspec];
             if force {
                 args.push("--force");
@@ -182,7 +206,11 @@ pub async fn sync_to_remote(
             }
         }
 
-        Ok(format!("同步完成 {} 个分支:\n{}", branches.len(), results.join("\n")))
+        Ok(format!(
+            "同步完成 {} 个分支:\n{}",
+            branches.len(),
+            results.join("\n")
+        ))
     } else {
         // Sync only current branch
         let branch = run_git_command(&path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
@@ -193,6 +221,9 @@ pub async fn sync_to_remote(
         }
 
         run_git_command(&path, &args)?;
-        Ok(format!("Successfully synced branch '{}' to '{}'", branch, target_remote))
+        Ok(format!(
+            "Successfully synced branch '{}' to '{}'",
+            branch, target_remote
+        ))
     }
 }

@@ -5,9 +5,7 @@ use std::fs;
 
 use serde::{Deserialize, Serialize};
 
-use crate::storage::{
-    current_iso_time, generate_id, ApiChatSession, ApiChatSessionSummary,
-};
+use crate::storage::{current_iso_time, generate_id, ApiChatSession, ApiChatSessionSummary};
 
 use super::{session_path, sessions_dir};
 
@@ -19,8 +17,11 @@ pub async fn list_api_chat_sessions() -> AppResult<Vec<ApiChatSessionSummary>> {
         return Ok(Vec::new());
     }
     let mut out: Vec<ApiChatSessionSummary> = Vec::new();
-    for entry in fs::read_dir(&dir).map_err(|e| crate::error::AppError::from(format!("读取会话目录失败: {}", e)))? {
-        let entry = entry.map_err(|e| crate::error::AppError::from(format!("读取会话文件失败: {}", e)))?;
+    for entry in fs::read_dir(&dir)
+        .map_err(|e| crate::error::AppError::from(format!("读取会话目录失败: {}", e)))?
+    {
+        let entry =
+            entry.map_err(|e| crate::error::AppError::from(format!("读取会话文件失败: {}", e)))?;
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
@@ -55,8 +56,10 @@ pub async fn get_api_chat_session(session_id: String) -> AppResult<ApiChatSessio
     if !path.exists() {
         return Err("会话不存在".into());
     }
-    let content = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取会话失败: {}", e)))?;
-    serde_json::from_str(&content).map_err(|e| crate::error::AppError::from(format!("解析会话失败: {}", e)))
+    let content = fs::read_to_string(&path)
+        .map_err(|e| crate::error::AppError::from(format!("读取会话失败: {}", e)))?;
+    serde_json::from_str(&content)
+        .map_err(|e| crate::error::AppError::from(format!("解析会话失败: {}", e)))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -75,7 +78,8 @@ pub async fn create_api_chat_session(
     input: CreateApiChatSessionInput,
 ) -> AppResult<ApiChatSession> {
     let dir = sessions_dir()?;
-    fs::create_dir_all(&dir).map_err(|e| crate::error::AppError::from(format!("创建会话目录失败: {}", e)))?;
+    fs::create_dir_all(&dir)
+        .map_err(|e| crate::error::AppError::from(format!("创建会话目录失败: {}", e)))?;
     let now = current_iso_time();
     let session = ApiChatSession {
         id: generate_id(),
@@ -100,16 +104,16 @@ pub async fn create_api_chat_session(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_api_chat_session(
-    mut session: ApiChatSession,
-) -> AppResult<ApiChatSession> {
+pub async fn save_api_chat_session(mut session: ApiChatSession) -> AppResult<ApiChatSession> {
     let dir = sessions_dir()?;
-    fs::create_dir_all(&dir).map_err(|e| crate::error::AppError::from(format!("创建会话目录失败: {}", e)))?;
+    fs::create_dir_all(&dir)
+        .map_err(|e| crate::error::AppError::from(format!("创建会话目录失败: {}", e)))?;
     session.updated_at = current_iso_time();
     let path = session_path(&dir, &session.id);
-    let content =
-        serde_json::to_string_pretty(&session).map_err(|e| crate::error::AppError::from(format!("序列化会话失败: {}", e)))?;
-    fs::write(&path, content).map_err(|e| crate::error::AppError::from(format!("保存会话失败: {}", e)))?;
+    let content = serde_json::to_string_pretty(&session)
+        .map_err(|e| crate::error::AppError::from(format!("序列化会话失败: {}", e)))?;
+    fs::write(&path, content)
+        .map_err(|e| crate::error::AppError::from(format!("保存会话失败: {}", e)))?;
     Ok(session)
 }
 
@@ -130,7 +134,8 @@ pub async fn delete_api_chat_session(session_id: String) -> AppResult<()> {
     let dir = sessions_dir()?;
     let path = session_path(&dir, &session_id);
     if path.exists() {
-        fs::remove_file(&path).map_err(|e| crate::error::AppError::from(format!("删除会话失败: {}", e)))?;
+        fs::remove_file(&path)
+            .map_err(|e| crate::error::AppError::from(format!("删除会话失败: {}", e)))?;
     }
     Ok(())
 }

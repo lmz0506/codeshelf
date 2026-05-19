@@ -126,7 +126,9 @@ pub(super) fn run_git_command(path: &str, args: &[&str]) -> AppResult<String> {
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
-        Err(crate::error::AppError::from(String::from_utf8_lossy(&output.stderr).trim().to_string()))
+        Err(crate::error::AppError::from(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ))
     }
 }
 
@@ -144,7 +146,7 @@ pub(super) fn unquote_git_path(path: &str) -> String {
     let path = path.trim();
     if path.starts_with('"') && path.ends_with('"') && path.len() >= 2 {
         // 去除引号并处理转义字符
-        let inner = &path[1..path.len()-1];
+        let inner = &path[1..path.len() - 1];
         inner
             .replace("\\n", "\n")
             .replace("\\t", "\t")

@@ -76,24 +76,32 @@ fn backup_directory(src: &Path, dst: &Path) -> AppResult<()> {
         return Ok(());
     }
     // 目录可能空 —— 仍然创建一个空备份目录，作为"迁移执行过"的证据
-    fs::create_dir_all(dst).map_err(|e| crate::error::AppError::from(format!("创建备份目录失败: {}", e)))?;
+    fs::create_dir_all(dst)
+        .map_err(|e| crate::error::AppError::from(format!("创建备份目录失败: {}", e)))?;
     copy_dir_recursive(src, dst)?;
     Ok(())
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> AppResult<()> {
-    for entry in fs::read_dir(src).map_err(|e| crate::error::AppError::from(format!("读取目录 {:?} 失败: {}", src, e)))? {
-        let entry = entry.map_err(|e| crate::error::AppError::from(format!("读取条目失败: {}", e)))?;
+    for entry in fs::read_dir(src)
+        .map_err(|e| crate::error::AppError::from(format!("读取目录 {:?} 失败: {}", src, e)))?
+    {
+        let entry =
+            entry.map_err(|e| crate::error::AppError::from(format!("读取条目失败: {}", e)))?;
         let from = entry.path();
         let to = dst.join(entry.file_name());
         let ft = entry
             .file_type()
             .map_err(|e| crate::error::AppError::from(format!("读取类型失败 {:?}: {}", from, e)))?;
         if ft.is_dir() {
-            fs::create_dir_all(&to).map_err(|e| crate::error::AppError::from(format!("创建子目录 {:?} 失败: {}", to, e)))?;
+            fs::create_dir_all(&to).map_err(|e| {
+                crate::error::AppError::from(format!("创建子目录 {:?} 失败: {}", to, e))
+            })?;
             copy_dir_recursive(&from, &to)?;
         } else if ft.is_file() {
-            fs::copy(&from, &to).map_err(|e| crate::error::AppError::from(format!("复制 {:?} 失败: {}", from, e)))?;
+            fs::copy(&from, &to).map_err(|e| {
+                crate::error::AppError::from(format!("复制 {:?} 失败: {}", from, e))
+            })?;
         }
     }
     Ok(())
@@ -118,11 +126,16 @@ pub fn schedule_restore(data_dir: &Path, timestamp: &str) -> AppResult<()> {
         .ok_or_else(|| crate::error::AppError::from("无法定位 data_dir 父目录".to_string()))?;
     let backup_dir = parent.join(format!("backup_{}", timestamp));
     if !backup_dir.exists() {
-        return Err(crate::error::AppError::from(format!("备份 {} 不存在", timestamp)));
+        return Err(crate::error::AppError::from(format!(
+            "备份 {} 不存在",
+            timestamp
+        )));
     }
-    fs::create_dir_all(data_dir).map_err(|e| crate::error::AppError::from(format!("创建 data_dir 失败: {}", e)))?;
+    fs::create_dir_all(data_dir)
+        .map_err(|e| crate::error::AppError::from(format!("创建 data_dir 失败: {}", e)))?;
     let flag = data_dir.join(PENDING_RESTORE_FLAG);
-    fs::write(&flag, timestamp).map_err(|e| crate::error::AppError::from(format!("写入 restore 标记失败: {}", e)))?;
+    fs::write(&flag, timestamp)
+        .map_err(|e| crate::error::AppError::from(format!("写入 restore 标记失败: {}", e)))?;
     Ok(())
 }
 
@@ -138,7 +151,9 @@ pub fn apply_pending_restore(data_dir: &Path) -> AppResult<()> {
         .to_string();
     if timestamp.is_empty() {
         let _ = fs::remove_file(&flag);
-        return Err(crate::error::AppError::from("restore 标记内容为空".to_string()));
+        return Err(crate::error::AppError::from(
+            "restore 标记内容为空".to_string(),
+        ));
     }
 
     let parent = data_dir
@@ -147,7 +162,10 @@ pub fn apply_pending_restore(data_dir: &Path) -> AppResult<()> {
     let backup_dir = parent.join(format!("backup_{}", timestamp));
     if !backup_dir.exists() {
         let _ = fs::remove_file(&flag);
-        return Err(crate::error::AppError::from(format!("备份 {} 已不存在", timestamp)));
+        return Err(crate::error::AppError::from(format!(
+            "备份 {} 已不存在",
+            timestamp
+        )));
     }
 
     log::warn!("正在从备份 {} 恢复数据 ...", timestamp);
@@ -174,8 +192,11 @@ pub fn list_backup_timestamps(data_dir: &Path) -> AppResult<Vec<String>> {
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
-    for entry in fs::read_dir(parent).map_err(|e| crate::error::AppError::from(format!("读取备份目录失败: {}", e)))? {
-        let entry = entry.map_err(|e| crate::error::AppError::from(format!("读取条目失败: {}", e)))?;
+    for entry in fs::read_dir(parent)
+        .map_err(|e| crate::error::AppError::from(format!("读取备份目录失败: {}", e)))?
+    {
+        let entry =
+            entry.map_err(|e| crate::error::AppError::from(format!("读取条目失败: {}", e)))?;
         let name = entry.file_name().to_string_lossy().to_string();
         if let Some(ts) = name.strip_prefix("backup_") {
             out.push(ts.to_string());
@@ -189,8 +210,11 @@ fn clear_dir_keeping(dir: &Path, keep_names: &[&str]) -> AppResult<()> {
     if !dir.exists() {
         return Ok(());
     }
-    for entry in fs::read_dir(dir).map_err(|e| crate::error::AppError::from(format!("读取 data_dir 失败: {}", e)))? {
-        let entry = entry.map_err(|e| crate::error::AppError::from(format!("读取条目失败: {}", e)))?;
+    for entry in fs::read_dir(dir)
+        .map_err(|e| crate::error::AppError::from(format!("读取 data_dir 失败: {}", e)))?
+    {
+        let entry =
+            entry.map_err(|e| crate::error::AppError::from(format!("读取条目失败: {}", e)))?;
         let name = entry.file_name().to_string_lossy().to_string();
         if keep_names.contains(&name.as_str()) {
             continue;
@@ -200,11 +224,13 @@ fn clear_dir_keeping(dir: &Path, keep_names: &[&str]) -> AppResult<()> {
             .file_type()
             .map_err(|e| crate::error::AppError::from(format!("读取类型失败 {:?}: {}", path, e)))?;
         if ft.is_dir() {
-            fs::remove_dir_all(&path)
-                .map_err(|e| crate::error::AppError::from(format!("删除目录 {:?} 失败: {}", path, e)))?;
+            fs::remove_dir_all(&path).map_err(|e| {
+                crate::error::AppError::from(format!("删除目录 {:?} 失败: {}", path, e))
+            })?;
         } else {
-            fs::remove_file(&path)
-                .map_err(|e| crate::error::AppError::from(format!("删除文件 {:?} 失败: {}", path, e)))?;
+            fs::remove_file(&path).map_err(|e| {
+                crate::error::AppError::from(format!("删除文件 {:?} 失败: {}", path, e))
+            })?;
         }
     }
     Ok(())

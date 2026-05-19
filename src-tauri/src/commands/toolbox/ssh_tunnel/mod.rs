@@ -7,8 +7,8 @@
 // - commands:  Tauri 命令（CRUD + start/stop + get + stats + list_hosts）
 // - port_test: 端口连通性测试命令与跨平台实现
 
-use crate::error::AppResult;
 use super::SshTunnel;
+use crate::error::AppResult;
 use crate::storage;
 use once_cell::sync::Lazy;
 use russh::client;
@@ -31,7 +31,8 @@ pub(super) static SSH_TUNNELS: Lazy<Arc<Mutex<HashMap<String, SshTunnel>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 /// 是否已加载
-pub(super) static TUNNELS_LOADED: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+pub(super) static TUNNELS_LOADED: Lazy<Arc<Mutex<bool>>> =
+    Lazy::new(|| Arc::new(Mutex::new(false)));
 
 /// 控制器（用于停止）
 pub(super) static SSH_CONTROLLERS: Lazy<Arc<Mutex<HashMap<String, Arc<SshTunnelController>>>>> =
@@ -130,7 +131,8 @@ fn load_tunnels_from_file() -> AppResult<HashMap<String, SshTunnel>> {
         return Ok(HashMap::new());
     }
 
-    let content = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取 SSH 隧道失败: {}", e)))?;
+    let content = fs::read_to_string(&path)
+        .map_err(|e| crate::error::AppError::from(format!("读取 SSH 隧道失败: {}", e)))?;
 
     let arr: Vec<SshTunnel> = match serde_json::from_str(&content) {
         Ok(v) => v,
@@ -174,10 +176,12 @@ pub(super) async fn save_tunnels_to_file() -> AppResult<()> {
 
     let tunnels = SSH_TUNNELS.lock().await;
     let data: Vec<&SshTunnel> = tunnels.values().collect();
-    let content = serde_json::to_string(&data).map_err(|e| crate::error::AppError::from(format!("序列化 SSH 隧道失败: {}", e)))?;
+    let content = serde_json::to_string(&data)
+        .map_err(|e| crate::error::AppError::from(format!("序列化 SSH 隧道失败: {}", e)))?;
 
     let path = config.ssh_tunnels_file();
-    fs::write(&path, content).map_err(|e| crate::error::AppError::from(format!("写入 SSH 隧道失败: {}", e)))?;
+    fs::write(&path, content)
+        .map_err(|e| crate::error::AppError::from(format!("写入 SSH 隧道失败: {}", e)))?;
 
     log::info!("SSH 隧道保存成功，共 {} 个", tunnels.len());
     Ok(())

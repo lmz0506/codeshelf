@@ -1,15 +1,15 @@
 // TCP 服务器实现
 
-use crate::error::AppResult;
 use super::types::*;
 use crate::commands::toolbox::generate_id;
+use crate::error::AppResult;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot, RwLock};
-use tauri::{AppHandle, Emitter};
 
 /// 连接的客户端写入器
 struct ClientWriter {
@@ -23,8 +23,8 @@ struct ServerSendRequest {
 
 /// 全局服务器客户端管理
 use once_cell::sync::Lazy;
-use tokio::sync::RwLock as TokioRwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::sync::RwLock as TokioRwLock;
 
 static SERVER_CLIENTS: Lazy<TokioRwLock<HashMap<String, HashMap<String, ClientWriter>>>> =
     Lazy::new(|| TokioRwLock::new(HashMap::new()));
@@ -47,26 +47,32 @@ pub async fn start_tcp_server(
 
     // 绑定监听
     let addr = format!("{}:{}", host, port);
-    let listener = TcpListener::bind(&addr)
-        .await
-        .map_err(|e| {
-            let err_msg = if e.kind() == std::io::ErrorKind::AddrInUse {
-                format!("端口 {} 已被占用，请先停止占用该端口的服务或选择其他端口", port)
-            } else {
-                format!("绑定端口失败: {}", e)
-            };
-            // 更新状态为错误
-            let session_state_clone = session_state.clone();
-            let app_clone = app.clone();
-            let session_id_clone = session_id.clone();
-            tokio::spawn(async move {
-                let mut state = session_state_clone.write().await;
-                state.session.status = SessionStatus::Error;
-                state.session.error_message = Some(err_msg.clone());
-                emit_status_changed(&app_clone, &session_id_clone, SessionStatus::Error, Some(err_msg));
-            });
+    let listener = TcpListener::bind(&addr).await.map_err(|e| {
+        let err_msg = if e.kind() == std::io::ErrorKind::AddrInUse {
+            format!(
+                "端口 {} 已被占用，请先停止占用该端口的服务或选择其他端口",
+                port
+            )
+        } else {
             format!("绑定端口失败: {}", e)
-        })?;
+        };
+        // 更新状态为错误
+        let session_state_clone = session_state.clone();
+        let app_clone = app.clone();
+        let session_id_clone = session_id.clone();
+        tokio::spawn(async move {
+            let mut state = session_state_clone.write().await;
+            state.session.status = SessionStatus::Error;
+            state.session.error_message = Some(err_msg.clone());
+            emit_status_changed(
+                &app_clone,
+                &session_id_clone,
+                SessionStatus::Error,
+                Some(err_msg),
+            );
+        });
+        format!("绑定端口失败: {}", e)
+    })?;
 
     // 更新状态为监听中
     {
@@ -78,11 +84,17 @@ pub async fn start_tcp_server(
     emit_status_changed(&app, &session_id, SessionStatus::Listening, None);
 
     // 初始化客户端存储
-    SERVER_CLIENTS.write().await.insert(session_id.clone(), HashMap::new());
+    SERVER_CLIENTS
+        .write()
+        .await
+        .insert(session_id.clone(), HashMap::new());
 
     // 创建 shutdown 标志
     let shutdown_flag = Arc::new(AtomicBool::new(false));
-    SERVER_SHUTDOWN_FLAGS.write().await.insert(session_id.clone(), shutdown_flag.clone());
+    SERVER_SHUTDOWN_FLAGS
+        .write()
+        .await
+        .insert(session_id.clone(), shutdown_flag.clone());
 
     // 创建关闭通道
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
@@ -165,10 +177,13 @@ async fn handle_client_connection(
     }
 
     // 发送客户端连接事件
-    let _ = app.emit("netcat-event", NetcatEvent::ClientConnected {
-        session_id: session_id.clone(),
-        client: client.clone(),
-    });
+    let _ = app.emit(
+        "netcat-event",
+        NetcatEvent::ClientConnected {
+            session_id: session_id.clone(),
+            client: client.clone(),
+        },
+    );
 
     // 分割流
     let (mut reader, writer) = stream.into_split();
@@ -202,24 +217,42 @@ async fn handle_client_connection(
         while let Some(request) = send_rx.recv().await {
             // 检查 shutdown 标志
             if shutdown_flag_send.load(Ordering::SeqCst) {
-                log::info!("Netcat Server 发送任务收到停止信号: client={}", client_addr_clone);
-                let _ = request.result_tx.send(Err(crate::error::AppError::from("连接已停止".to_string())));
+                log::info!(
+                    "Netcat Server 发送任务收到停止信号: client={}",
+                    client_addr_clone
+                );
+                let _ = request
+                    .result_tx
+                    .send(Err(crate::error::AppError::from("连接已停止".to_string())));
                 break;
             }
 
-            log::info!("Netcat Server 从通道收到数据: {} bytes, 准备写入客户端 {}",
-                request.data.len(), client_addr_clone);
+            log::info!(
+                "Netcat Server 从通道收到数据: {} bytes, 准备写入客户端 {}",
+                request.data.len(),
+                client_addr_clone
+            );
 
             let mut w = writer_clone.write().await;
             if let Err(e) = w.write_all(&request.data).await {
                 log::error!("发送数据到客户端失败: {}", e);
-                let _ = request.result_tx.send(Err(crate::error::AppError::from(format!("写入客户端失败: {}", e))));
+                let _ = request
+                    .result_tx
+                    .send(Err(crate::error::AppError::from(format!(
+                        "写入客户端失败: {}",
+                        e
+                    ))));
                 break;
             }
             // 刷新缓冲区，确保数据立即发送
             if let Err(e) = w.flush().await {
                 log::error!("刷新数据到客户端失败: {}", e);
-                let _ = request.result_tx.send(Err(crate::error::AppError::from(format!("刷新客户端失败: {}", e))));
+                let _ = request
+                    .result_tx
+                    .send(Err(crate::error::AppError::from(format!(
+                        "刷新客户端失败: {}",
+                        e
+                    ))));
                 break;
             }
 
@@ -248,31 +281,48 @@ async fn handle_client_connection(
         loop {
             // 先检查 shutdown 标志
             if shutdown_flag_read.load(Ordering::SeqCst) {
-                log::info!("Netcat Server [{}] 读取任务收到停止信号: client={}",
-                    client_id_clone, client_addr);
+                log::info!(
+                    "Netcat Server [{}] 读取任务收到停止信号: client={}",
+                    client_id_clone,
+                    client_addr
+                );
                 break;
             }
 
-            log::debug!("Netcat Server [{}] 等待读取数据 (已收{}条): client={}",
-                client_id_clone, message_count, client_addr);
+            log::debug!(
+                "Netcat Server [{}] 等待读取数据 (已收{}条): client={}",
+                client_id_clone,
+                message_count,
+                client_addr
+            );
 
             // 使用较短的超时 (100ms)，以便频繁检查 shutdown 标志
             let read_result = tokio::time::timeout(
                 std::time::Duration::from_millis(100),
-                reader.read(&mut buffer)
-            ).await;
+                reader.read(&mut buffer),
+            )
+            .await;
 
             match read_result {
                 Ok(Ok(0)) => {
                     // 客户端断开
-                    log::info!("Netcat Server [{}] 客户端断开 (read=0): client={}, 共收到{}条消息",
-                        client_id_clone, client_addr, message_count);
+                    log::info!(
+                        "Netcat Server [{}] 客户端断开 (read=0): client={}, 共收到{}条消息",
+                        client_id_clone,
+                        client_addr,
+                        message_count
+                    );
                     break;
                 }
                 Ok(Ok(n)) => {
                     message_count += 1;
-                    log::info!("Netcat Server [{}] 收到第{}条数据: {} bytes from {}",
-                        client_id_clone, message_count, n, client_addr);
+                    log::info!(
+                        "Netcat Server [{}] 收到第{}条数据: {} bytes from {}",
+                        client_id_clone,
+                        message_count,
+                        n,
+                        client_addr
+                    );
                     let data = buffer[..n].to_vec();
 
                     // 使用 spawn 来避免阻塞读取循环
@@ -289,15 +339,29 @@ async fn handle_client_connection(
                             data,
                             Some(client_id_for_handle.clone()),
                             Some(client_addr_for_handle.clone()),
-                        ).await;
-                        log::debug!("Netcat Server [{}] 第{}条数据处理完成", client_id_for_handle, msg_num);
+                        )
+                        .await;
+                        log::debug!(
+                            "Netcat Server [{}] 第{}条数据处理完成",
+                            client_id_for_handle,
+                            msg_num
+                        );
                     });
 
-                    log::debug!("Netcat Server [{}] 数据已提交处理: client={}", client_id_clone, client_addr);
+                    log::debug!(
+                        "Netcat Server [{}] 数据已提交处理: client={}",
+                        client_id_clone,
+                        client_addr
+                    );
                 }
                 Ok(Err(e)) => {
-                    log::error!("Netcat Server [{}] 读取客户端数据失败: {} - {}, 已收到{}条消息",
-                        client_id_clone, client_addr, e, message_count);
+                    log::error!(
+                        "Netcat Server [{}] 读取客户端数据失败: {} - {}, 已收到{}条消息",
+                        client_id_clone,
+                        client_addr,
+                        e,
+                        message_count
+                    );
                     break;
                 }
                 Err(_) => {
@@ -307,14 +371,19 @@ async fn handle_client_connection(
             }
         }
 
-        log::info!("Netcat Server 读取任务结束: client={}, 共收到{}条消息", client_addr, message_count);
+        log::info!(
+            "Netcat Server 读取任务结束: client={}, 共收到{}条消息",
+            client_addr,
+            message_count
+        );
         // 客户端断开处理
         handle_client_disconnect(
             &app_clone,
             &session_state_clone,
             &session_id_clone,
             &client_id_clone,
-        ).await;
+        )
+        .await;
     });
 }
 
@@ -341,10 +410,13 @@ async fn handle_client_disconnect(
     }
 
     // 发送断开事件
-    let _ = app.emit("netcat-event", NetcatEvent::ClientDisconnected {
-        session_id: session_id.to_string(),
-        client_id: client_id.to_string(),
-    });
+    let _ = app.emit(
+        "netcat-event",
+        NetcatEvent::ClientDisconnected {
+            session_id: session_id.to_string(),
+            client_id: client_id.to_string(),
+        },
+    );
 }
 
 /// 处理接收到的数据
@@ -361,14 +433,16 @@ async fn handle_received_data(
 
     // 安全截断预览（字符边界安全）
     let preview_safe: String = data_preview.chars().take(50).collect();
-    log::info!("Netcat Server handle_received_data: {} bytes, from={:?}, preview={}",
-        data.len(), client_addr, preview_safe);
+    log::info!(
+        "Netcat Server handle_received_data: {} bytes, from={:?}, preview={}",
+        data.len(),
+        client_addr,
+        preview_safe
+    );
 
     // 使用超时来获取锁，避免死锁
-    let lock_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        session_state.write()
-    ).await;
+    let lock_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), session_state.write()).await;
 
     let (session_id, message) = match lock_result {
         Ok(mut state) => {
@@ -405,7 +479,11 @@ async fn handle_received_data(
 
             let sid = state.session.id.clone();
             let msg_count = state.session.message_count;
-            log::debug!("Netcat Server 状态更新完成: session={}, 消息总数={}", sid, msg_count);
+            log::debug!(
+                "Netcat Server 状态更新完成: session={}, 消息总数={}",
+                sid,
+                msg_count
+            );
 
             (sid, message)
         }
@@ -424,14 +502,22 @@ async fn handle_received_data(
     log::debug!("Netcat Server 准备发送事件: session={}", session_id);
     match app.emit("netcat-event", &event) {
         Ok(_) => log::info!("Netcat Server 消息事件已发送: session={}", session_id),
-        Err(e) => log::error!("Netcat Server 消息事件发送失败: {} (session={})", e, session_id),
+        Err(e) => log::error!(
+            "Netcat Server 消息事件发送失败: {} (session={})",
+            e,
+            session_id
+        ),
     }
 }
 
 /// 发送数据到指定客户端
 pub async fn send_to_client(session_id: &str, client_id: &str, data: Vec<u8>) -> AppResult<()> {
-    log::info!("Netcat Server 发送数据到客户端: session={}, client={}, size={}",
-        session_id, client_id, data.len());
+    log::info!(
+        "Netcat Server 发送数据到客户端: session={}, client={}, size={}",
+        session_id,
+        client_id,
+        data.len()
+    );
 
     let tx = {
         let servers = SERVER_CLIENTS.read().await;
@@ -440,7 +526,11 @@ pub async fn send_to_client(session_id: &str, client_id: &str, data: Vec<u8>) ->
         log::debug!("当前会话列表: {:?}", servers.keys().collect::<Vec<_>>());
 
         if let Some(clients) = servers.get(session_id) {
-            log::debug!("会话 {} 的客户端列表: {:?}", session_id, clients.keys().collect::<Vec<_>>());
+            log::debug!(
+                "会话 {} 的客户端列表: {:?}",
+                session_id,
+                clients.keys().collect::<Vec<_>>()
+            );
             clients.get(client_id).map(|client| client.tx.clone())
         } else {
             None
@@ -456,18 +546,24 @@ pub async fn send_to_client(session_id: &str, client_id: &str, data: Vec<u8>) ->
                 format!("发送失败: {}", e)
             })?;
 
-        result_rx
-            .await
-            .map_err(|_| "发送任务已关闭".to_string())?
+        result_rx.await.map_err(|_| "发送任务已关闭".to_string())?
     } else {
-        log::error!("Netcat Server 客户端不存在或会话不存在: session={}, client={}", session_id, client_id);
+        log::error!(
+            "Netcat Server 客户端不存在或会话不存在: session={}, client={}",
+            session_id,
+            client_id
+        );
         Err(crate::error::AppError::from("客户端不存在".to_string()))
     }
 }
 
 /// 广播数据到所有客户端
 pub async fn broadcast_to_clients(session_id: &str, data: Vec<u8>) -> AppResult<()> {
-    log::info!("Netcat Server 广播数据: session={}, size={}", session_id, data.len());
+    log::info!(
+        "Netcat Server 广播数据: session={}, size={}",
+        session_id,
+        data.len()
+    );
 
     let client_txs = {
         let servers = SERVER_CLIENTS.read().await;
@@ -488,13 +584,21 @@ pub async fn broadcast_to_clients(session_id: &str, data: Vec<u8>) -> AppResult<
 
         if client_count == 0 {
             log::warn!("Netcat Server 没有已连接的客户端");
-            return Err(crate::error::AppError::from("没有已连接的客户端".to_string()));
+            return Err(crate::error::AppError::from(
+                "没有已连接的客户端".to_string(),
+            ));
         }
 
         let mut failed = Vec::new();
         for (client_id, tx) in client_txs {
             let (result_tx, result_rx) = oneshot::channel();
-            match tx.send(ServerSendRequest { data: data.clone(), result_tx }).await {
+            match tx
+                .send(ServerSendRequest {
+                    data: data.clone(),
+                    result_tx,
+                })
+                .await
+            {
                 Ok(_) => match result_rx.await {
                     Ok(Ok(())) => log::debug!("广播到客户端 {} 成功", client_id),
                     Ok(Err(e)) => {
@@ -516,11 +620,16 @@ pub async fn broadcast_to_clients(session_id: &str, data: Vec<u8>) -> AppResult<
         if failed.is_empty() {
             Ok(())
         } else {
-            Err(crate::error::AppError::from(format!("部分客户端发送失败: {}", failed.join(", "))))
+            Err(crate::error::AppError::from(format!(
+                "部分客户端发送失败: {}",
+                failed.join(", ")
+            )))
         }
     } else {
         log::warn!("Netcat Server 没有已连接的客户端");
-        Err(crate::error::AppError::from("没有已连接的客户端".to_string()))
+        Err(crate::error::AppError::from(
+            "没有已连接的客户端".to_string(),
+        ))
     }
 }
 
@@ -560,7 +669,12 @@ pub async fn shutdown_all_clients(session_id: &str) {
 }
 
 /// 发送状态变更事件
-fn emit_status_changed(app: &AppHandle, session_id: &str, status: SessionStatus, error: Option<String>) {
+fn emit_status_changed(
+    app: &AppHandle,
+    session_id: &str,
+    status: SessionStatus,
+    error: Option<String>,
+) {
     let event = NetcatEvent::StatusChanged {
         session_id: session_id.to_string(),
         status,
@@ -568,7 +682,11 @@ fn emit_status_changed(app: &AppHandle, session_id: &str, status: SessionStatus,
     };
 
     match app.emit("netcat-event", &event) {
-        Ok(_) => log::info!("Netcat Server 状态变更: session={}, status={:?}", session_id, status),
+        Ok(_) => log::info!(
+            "Netcat Server 状态变更: session={}, status={:?}",
+            session_id,
+            status
+        ),
         Err(e) => log::error!("Netcat Server 状态事件发送失败: {}", e),
     }
 }
@@ -585,11 +703,10 @@ fn current_timestamp() -> u64 {
 fn bytes_to_display_string(data: &[u8]) -> String {
     match String::from_utf8(data.to_vec()) {
         Ok(s) => s,
-        Err(_) => {
-            data.iter()
-                .map(|b| format!("{:02X}", b))
-                .collect::<Vec<_>>()
-                .join(" ")
-        }
+        Err(_) => data
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect::<Vec<_>>()
+            .join(" "),
     }
 }

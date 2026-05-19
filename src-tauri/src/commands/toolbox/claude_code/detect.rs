@@ -39,7 +39,10 @@ pub async fn check_all_claude_installations() -> AppResult<Vec<ClaudeCodeInfo>> 
 #[tauri::command]
 #[specta::specta]
 pub async fn check_claude_by_path(claude_path: String) -> AppResult<ClaudeCodeInfo> {
-    println!("[DEBUG] check_claude_by_path called with: {:?}", claude_path);
+    println!(
+        "[DEBUG] check_claude_by_path called with: {:?}",
+        claude_path
+    );
     println!("[DEBUG] Path length: {}", claude_path.len());
     println!(
         "[DEBUG] Path bytes (first 50): {:?}",
@@ -99,7 +102,11 @@ pub async fn check_claude_by_path(claude_path: String) -> AppResult<ClaudeCodeIn
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if !stderr.is_empty()
             && (stderr.contains("claude")
-                || stderr.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+                || stderr
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false))
         {
             info.installed = true;
             info.version = Some(parse_version(&stderr));
@@ -136,7 +143,10 @@ pub async fn check_claude_by_path(claude_path: String) -> AppResult<ClaudeCodeIn
 /// 通过 WSL UNC 路径检查 Claude Code 安装
 #[cfg(target_os = "windows")]
 pub(super) async fn check_claude_by_wsl_unc_path(unc_path: &str) -> AppResult<ClaudeCodeInfo> {
-    println!("[DEBUG] check_claude_by_wsl_unc_path called with: {:?}", unc_path);
+    println!(
+        "[DEBUG] check_claude_by_wsl_unc_path called with: {:?}",
+        unc_path
+    );
 
     let clean_path = unc_path.trim_start_matches("\\\\?\\");
     println!("[DEBUG] Clean path: {:?}", clean_path);
@@ -152,7 +162,9 @@ pub(super) async fn check_claude_by_wsl_unc_path(unc_path: &str) -> AppResult<Cl
     } else if let Some(pos) = lower_path.find("wsl$/") {
         (pos + 5, pos + 5)
     } else {
-        return Err(crate::error::AppError::from("无效的 WSL 路径格式".to_string()));
+        return Err(crate::error::AppError::from(
+            "无效的 WSL 路径格式".to_string(),
+        ));
     };
 
     let path_without_prefix = &clean_path[distro_start..];
@@ -160,7 +172,9 @@ pub(super) async fn check_claude_by_wsl_unc_path(unc_path: &str) -> AppResult<Cl
 
     let parts: Vec<&str> = path_without_prefix.splitn(2, '\\').collect();
     if parts.len() < 2 {
-        return Err(crate::error::AppError::from("无效的 WSL 路径格式：无法解析发行版名称".to_string()));
+        return Err(crate::error::AppError::from(
+            "无效的 WSL 路径格式：无法解析发行版名称".to_string(),
+        ));
     }
 
     let distro = parts[0];
@@ -222,7 +236,11 @@ pub(super) async fn check_claude_by_wsl_unc_path(unc_path: &str) -> AppResult<Cl
                 break;
             }
             if !stderr.is_empty()
-                && (stderr.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+                && (stderr
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
                     || stderr.contains("claude"))
             {
                 info.version = Some(parse_version(&stderr));
@@ -302,7 +320,14 @@ fn get_claude_version_host() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
         if let Ok(output) = new_command("cmd")
-            .args(["/c", "npm", "list", "-g", "@anthropic-ai/claude-code", "--depth=0"])
+            .args([
+                "/c",
+                "npm",
+                "list",
+                "-g",
+                "@anthropic-ai/claude-code",
+                "--depth=0",
+            ])
             .output()
         {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -320,7 +345,11 @@ fn get_claude_version_host() -> Option<String> {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if !stderr.is_empty()
             && (stderr.contains("claude")
-                || stderr.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+                || stderr
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false))
         {
             return Some(parse_version(&stderr));
         }
@@ -435,11 +464,19 @@ pub(super) fn parse_version(raw: &str) -> String {
     if let Some(start) = version_start {
         let version: String = re_pattern[start..].iter().collect();
         if version.contains('.') {
-            return version.trim_end_matches(|c: char| !c.is_ascii_digit()).to_string();
+            return version
+                .trim_end_matches(|c: char| !c.is_ascii_digit())
+                .to_string();
         }
     }
 
-    if raw.len() > 50 || !raw.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if raw.len() > 50
+        || !raw
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+    {
         return "未知版本".to_string();
     }
 
@@ -516,7 +553,11 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
             let linux_path = clean_wsl_output(&output.stdout);
             if !linux_path.is_empty() {
                 info.installed = true;
-                let unc_path = format!("\\\\wsl.localhost\\{}{}", distro, linux_path.replace('/', "\\"));
+                let unc_path = format!(
+                    "\\\\wsl.localhost\\{}{}",
+                    distro,
+                    linux_path.replace('/', "\\")
+                );
                 info.path = Some(unc_path);
             }
         }
@@ -531,7 +572,11 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
             {
                 if output.status.success() {
                     info.installed = true;
-                    let unc_path = format!("\\\\wsl.localhost\\{}{}", distro, test_path.replace('/', "\\"));
+                    let unc_path = format!(
+                        "\\\\wsl.localhost\\{}{}",
+                        distro,
+                        test_path.replace('/', "\\")
+                    );
                     info.path = Some(unc_path);
                     break;
                 }
@@ -554,7 +599,11 @@ async fn check_wsl_claude(distro: &str) -> ClaudeCodeInfo {
                 let stderr = clean_wsl_output(&output.stderr);
                 if !stderr.is_empty()
                     && (stderr.contains("claude")
-                        || stderr.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+                        || stderr
+                            .chars()
+                            .next()
+                            .map(|c| c.is_ascii_digit())
+                            .unwrap_or(false))
                 {
                     info.version = Some(parse_version(&stderr));
                 }
@@ -664,11 +713,20 @@ pub(super) fn scan_wsl_config_files(distro: &str, config_dir: &str) -> Vec<Confi
 fn get_config_file_definitions() -> Vec<(&'static str, &'static str)> {
     vec![
         ("settings.json", "全局设置：主题、模型偏好、API 配置等"),
-        ("settings.local.json", "本地设置覆盖：不同步到其他设备的个人配置"),
-        ("credentials.json", "认证凭据：API 密钥和身份验证信息（敏感）"),
+        (
+            "settings.local.json",
+            "本地设置覆盖：不同步到其他设备的个人配置",
+        ),
+        (
+            "credentials.json",
+            "认证凭据：API 密钥和身份验证信息（敏感）",
+        ),
         (".clauderc", "运行配置：自定义命令、别名、环境变量"),
         ("CLAUDE.md", "全局项目说明：为所有项目提供的默认上下文"),
-        ("history.jsonl", "对话历史：记录与 Claude 的交互历史（只读）"),
+        (
+            "history.jsonl",
+            "对话历史：记录与 Claude 的交互历史（只读）",
+        ),
         ("projects.json", "项目记录：最近打开的项目列表"),
         ("statsig.json", "功能标志：A/B 测试和功能开关配置"),
     ]

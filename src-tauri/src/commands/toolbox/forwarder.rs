@@ -1,7 +1,7 @@
 // 端口转发模块 - TCP 流量代理转发，支持连接管理和流量统计
 
-use crate::error::AppResult;
 use super::{current_time, generate_id, ForwardRule, ForwardRuleInput, ForwardStats};
+use crate::error::AppResult;
 use crate::storage;
 use once_cell::sync::Lazy;
 use socket2::{Domain, Socket, Type};
@@ -62,7 +62,11 @@ fn load_rules_from_file() -> AppResult<HashMap<String, ForwardRule>> {
     let rules_arr: Vec<ForwardRule> = match serde_json::from_str(&content) {
         Ok(arr) => arr,
         Err(e) => {
-            log::error!("解析转发规则 JSON 失败: {}，内容: {}", e, &content[..content.len().min(200)]);
+            log::error!(
+                "解析转发规则 JSON 失败: {}，内容: {}",
+                e,
+                &content[..content.len().min(200)]
+            );
             Vec::new()
         }
     };
@@ -74,7 +78,14 @@ fn load_rules_from_file() -> AppResult<HashMap<String, ForwardRule>> {
         rule.connections = 0;
         rule.bytes_in = 0;
         rule.bytes_out = 0;
-        log::info!("加载转发规则: {} ({}:{} -> {}:{})", rule.name, "localhost", rule.local_port, rule.remote_host, rule.remote_port);
+        log::info!(
+            "加载转发规则: {} ({}:{} -> {}:{})",
+            rule.name,
+            "localhost",
+            rule.local_port,
+            rule.remote_host,
+            rule.remote_port
+        );
         rules.insert(rule.id.clone(), rule);
     }
 
@@ -184,7 +195,10 @@ pub async fn add_forward_rule(input: ForwardRuleInput) -> AppResult<ForwardRule>
         let rules = FORWARD_RULES.lock().await;
         for rule in rules.values() {
             if rule.local_port == input.local_port && rule.status == "running" {
-                return Err(crate::error::AppError::from(format!("端口 {} 已被其他规则使用", input.local_port)));
+                return Err(crate::error::AppError::from(format!(
+                    "端口 {} 已被其他规则使用",
+                    input.local_port
+                )));
             }
         }
     }
@@ -216,7 +230,10 @@ pub async fn add_forward_rule(input: ForwardRuleInput) -> AppResult<ForwardRule>
         // 移除刚添加的规则，因为无法持久化
         let mut rules = FORWARD_RULES.lock().await;
         rules.remove(&rule_id);
-        return Err(crate::error::AppError::from(format!("保存转发规则失败: {}", e)));
+        return Err(crate::error::AppError::from(format!(
+            "保存转发规则失败: {}",
+            e
+        )));
     }
 
     Ok(rule)
@@ -251,7 +268,10 @@ pub async fn remove_forward_rule(rule_id: String) -> AppResult<()> {
             let mut rules = FORWARD_RULES.lock().await;
             rules.insert(rule_id, rule);
         }
-        return Err(crate::error::AppError::from(format!("保存转发规则失败: {}", e)));
+        return Err(crate::error::AppError::from(format!(
+            "保存转发规则失败: {}",
+            e
+        )));
     }
 
     Ok(())
@@ -269,7 +289,8 @@ pub async fn start_forwarding(rule_id: String) -> AppResult<()> {
         rules.get(&rule_id).cloned()
     };
 
-    let rule = rule.ok_or_else(|| crate::error::AppError::from(format!("规则不存在: {}", rule_id)))?;
+    let rule =
+        rule.ok_or_else(|| crate::error::AppError::from(format!("规则不存在: {}", rule_id)))?;
 
     if rule.status == "running" {
         return Err(crate::error::AppError::from("转发已在运行中".to_string()));
@@ -299,7 +320,9 @@ pub async fn start_forwarding(rule_id: String) -> AppResult<()> {
     let remote_port = rule.remote_port;
 
     tokio::spawn(async move {
-        if let Err(e) = run_forward_server(&id, local_port, &remote_host, remote_port, controller).await {
+        if let Err(e) =
+            run_forward_server(&id, local_port, &remote_host, remote_port, controller).await
+        {
             log::error!("转发服务错误: {}", e);
         }
 
@@ -330,23 +353,28 @@ async fn run_forward_server(
         .map_err(|e| crate::error::AppError::from(format!("创建 socket 失败: {}", e)))?;
 
     // 设置 SO_REUSEADDR，允许在 TIME_WAIT 状态时复用端口
-    socket.set_reuse_address(true)
+    socket
+        .set_reuse_address(true)
         .map_err(|e| crate::error::AppError::from(format!("设置 SO_REUSEADDR 失败: {}", e)))?;
 
     // 设置 SO_LINGER 为 0，使 socket 关闭时立即释放端口
-    socket.set_linger(Some(std::time::Duration::from_secs(0)))
+    socket
+        .set_linger(Some(std::time::Duration::from_secs(0)))
         .map_err(|e| crate::error::AppError::from(format!("设置 SO_LINGER 失败: {}", e)))?;
 
     // 设置非阻塞模式
-    socket.set_nonblocking(true)
+    socket
+        .set_nonblocking(true)
         .map_err(|e| crate::error::AppError::from(format!("设置非阻塞模式失败: {}", e)))?;
 
     // 绑定地址
-    socket.bind(&addr.into())
+    socket
+        .bind(&addr.into())
         .map_err(|e| crate::error::AppError::from(format!("绑定端口失败: {}", e)))?;
 
     // 监听
-    socket.listen(128)
+    socket
+        .listen(128)
         .map_err(|e| crate::error::AppError::from(format!("监听端口失败: {}", e)))?;
 
     // 转换为 tokio TcpListener
@@ -354,7 +382,12 @@ async fn run_forward_server(
     let listener = TcpListener::from_std(std_listener)
         .map_err(|e| crate::error::AppError::from(format!("创建 TcpListener 失败: {}", e)))?;
 
-    log::info!("转发服务启动: {} -> {}:{}", local_port, remote_host, remote_port);
+    log::info!(
+        "转发服务启动: {} -> {}:{}",
+        local_port,
+        remote_host,
+        remote_port
+    );
 
     // 连接数限制
     let semaphore = Arc::new(Semaphore::new(100));
@@ -442,7 +475,12 @@ async fn handle_connection(
                 break;
             }
             // 使用短超时，以便频繁检查停止标志
-            match timeout(check_interval, tokio::io::AsyncReadExt::read(&mut ri, &mut buf)).await {
+            match timeout(
+                check_interval,
+                tokio::io::AsyncReadExt::read(&mut ri, &mut buf),
+            )
+            .await
+            {
                 Ok(Ok(0)) => break,
                 Ok(Ok(n)) => {
                     ctrl1.add_bytes_out(n as u64);
@@ -468,7 +506,12 @@ async fn handle_connection(
                 break;
             }
             // 使用短超时，以便频繁检查停止标志
-            match timeout(check_interval, tokio::io::AsyncReadExt::read(&mut ro, &mut buf)).await {
+            match timeout(
+                check_interval,
+                tokio::io::AsyncReadExt::read(&mut ro, &mut buf),
+            )
+            .await
+            {
                 Ok(Ok(0)) => break,
                 Ok(Ok(n)) => {
                     ctrl2.add_bytes_in(n as u64);
@@ -603,7 +646,10 @@ pub async fn get_forward_stats(rule_id: String) -> AppResult<ForwardStats> {
 /// 更新转发规则
 #[tauri::command]
 #[specta::specta]
-pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> AppResult<ForwardRule> {
+pub async fn update_forward_rule(
+    rule_id: String,
+    input: ForwardRuleInput,
+) -> AppResult<ForwardRule> {
     ensure_rules_loaded().await;
 
     // 获取当前规则（用于回滚）
@@ -612,7 +658,8 @@ pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> Ap
         rules.get(&rule_id).cloned()
     };
 
-    let current = current_rule.ok_or_else(|| crate::error::AppError::from(format!("规则不存在: {}", rule_id)))?;
+    let current = current_rule
+        .ok_or_else(|| crate::error::AppError::from(format!("规则不存在: {}", rule_id)))?;
     let old_rule = current.clone();
 
     // 如果正在运行，先停止
@@ -638,7 +685,10 @@ pub async fn update_forward_rule(rule_id: String, input: ForwardRuleInput) -> Ap
         // 回滚：恢复旧规则
         let mut rules = FORWARD_RULES.lock().await;
         rules.insert(rule_id.clone(), old_rule);
-        return Err(crate::error::AppError::from(format!("保存转发规则失败: {}", e)));
+        return Err(crate::error::AppError::from(format!(
+            "保存转发规则失败: {}",
+            e
+        )));
     }
 
     let rules = FORWARD_RULES.lock().await;

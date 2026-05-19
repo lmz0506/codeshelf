@@ -139,8 +139,12 @@ pub async fn apply_quick_config(
 ) -> AppResult<()> {
     // 读取现有配置
     let existing_content = super::config_io::read_claude_config_file(
-        env_type.clone(), env_name.clone(), config_path.clone()
-    ).await.ok();
+        env_type.clone(),
+        env_name.clone(),
+        config_path.clone(),
+    )
+    .await
+    .ok();
 
     let mut config: serde_json::Value = if let Some(content) = existing_content {
         serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
@@ -180,8 +184,8 @@ pub async fn get_saved_quick_configs() -> AppResult<Vec<ClaudeQuickConfig>> {
                 .map_err(|e| crate::error::AppError::from(format!("读取快捷配置失败: {}", e)))?;
 
             // 直接解析为配置数组
-            let configs: Vec<ClaudeQuickConfig> = serde_json::from_str(&content)
-                .unwrap_or_default();
+            let configs: Vec<ClaudeQuickConfig> =
+                serde_json::from_str(&content).unwrap_or_default();
             return Ok(configs);
         }
     }

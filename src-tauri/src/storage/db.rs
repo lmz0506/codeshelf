@@ -59,12 +59,13 @@ pub fn pool() -> &'static SqlitePool {
 
 /// 读取当前已应用的最高 schema 版本号。表不存在或无记录返回 0。
 pub async fn get_schema_version() -> AppResult<u32> {
-    let row: Option<(i64,)> = sqlx::query_as(
-        "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
-    )
-    .fetch_optional(pool())
-    .await
-    .map_err(|e| crate::error::AppError::from(format!("读取 schema_version 失败: {}", e)))?;
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
+            .fetch_optional(pool())
+            .await
+            .map_err(|e| {
+                crate::error::AppError::from(format!("读取 schema_version 失败: {}", e))
+            })?;
 
     Ok(row.map(|(v,)| v as u32).unwrap_or(0))
 }

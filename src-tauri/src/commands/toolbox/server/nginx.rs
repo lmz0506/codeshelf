@@ -1,8 +1,8 @@
 // 生成等价 nginx 配置
 
-use crate::error::AppResult;
 use super::super::{NginxConfigOptions, ProxyConfig};
 use super::{ensure_servers_loaded, SERVERS};
+use crate::error::AppResult;
 
 fn escape_nginx_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
@@ -42,7 +42,9 @@ fn push_nginx_line(out: &mut String, indent: usize, line: &str) {
 }
 
 fn push_cors_headers(out: &mut String, indent: &str) {
-    out.push_str(&format!("{indent}add_header Access-Control-Allow-Origin * always;\n"));
+    out.push_str(&format!(
+        "{indent}add_header Access-Control-Allow-Origin * always;\n"
+    ));
     out.push_str(&format!(
         "{indent}add_header Access-Control-Allow-Methods \"GET, POST, PUT, PATCH, DELETE, OPTIONS\" always;\n"
     ));
@@ -68,7 +70,11 @@ fn push_proxy_location(out: &mut String, proxy: &ProxyConfig, cors: bool) {
     push_nginx_line(out, 8, "proxy_http_version 1.1;");
     push_nginx_line(out, 8, "proxy_set_header Host $host;");
     push_nginx_line(out, 8, "proxy_set_header X-Real-IP $remote_addr;");
-    push_nginx_line(out, 8, "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;");
+    push_nginx_line(
+        out,
+        8,
+        "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
+    );
     push_nginx_line(out, 8, "proxy_set_header X-Forwarded-Proto $scheme;");
     if cors {
         push_cors_headers(out, "        ");
@@ -81,7 +87,11 @@ fn push_proxy_location(out: &mut String, proxy: &ProxyConfig, cors: bool) {
     push_nginx_line(out, 8, "proxy_http_version 1.1;");
     push_nginx_line(out, 8, "proxy_set_header Host $host;");
     push_nginx_line(out, 8, "proxy_set_header X-Real-IP $remote_addr;");
-    push_nginx_line(out, 8, "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;");
+    push_nginx_line(
+        out,
+        8,
+        "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
+    );
     push_nginx_line(out, 8, "proxy_set_header X-Forwarded-Proto $scheme;");
     if cors {
         push_cors_headers(out, "        ");
@@ -95,7 +105,11 @@ fn build_nginx_config(options: NginxConfigOptions) -> String {
     let root_dir = escape_nginx_string(options.root_dir.trim());
     let url_prefix = options.url_prefix.as_deref().unwrap_or("/");
     let location = nginx_location_path(url_prefix);
-    let index_page = options.index_page.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let index_page = options
+        .index_page
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let index_directive = match index_page {
         Some(page) => format!("{} index.html index.htm", page.trim_start_matches('/')),
         None => "index.html index.htm".to_string(),

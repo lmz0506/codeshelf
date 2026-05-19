@@ -27,7 +27,8 @@ pub async fn test_ssh_tunnel(tunnel_id: String) -> AppResult<TestPortResult> {
         let tunnels = SSH_TUNNELS.lock().await;
         tunnels.get(&tunnel_id).map(|t| t.local_port)
     };
-    let port = port.ok_or_else(|| crate::error::AppError::from(format!("隧道不存在: {}", tunnel_id)))?;
+    let port =
+        port.ok_or_else(|| crate::error::AppError::from(format!("隧道不存在: {}", tunnel_id)))?;
     Ok(test_local_port_inner(port).await)
 }
 
@@ -194,9 +195,15 @@ async fn test_via_test_net_connection(host: &str, port: u16) -> Option<TestPortR
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let success = output.status.success();
     let summary = if success {
-        format!("Test-NetConnection -ComputerName {} -Port {} → succeeded", host, port)
+        format!(
+            "Test-NetConnection -ComputerName {} -Port {} → succeeded",
+            host, port
+        )
     } else {
-        format!("Test-NetConnection -ComputerName {} -Port {} → failed", host, port)
+        format!(
+            "Test-NetConnection -ComputerName {} -Port {} → failed",
+            host, port
+        )
     };
     let combined = match (stdout.is_empty(), stderr.is_empty()) {
         (true, true) => summary,

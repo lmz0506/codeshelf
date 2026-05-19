@@ -211,3 +211,67 @@ export function extractIssueRefs(message: string): string[] {
   const matches = message.match(/#\d+/g);
   return matches || [];
 }
+
+// ============== Deep Agents 重构（新版） ==============
+
+/** 语气偏好 */
+export type Tone = "professional" | "concise";
+
+/** 单个项目的「背景知识」文档（Markdown）。每个项目对应一份，独立持久化与版本化。 */
+export interface ProjectKnowledge {
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+  /** Markdown 全文 */
+  content: string;
+  /** 最近一次写入的 iso 时间戳 */
+  updatedAt: string;
+  /** 是否为用户手编版本（区别于纯 Agent 生成） */
+  userEdited: boolean;
+}
+
+/** 背景知识的历史版本元数据（不含正文，按需 fetch） */
+export interface KnowledgeHistoryEntry {
+  /** 文件名上的毫秒级时间戳 */
+  timestamp: string;
+  /** 文件字节数 */
+  size: number;
+}
+
+/** ResumeAgent 的输入选项 */
+export interface ResumeGenerateOptions {
+  projectIds: string[];
+  jobDirection: JobDirection;
+  /** JD 关键词列表（可空） */
+  jdKeywords: string[];
+  tone: Tone;
+}
+
+/** ResumeAgent 产出的单条项目经历（V2，无 git 数据） */
+export interface ResumeProjectExperience {
+  projectId: string;
+  projectName: string;
+  techStack: string[];
+  starExperience: STARExperience;
+  customDescription?: string;
+  isEdited: boolean;
+}
+
+/** ResumeAgent 产出的完整简历（V2） */
+export interface ResumeV2 {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  jobDirection: JobDirection;
+  jdKeywords: string[];
+  tone: Tone;
+  summary?: string;
+  /** 综合所有项目得到的技能词云 */
+  skills: string[];
+  experiences: ResumeProjectExperience[];
+  isSaved: boolean;
+}
+
+/** 当前简历生成器持久化使用的格式。旧版 GeneratedResume 只作为历史兼容。 */
+export type SavedResume = ResumeV2;
+
