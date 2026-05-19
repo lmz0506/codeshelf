@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, specta::Type)]
 #[allow(dead_code)]
-pub struct ShortcutInput {
+pub struct GlobalShortcutBinding {
     pub id: String,
     pub keys: String,
 }
@@ -528,7 +528,7 @@ pub fn stop_hook_from_manager(_app: &tauri::AppHandle) {}
 #[cfg(target_os = "windows")]
 #[tauri::command]
 #[specta::specta]
-pub async fn register_global_shortcuts(shortcuts: Vec<ShortcutInput>) -> AppResult<()> {
+pub async fn register_global_shortcuts(shortcuts: Vec<GlobalShortcutBinding>) -> AppResult<()> {
     let bindings_lock = win::HOOK_SHARED_BINDINGS
         .get()
         .ok_or_else(|| crate::error::AppError::from("键盘钩子未初始化".to_string()))?;
@@ -558,7 +558,7 @@ pub async fn register_global_shortcuts(shortcuts: Vec<ShortcutInput>) -> AppResu
 #[specta::specta]
 pub async fn register_global_shortcuts(
     app: tauri::AppHandle,
-    shortcuts: Vec<ShortcutInput>,
+    shortcuts: Vec<GlobalShortcutBinding>,
 ) -> AppResult<()> {
     use tauri::Manager;
     use tauri_plugin_global_shortcut::GlobalShortcutExt;

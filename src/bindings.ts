@@ -2426,7 +2426,7 @@ async saveResumes(data: JsonValue) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async registerGlobalShortcuts(shortcuts: ShortcutInput[]) : Promise<Result<null, string>> {
+async registerGlobalShortcuts(shortcuts: GlobalShortcutBinding[]) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("register_global_shortcuts", { shortcuts }) };
 } catch (e) {
@@ -2976,7 +2976,7 @@ export type ShortcutEntry = { id: string; category: string; description: string;
  * 添加/编辑快捷键的输入
  */
 export type ShortcutInput = { category: string | null; description: string | null; keys: string | null; platform: string | null }
-export type ShortcutInput = { id: string; keys: string }
+export type GlobalShortcutBinding = { id: string; keys: string }
 export type Skill = { name: string; description: string; argsHint: string | null; body: string }
 /**
  * SSH 认证方式（前端 tag 区分：key / password / sshConfig）
@@ -3075,7 +3075,6 @@ export type WslConfigDirResult = { linux_path: string; unc_path: string }
 
 import {
 	invoke as TAURI_INVOKE,
-	Channel as TAURI_CHANNEL,
 } from "@tauri-apps/api/core";
 import * as TAURI_API_EVENT from "@tauri-apps/api/event";
 import { type WebviewWindow as __WebviewWindow__ } from "@tauri-apps/api/webviewWindow";
@@ -3096,6 +3095,7 @@ export type Result<T, E> =
 	| { status: "ok"; data: T }
 	| { status: "error"; error: E };
 
+// @ts-expect-error: 由 tauri-specta 生成；当前无 events 注册，保留以便后续自动重新生成
 function __makeEvents__<T extends Record<string, any>>(
 	mappings: Record<keyof T, string>,
 ) {
