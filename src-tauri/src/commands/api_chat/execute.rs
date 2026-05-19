@@ -114,9 +114,8 @@ fn split_arguments(
     let mut query_map: HashMap<String, Value> = HashMap::new();
     let mut body: Option<Value> = None;
 
-    let has_partitioned = obj.contains_key("_body")
-        || obj.contains_key("_query")
-        || obj.contains_key("_path");
+    let has_partitioned =
+        obj.contains_key("_body") || obj.contains_key("_query") || obj.contains_key("_path");
 
     if has_partitioned {
         if let Some(Value::Object(m)) = obj.get("_path") {
@@ -176,8 +175,7 @@ fn trim_response(bytes: &[u8], max_bytes: usize) -> String {
         match std::str::from_utf8(&bytes[..max_bytes]) {
             Ok(s) => format!("{}\n…（已截断 {}/{} bytes）", s, max_bytes, bytes.len()),
             Err(_) => {
-                let b64 =
-                    base64::engine::general_purpose::STANDARD.encode(&bytes[..max_bytes]);
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes[..max_bytes]);
                 format!(
                     "<binary {} bytes truncated to {}; base64>\n{}",
                     bytes.len(),
@@ -274,10 +272,7 @@ async fn apply_auth(
                     Ok((session_with_token.client.clone(), builder))
                 }
                 SessionInject::Header { name, format } => {
-                    let token = session_with_token
-                        .token
-                        .clone()
-                        .unwrap_or_default();
+                    let token = session_with_token.token.clone().unwrap_or_default();
                     let header_value = format.replace("{token}", &token);
                     builder = builder.header(name, header_value);
                     Ok((session_with_token.client.clone(), builder))
@@ -320,8 +315,9 @@ async fn ensure_session_login(
     let url = join_url(base_url, login_url);
     let method = reqwest::Method::from_bytes(login_method.as_bytes())
         .map_err(|e| crate::error::AppError::from(format!("非法 login_method: {}", e)))?;
-    let body: Value = serde_json::from_str(credentials_json)
-        .map_err(|e| crate::error::AppError::from(format!("credentialsJson 不是合法 JSON: {}", e)))?;
+    let body: Value = serde_json::from_str(credentials_json).map_err(|e| {
+        crate::error::AppError::from(format!("credentialsJson 不是合法 JSON: {}", e))
+    })?;
 
     let resp = session
         .client
@@ -491,14 +487,8 @@ pub async fn execute_api_endpoint(
     }
 
     // 5. 注入鉴权（可能切换到 session 的 client）
-    let (active_client, builder) = apply_auth(
-        group_cache_key,
-        auth,
-        base_url,
-        builder,
-        &default_client,
-    )
-    .await?;
+    let (active_client, builder) =
+        apply_auth(group_cache_key, auth, base_url, builder, &default_client).await?;
 
     // Session 鉴权时需要从头用 active_client 重建请求（因为 builder 原来绑定在 default_client）
     let builder = if matches!(auth, ApiAuthConfig::Session { .. }) {
@@ -593,7 +583,8 @@ pub async fn execute_api_endpoint(
 #[specta::specta]
 pub async fn fetch_api_document_url(url: String) -> AppResult<String> {
     let trimmed = url.trim();
-    let parsed = reqwest::Url::parse(trimmed).map_err(|e| crate::error::AppError::from(format!("URL 不合法: {}", e)))?;
+    let parsed = reqwest::Url::parse(trimmed)
+        .map_err(|e| crate::error::AppError::from(format!("URL 不合法: {}", e)))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("只支持 http 或 https 链接".into());
     }
@@ -633,5 +624,6 @@ pub async fn fetch_api_document_url(url: String) -> AppResult<String> {
         return Err("在线文档超过 10MB，已停止导入".into());
     }
 
-    String::from_utf8(bytes.to_vec()).map_err(|e| crate::error::AppError::from(format!("在线文档不是 UTF-8 文本: {}", e)))
+    String::from_utf8(bytes.to_vec())
+        .map_err(|e| crate::error::AppError::from(format!("在线文档不是 UTF-8 文本: {}", e)))
 }

@@ -15,12 +15,13 @@ pub(super) async fn tool_bash(ctx: &ToolCtx, args: &Value) -> AppResult<String> 
         .get("command")
         .and_then(|v| v.as_str())
         .ok_or("缺少 command")?;
-    let timeout_ms = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(60_000);
-    let base = ctx
-        .allowed_cwd
-        .as_ref()
-        .ok_or("会话未设置 allowedCwd")?;
-    let base_canon = fs::canonicalize(base).map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
+    let timeout_ms = args
+        .get("timeout")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(60_000);
+    let base = ctx.allowed_cwd.as_ref().ok_or("会话未设置 allowedCwd")?;
+    let base_canon = fs::canonicalize(base)
+        .map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
 
     #[cfg(target_family = "unix")]
     let mut cmd = {

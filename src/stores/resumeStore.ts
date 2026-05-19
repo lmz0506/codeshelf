@@ -4,7 +4,17 @@ import type {
   ResumeDataSource,
   GeneratedResume,
   JobDirection,
+  ProjectKnowledge,
+  ResumeV2,
+  SavedResume,
+  STARExperience,
 } from "@/types/resume";
+import {
+  loadResumeKnowledge,
+  saveResumeKnowledge,
+  listResumeKnowledge,
+  deleteResumeKnowledge,
+} from "@/services/resume/knowledgeStore";
 
 interface ResumeGeneratorState {
   data: ResumeDataSource | null;
@@ -17,10 +27,14 @@ interface ResumeGeneratorState {
 
 interface ResumeState {
   resumeGeneratorState: ResumeGeneratorState;
-  savedResumes: GeneratedResume[];
-  setSavedResumes: (resumes: GeneratedResume[]) => void;
+  savedResumes: SavedResume[];
+  /** 项目背景知识缓存：projectId -> ProjectKnowledge */
+  knowledgeDocs: Record<string, ProjectKnowledge>;
+  /** 背景知识是否已从磁盘载入过（避免重复 IO） */
+  knowledgeLoaded: boolean;
+  setSavedResumes: (resumes: unknown[]) => void;
   saveCurrentResume: () => Promise<void>;
-  loadSavedResume: (resume: GeneratedResume) => void;
+  loadSavedResume: (resume: SavedResume) => void;
   deleteSavedResume: (id: string) => Promise<void>;
   setResumeGeneratorData: (data: ResumeDataSource | null) => void;
   setGeneratedResume: (resume: GeneratedResume | null) => void;
@@ -29,6 +43,12 @@ interface ResumeState {
   setResumeGeneratorOpen: (isOpen: boolean) => void;
   setResumeGeneratorAnalyzing: (isAnalyzing: boolean) => void;
   clearResumeGeneratorState: () => void;
+  // 背景知识管理
+  loadAllKnowledgeFromDisk: (resolveName?: (projectId: string) => { name?: string; path?: string } | undefined) => Promise<void>;
+  upsertKnowledge: (doc: ProjectKnowledge, userEdited: boolean) => Promise<void>;
+  setKnowledgeInMemory: (doc: ProjectKnowledge) => void;
+  removeKnowledge: (projectId: string) => Promise<void>;
+  getKnowledge: (projectId: string) => ProjectKnowledge | undefined;
 }
 
 const INITIAL_STATE: ResumeGeneratorState = {
@@ -40,16 +60,89 @@ const INITIAL_STATE: ResumeGeneratorState = {
   isAnalyzing: false,
 };
 
+function emptyStar(): STARExperience {
+  return { situation: "", task: "", action: "", result: "" };
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function normalizeSavedResume(input: unknown): SavedResume | null {
+  if (!input || typeof input !== "object") return null;
+  const raw = input as Record<string, unknown>;
+  const id =
+    typeof raw.id === "string"
+      ? raw.id
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const createdAt =
+    typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString();
+  const updatedAt =
+    typeof raw.updatedAt === "string" ? raw.updatedAt : createdAt;
+  const jobDirection =
+    raw.jobDirection === "frontend" || raw.jobDirection === "fullstack"
+      ? raw.jobDirection
+      : "backend";
+  const tone = raw.tone === "concise" ? "concise" : "professional";
+  const experiences = Array.isArray(raw.experiences) ? raw.experiences : [];
+
+  return {
+    id,
+    createdAt,
+    updatedAt,
+    jobDirection,
+    jdKeywords: asStringArray(raw.jdKeywords),
+    tone,
+    summary: typeof raw.summary === "string" ? raw.summary : undefined,
+    skills: asStringArray(raw.skills),
+    experiences: experiences
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+      .map((item) => {
+        const star =
+          item.starExperience && typeof item.starExperience === "object"
+            ? (item.starExperience as Partial<STARExperience>)
+            : emptyStar();
+        return {
+          projectId: typeof item.projectId === "string" ? item.projectId : "",
+          projectName: typeof item.projectName === "string" ? item.projectName : "未命名项目",
+          techStack: asStringArray(item.techStack),
+          starExperience: {
+            situation: typeof star.situation === "string" ? star.situation : "",
+            task: typeof star.task === "string" ? star.task : "",
+            action: typeof star.action === "string" ? star.action : "",
+            result: typeof star.result === "string" ? star.result : "",
+          },
+          customDescription:
+            typeof item.customDescription === "string" ? item.customDescription : undefined,
+          isEdited: item.isEdited === true,
+        };
+      }),
+    isSaved: raw.isSaved !== false,
+  };
+}
+
+function normalizeSavedResumes(resumes: unknown[]): SavedResume[] {
+  return resumes
+    .map(normalizeSavedResume)
+    .filter((resume): resume is SavedResume => resume !== null);
+}
+
+function generatedToSavedResume(resume: GeneratedResume | ResumeV2): SavedResume {
+  return normalizeSavedResume({ ...resume, isSaved: true })!;
+}
+
 export const useResumeStore = create<ResumeState>()((set, get) => ({
   resumeGeneratorState: INITIAL_STATE,
   savedResumes: [],
-  setSavedResumes: (savedResumes) => set({ savedResumes }),
+  knowledgeDocs: {},
+  knowledgeLoaded: false,
+  setSavedResumes: (savedResumes) => set({ savedResumes: normalizeSavedResumes(savedResumes) }),
   saveCurrentResume: async () => {
     const state = get();
     const resume = state.resumeGeneratorState.generatedResume;
     if (!resume) return;
     const saved = {
-      ...resume,
+      ...generatedToSavedResume(resume),
       isSaved: true,
       updatedAt: new Date().toISOString(),
     };
@@ -61,12 +154,6 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
       updated.unshift(saved);
     }
     set({ savedResumes: updated });
-    set((s) => ({
-      resumeGeneratorState: {
-        ...s.resumeGeneratorState,
-        generatedResume: saved,
-      },
-    }));
     try {
       await invoke("save_resumes", { data: updated });
     } catch (err) {
@@ -77,7 +164,7 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
     set((state) => ({
       resumeGeneratorState: {
         ...state.resumeGeneratorState,
-        generatedResume: resume,
+        generatedResume: null,
         selectedDirection: resume.jobDirection,
         selectedProjects: resume.experiences.map((e) => e.projectId),
       },
@@ -138,4 +225,61 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
     })),
   clearResumeGeneratorState: () =>
     set({ resumeGeneratorState: INITIAL_STATE }),
+
+  // ============== 项目背景知识 ==============
+  loadAllKnowledgeFromDisk: async (resolveName) => {
+    if (get().knowledgeLoaded) return;
+    try {
+      const ids = await listResumeKnowledge();
+      const docs: Record<string, ProjectKnowledge> = {};
+      for (const projectId of ids) {
+        const content = await loadResumeKnowledge(projectId);
+        if (content == null) continue;
+        const meta = resolveName?.(projectId) ?? {};
+        docs[projectId] = {
+          projectId,
+          projectName: meta.name ?? projectId,
+          projectPath: meta.path ?? "",
+          content,
+          updatedAt: new Date().toISOString(),
+          userEdited: false,
+        };
+      }
+      set({ knowledgeDocs: docs, knowledgeLoaded: true });
+    } catch (err) {
+      console.error("加载项目背景知识失败:", err);
+      set({ knowledgeLoaded: true });
+    }
+  },
+  upsertKnowledge: async (doc, userEdited) => {
+    const next: ProjectKnowledge = {
+      ...doc,
+      userEdited,
+      updatedAt: new Date().toISOString(),
+    };
+    set((s) => ({
+      knowledgeDocs: { ...s.knowledgeDocs, [doc.projectId]: next },
+    }));
+    try {
+      await saveResumeKnowledge(doc.projectId, doc.content, userEdited);
+    } catch (err) {
+      console.error("保存项目背景知识失败:", err);
+      throw err;
+    }
+  },
+  setKnowledgeInMemory: (doc) =>
+    set((s) => ({ knowledgeDocs: { ...s.knowledgeDocs, [doc.projectId]: doc } })),
+  removeKnowledge: async (projectId) => {
+    set((s) => {
+      const next = { ...s.knowledgeDocs };
+      delete next[projectId];
+      return { knowledgeDocs: next };
+    });
+    try {
+      await deleteResumeKnowledge(projectId);
+    } catch (err) {
+      console.error("删除项目背景知识失败:", err);
+    }
+  },
+  getKnowledge: (projectId) => get().knowledgeDocs[projectId],
 }));

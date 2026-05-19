@@ -114,12 +114,15 @@ fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let quit = MenuItem::with_id(app, "quit", "退出程序", true, None::<&str>)?;
 
     let tool_monitor = MenuItem::with_id(app, "tool_monitor", "系统监控", true, None::<&str>)?;
-    let tool_downloader = MenuItem::with_id(app, "tool_downloader", "文件下载", true, None::<&str>)?;
+    let tool_downloader =
+        MenuItem::with_id(app, "tool_downloader", "文件下载", true, None::<&str>)?;
     let tool_server = MenuItem::with_id(app, "tool_server", "本地服务", true, None::<&str>)?;
     let tool_claude = MenuItem::with_id(app, "tool_claude", "Claude Code", true, None::<&str>)?;
     let tool_netcat = MenuItem::with_id(app, "tool_netcat", "Netcat", true, None::<&str>)?;
-    let tool_shortcuts = MenuItem::with_id(app, "tool_shortcuts", "快捷键备忘", true, None::<&str>)?;
-    let tool_clipboard = MenuItem::with_id(app, "tool_clipboard", "剪贴板历史", true, None::<&str>)?;
+    let tool_shortcuts =
+        MenuItem::with_id(app, "tool_shortcuts", "快捷键备忘", true, None::<&str>)?;
+    let tool_clipboard =
+        MenuItem::with_id(app, "tool_clipboard", "剪贴板历史", true, None::<&str>)?;
     let tool_ssh_tunnel = MenuItem::with_id(app, "tool_sshTunnel", "SSH 隧道", true, None::<&str>)?;
     let toolbox_submenu = Submenu::with_items(
         app,
@@ -141,8 +144,8 @@ fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let sep2 = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&show, &sep1, &toolbox_submenu, &sep2, &quit])?;
 
-    let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))
-        .expect("Failed to load tray icon");
+    let icon =
+        Image::from_bytes(include_bytes!("../icons/icon.png")).expect("Failed to load tray icon");
 
     let _tray = TrayIconBuilder::new()
         .icon(icon)
@@ -170,10 +173,7 @@ fn handle_tray_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
     }
 }
 
-fn handle_tray_icon_event(
-    tray: &tauri::tray::TrayIcon,
-    event: tauri::tray::TrayIconEvent,
-) {
+fn handle_tray_icon_event(tray: &tauri::tray::TrayIcon, event: tauri::tray::TrayIconEvent) {
     let app = tray.app_handle();
     match event {
         tauri::tray::TrayIconEvent::Click {
@@ -236,9 +236,7 @@ fn init_global_shortcuts(app: &AppHandle) -> Result<(), Box<dyn std::error::Erro
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
                     if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        if let Some(state) =
-                            app.try_state::<keyboard_hook::GlobalShortcutState>()
-                        {
+                        if let Some(state) = app.try_state::<keyboard_hook::GlobalShortcutState>() {
                             if let Ok(map) = state.0.lock() {
                                 if let Some(action_id) = map.get(&shortcut.id()) {
                                     let _ = app.emit("global-shortcut-event", action_id);
@@ -261,9 +259,9 @@ fn init_keyboard_hook(app: &tauri::App) {
     {
         match keyboard_hook::start_hook(app.handle().clone()) {
             Ok(state) => {
-                app.manage(keyboard_hook::KeyboardHookManager(
-                    std::sync::Mutex::new(Some(state)),
-                ));
+                app.manage(keyboard_hook::KeyboardHookManager(std::sync::Mutex::new(
+                    Some(state),
+                )));
             }
             Err(e) => {
                 log::error!("键盘钩子启动失败: {}", e);

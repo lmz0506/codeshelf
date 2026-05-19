@@ -20,8 +20,8 @@ use serde_json::Value;
 use tauri::AppHandle;
 
 mod ctx;
-mod fs_ops;
 mod file_ops;
+mod fs_ops;
 mod os_open;
 mod schema;
 mod shell;
@@ -62,7 +62,10 @@ pub async fn execute_tool(
         "CreateWorkflow" => crate::commands::workflows::tool_create_workflow(&args, app).await,
         "RunWorkflowNow" => crate::commands::workflows::tool_run_workflow_now(&args, app).await,
         "ListWorkflows" => crate::commands::workflows::tool_list_workflows(app).await,
-        _ => Err(crate::error::AppError::from(format!("未知工具: {}", tool_name))),
+        _ => Err(crate::error::AppError::from(format!(
+            "未知工具: {}",
+            tool_name
+        ))),
     }
 }
 

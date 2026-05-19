@@ -43,8 +43,7 @@ fn sanitize_tool_name(endpoint_id: &str) -> String {
 #[specta::specta]
 pub async fn build_api_tools(endpoint_ids: Vec<String>) -> AppResult<ApiToolsBundle> {
     let all = load_endpoints()?;
-    let by_id: HashMap<String, ApiEndpoint> =
-        all.into_iter().map(|e| (e.id.clone(), e)).collect();
+    let by_id: HashMap<String, ApiEndpoint> = all.into_iter().map(|e| (e.id.clone(), e)).collect();
 
     let mut tools: Vec<Value> = Vec::new();
     let mut map: HashMap<String, String> = HashMap::new();

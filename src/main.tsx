@@ -1,3 +1,7 @@
+// 必须放在第一行：补全 vite-plugin-node-polyfills 注入的 process polyfill 缺失字段
+// （特别是 process.versions.node，@nodelib/fs.scandir 在模块顶层就要用）
+import "./shims/process-init.js";
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";

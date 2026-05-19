@@ -1,6 +1,6 @@
-use crate::error::AppResult;
 use super::types::{DockerAiGenerateInput, DockerAiGenerateOutput};
 use super::utils::{project_root, read_project_context, resolve_existing_project_file};
+use crate::error::AppResult;
 use serde_json::{json, Value};
 use std::fs;
 use std::time::Duration;
@@ -33,13 +33,19 @@ pub(super) async fn generate_dockerfile_with_ai(
         providers
             .iter()
             .find(|p| p.id == provider_id)
-            .ok_or_else(|| crate::error::AppError::from(format!("未找到 AI 供应商: {}", provider_id)))?
+            .ok_or_else(|| {
+                crate::error::AppError::from(format!("未找到 AI 供应商: {}", provider_id))
+            })?
     } else {
         providers
             .iter()
             .find(|p| p.enabled && p.is_default_provider)
             .or_else(|| providers.iter().find(|p| p.enabled))
-            .ok_or_else(|| crate::error::AppError::from("未配置可用的 AI 供应商，请先在 AI 供应商中启用模型".to_string()))?
+            .ok_or_else(|| {
+                crate::error::AppError::from(
+                    "未配置可用的 AI 供应商，请先在 AI 供应商中启用模型".to_string(),
+                )
+            })?
     };
     let model = if let Some(model_id) = input.model_id.as_deref().filter(|s| !s.trim().is_empty()) {
         provider
@@ -53,7 +59,9 @@ pub(super) async fn generate_dockerfile_with_ai(
             .iter()
             .find(|m| m.enabled && m.is_default)
             .or_else(|| provider.models.iter().find(|m| m.enabled))
-            .ok_or_else(|| crate::error::AppError::from("当前 AI 供应商没有启用的模型".to_string()))?
+            .ok_or_else(|| {
+                crate::error::AppError::from("当前 AI 供应商没有启用的模型".to_string())
+            })?
     };
 
     let dockerfile_path = input
@@ -114,7 +122,10 @@ pub(super) async fn generate_dockerfile_with_ai(
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(crate::error::AppError::from(format!("AI {}: {}", status, text)));
+        return Err(crate::error::AppError::from(format!(
+            "AI {}: {}",
+            status, text
+        )));
     }
     let body: Value = resp
         .json()

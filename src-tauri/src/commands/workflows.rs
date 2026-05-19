@@ -24,8 +24,8 @@ use crate::storage::get_storage_config;
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowNode {
     pub id: String,
-    pub node_type: String,        // "web_fetch" | "llm" | "webhook"
-    pub config: Value,            // 节点专属配置
+    pub node_type: String, // "web_fetch" | "llm" | "webhook"
+    pub config: Value,     // 节点专属配置
     #[serde(default)]
     pub depends_on: Vec<String>,
 }
@@ -35,7 +35,7 @@ pub struct WorkflowNode {
 pub struct WorkflowRun {
     pub started_at: String,
     pub finished_at: String,
-    pub status: String,           // "success" | "failure" | "running"
+    pub status: String, // "success" | "failure" | "running"
     pub outputs: HashMap<String, String>,
     pub error: Option<String>,
 }
@@ -55,7 +55,9 @@ pub struct Workflow {
     pub updated_at: String,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 // ========== 存储 ==========
 
@@ -63,7 +65,8 @@ fn workflows_dir() -> AppResult<PathBuf> {
     let cfg = get_storage_config()?;
     let dir = cfg.workflows_dir();
     if !dir.exists() {
-        fs::create_dir_all(&dir).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
+        fs::create_dir_all(&dir)
+            .map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
     }
     Ok(dir)
 }
@@ -75,12 +78,19 @@ fn workflow_path(id: &str) -> AppResult<PathBuf> {
 pub fn list_workflows_sync() -> AppResult<Vec<Workflow>> {
     let dir = workflows_dir()?;
     let mut out = Vec::new();
-    if !dir.exists() { return Ok(out); }
+    if !dir.exists() {
+        return Ok(out);
+    }
     for entry in fs::read_dir(&dir).map_err(|e| crate::error::AppError::from(e.to_string()))? {
         let entry = entry.map_err(|e| crate::error::AppError::from(e.to_string()))?;
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
-        let text = match fs::read_to_string(&path) { Ok(t) => t, Err(_) => continue };
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let text = match fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
         if let Ok(wf) = serde_json::from_str::<Workflow>(&text) {
             out.push(wf);
         }
@@ -91,37 +101,59 @@ pub fn list_workflows_sync() -> AppResult<Vec<Workflow>> {
 
 pub fn load_workflow(id: &str) -> AppResult<Workflow> {
     let path = workflow_path(id)?;
-    let text = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))?;
-    serde_json::from_str(&text).map_err(|e| crate::error::AppError::from(format!("解析失败: {}", e)))
+    let text = fs::read_to_string(&path)
+        .map_err(|e| crate::error::AppError::from(format!("读取失败: {}", e)))?;
+    serde_json::from_str(&text)
+        .map_err(|e| crate::error::AppError::from(format!("解析失败: {}", e)))
 }
 
 fn save_workflow_sync(wf: &Workflow) -> AppResult<()> {
     let path = workflow_path(&wf.id)?;
-    let text = serde_json::to_string_pretty(wf).map_err(|e| crate::error::AppError::from(e.to_string()))?;
+    let text = serde_json::to_string_pretty(wf)
+        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
     fs::write(&path, text).map_err(|e| crate::error::AppError::from(format!("写入失败: {}", e)))
 }
 
 // ========== 校验 ==========
 
 fn validate_workflow(wf: &Workflow) -> AppResult<()> {
-    if wf.name.trim().is_empty() { return Err("name 不能为空".into()); }
+    if wf.name.trim().is_empty() {
+        return Err("name 不能为空".into());
+    }
     // cron 校验（空字符串允许，代表"不自动触发，仅手动"）
     if !wf.cron.trim().is_empty() {
         let expr = to_six_field(&wf.cron);
-        cron::Schedule::from_str(&expr).map_err(|e| crate::error::AppError::from(format!("cron 解析失败（5 段格式，如 '0 9 * * *'）: {}", e)))?;
+        cron::Schedule::from_str(&expr).map_err(|e| {
+            crate::error::AppError::from(format!(
+                "cron 解析失败（5 段格式，如 '0 9 * * *'）: {}",
+                e
+            ))
+        })?;
     }
-    if wf.nodes.is_empty() { return Err("至少需要一个节点".into()); }
+    if wf.nodes.is_empty() {
+        return Err("至少需要一个节点".into());
+    }
     let ids: HashSet<&str> = wf.nodes.iter().map(|n| n.id.as_str()).collect();
-    if ids.len() != wf.nodes.len() { return Err("节点 id 重复".into()); }
+    if ids.len() != wf.nodes.len() {
+        return Err("节点 id 重复".into());
+    }
     for n in &wf.nodes {
         for dep in &n.depends_on {
             if !ids.contains(dep.as_str()) {
-                return Err(crate::error::AppError::from(format!("节点 {} 的 depends_on 引用了不存在的节点 {}", n.id, dep)));
+                return Err(crate::error::AppError::from(format!(
+                    "节点 {} 的 depends_on 引用了不存在的节点 {}",
+                    n.id, dep
+                )));
             }
         }
         match n.node_type.as_str() {
             "web_fetch" | "llm" | "webhook" => {}
-            other => return Err(crate::error::AppError::from(format!("未知节点类型: {}", other))),
+            other => {
+                return Err(crate::error::AppError::from(format!(
+                    "未知节点类型: {}",
+                    other
+                )))
+            }
         }
     }
     topological_order(&wf.nodes)?;
@@ -131,7 +163,11 @@ fn validate_workflow(wf: &Workflow) -> AppResult<()> {
 /// 5 段 → 6 段（cron crate 需要秒字段）
 fn to_six_field(expr: &str) -> String {
     let parts: Vec<&str> = expr.split_whitespace().collect();
-    if parts.len() == 5 { format!("0 {}", expr) } else { expr.to_string() }
+    if parts.len() == 5 {
+        format!("0 {}", expr)
+    } else {
+        expr.to_string()
+    }
 }
 
 fn topological_order(nodes: &[WorkflowNode]) -> AppResult<Vec<String>> {
@@ -144,22 +180,33 @@ fn topological_order(nodes: &[WorkflowNode]) -> AppResult<Vec<String>> {
             rdeps.entry(d.clone()).or_default().push(n.id.clone());
         }
     }
-    let mut q: Vec<String> = indeg.iter().filter(|(_, v)| **v == 0).map(|(k, _)| k.clone()).collect();
+    let mut q: Vec<String> = indeg
+        .iter()
+        .filter(|(_, v)| **v == 0)
+        .map(|(k, _)| k.clone())
+        .collect();
     q.sort();
     let mut order = Vec::new();
     while let Some(id) = q.pop() {
         order.push(id.clone());
         if let Some(outs) = rdeps.get(&id) {
             for o in outs.clone() {
-                let c = indeg
-                    .get_mut(&o)
-                    .ok_or_else(|| crate::error::AppError::from(format!("拓扑排序状态损坏：节点 {} 不在入度表中", o)))?;
+                let c = indeg.get_mut(&o).ok_or_else(|| {
+                    crate::error::AppError::from(format!(
+                        "拓扑排序状态损坏：节点 {} 不在入度表中",
+                        o
+                    ))
+                })?;
                 *c -= 1;
-                if *c == 0 { q.push(o); }
+                if *c == 0 {
+                    q.push(o);
+                }
             }
         }
     }
-    if order.len() != nodes.len() { return Err("工作流存在环".into()); }
+    if order.len() != nodes.len() {
+        return Err("工作流存在环".into());
+    }
     Ok(order)
 }
 
@@ -174,24 +221,52 @@ fn render_template(template: &str, outputs: &HashMap<String, String>) -> String 
 }
 
 async fn run_node_web_fetch(cfg: &Value) -> AppResult<String> {
-    let url = cfg.get("url").and_then(|v| v.as_str()).ok_or("web_fetch 缺少 url")?.to_string();
+    let url = cfg
+        .get("url")
+        .and_then(|v| v.as_str())
+        .ok_or("web_fetch 缺少 url")?
+        .to_string();
     let mut args = json!({"url": url});
-    if let Some(mb) = cfg.get("maxBytes").or_else(|| cfg.get("max_bytes")) { args["max_bytes"] = mb.clone(); }
-    if let Some(h) = cfg.get("headers") { args["headers"] = h.clone(); }
+    if let Some(mb) = cfg.get("maxBytes").or_else(|| cfg.get("max_bytes")) {
+        args["max_bytes"] = mb.clone();
+    }
+    if let Some(h) = cfg.get("headers") {
+        args["headers"] = h.clone();
+    }
     super::tools::run_web_fetch_for_workflow(&args).await
 }
 
 async fn run_node_llm(cfg: &Value, outputs: &HashMap<String, String>) -> AppResult<String> {
-    let provider_id = cfg.get("providerId").and_then(|v| v.as_str()).ok_or("llm 缺少 providerId")?;
-    let model_id = cfg.get("modelId").and_then(|v| v.as_str()).ok_or("llm 缺少 modelId")?;
-    let prompt = cfg.get("prompt").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let provider_id = cfg
+        .get("providerId")
+        .and_then(|v| v.as_str())
+        .ok_or("llm 缺少 providerId")?;
+    let model_id = cfg
+        .get("modelId")
+        .and_then(|v| v.as_str())
+        .ok_or("llm 缺少 modelId")?;
+    let prompt = cfg
+        .get("prompt")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let rendered = render_template(&prompt, outputs);
 
     let providers = super::settings::get_ai_providers().await?;
-    let provider = providers.iter().find(|p| p.id == provider_id).ok_or_else(|| crate::error::AppError::from(format!("未找到 provider: {}", provider_id)))?;
-    let model = provider.models.iter().find(|m| m.id == model_id).ok_or_else(|| crate::error::AppError::from(format!("未找到 model: {}", model_id)))?;
+    let provider = providers
+        .iter()
+        .find(|p| p.id == provider_id)
+        .ok_or_else(|| crate::error::AppError::from(format!("未找到 provider: {}", provider_id)))?;
+    let model = provider
+        .models
+        .iter()
+        .find(|m| m.id == model_id)
+        .ok_or_else(|| crate::error::AppError::from(format!("未找到 model: {}", model_id)))?;
 
-    let url = format!("{}/chat/completions", provider.base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/chat/completions",
+        provider.base_url.trim_end_matches('/')
+    );
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .build()
@@ -202,68 +277,146 @@ async fn run_node_llm(cfg: &Value, outputs: &HashMap<String, String>) -> AppResu
         "stream": false
     }));
     if let Some(key) = provider.api_key.as_ref() {
-        if !key.trim().is_empty() { req = req.bearer_auth(key); }
+        if !key.trim().is_empty() {
+            req = req.bearer_auth(key);
+        }
     }
-    let resp = req.send().await.map_err(|e| crate::error::AppError::from(format!("LLM 请求失败: {}", e)))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("LLM 请求失败: {}", e)))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(crate::error::AppError::from(format!("LLM {}: {}", status, text)));
+        return Err(crate::error::AppError::from(format!(
+            "LLM {}: {}",
+            status, text
+        )));
     }
-    let body: Value = resp.json().await.map_err(|e| crate::error::AppError::from(format!("LLM 响应解析失败: {}", e)))?;
-    let content = body.pointer("/choices/0/message/content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("LLM 响应解析失败: {}", e)))?;
+    let content = body
+        .pointer("/choices/0/message/content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     Ok(content)
 }
 
 async fn run_node_webhook(cfg: &Value, outputs: &HashMap<String, String>) -> AppResult<String> {
-    let kind = cfg.get("kind").and_then(|v| v.as_str()).ok_or("webhook 缺少 kind")?;
-    let body_template = cfg.get("bodyTemplate").or_else(|| cfg.get("body_template")).and_then(|v| v.as_str()).unwrap_or("");
+    let kind = cfg
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .ok_or("webhook 缺少 kind")?;
+    let body_template = cfg
+        .get("bodyTemplate")
+        .or_else(|| cfg.get("body_template"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let text = render_template(body_template, outputs);
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(20)).build().map_err(|e| crate::error::AppError::from(e.to_string()))?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
 
     match kind {
         "feishu" => {
-            let token = cfg.get("token").and_then(|v| v.as_str()).ok_or("feishu 缺少 token")?;
+            let token = cfg
+                .get("token")
+                .and_then(|v| v.as_str())
+                .ok_or("feishu 缺少 token")?;
             let url = format!("https://open.feishu.cn/open-apis/bot/v2/hook/{}", token);
             let payload = json!({"msg_type": "text", "content": {"text": text}});
-            let resp = client.post(&url).json(&payload).send().await.map_err(|e| crate::error::AppError::from(e.to_string()))?;
+            let resp = client
+                .post(&url)
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|e| crate::error::AppError::from(e.to_string()))?;
             let body = resp.text().await.unwrap_or_default();
-            Ok(format!("feishu sent: {}", body.chars().take(500).collect::<String>()))
+            Ok(format!(
+                "feishu sent: {}",
+                body.chars().take(500).collect::<String>()
+            ))
         }
         "wecom" => {
-            let key = cfg.get("key").and_then(|v| v.as_str()).ok_or("wecom 缺少 key")?;
-            let url = format!("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={}", key);
+            let key = cfg
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or("wecom 缺少 key")?;
+            let url = format!(
+                "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={}",
+                key
+            );
             let payload = json!({"msgtype": "text", "text": {"content": text}});
-            let resp = client.post(&url).json(&payload).send().await.map_err(|e| crate::error::AppError::from(e.to_string()))?;
+            let resp = client
+                .post(&url)
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|e| crate::error::AppError::from(e.to_string()))?;
             let body = resp.text().await.unwrap_or_default();
-            Ok(format!("wecom sent: {}", body.chars().take(500).collect::<String>()))
+            Ok(format!(
+                "wecom sent: {}",
+                body.chars().take(500).collect::<String>()
+            ))
         }
         "http" => {
-            let url = cfg.get("url").and_then(|v| v.as_str()).ok_or("http 缺少 url")?;
-            let method = cfg.get("method").and_then(|v| v.as_str()).unwrap_or("POST").to_uppercase();
-            let content_type = cfg.get("contentType").or_else(|| cfg.get("content_type")).and_then(|v| v.as_str()).unwrap_or("application/json");
+            let url = cfg
+                .get("url")
+                .and_then(|v| v.as_str())
+                .ok_or("http 缺少 url")?;
+            let method = cfg
+                .get("method")
+                .and_then(|v| v.as_str())
+                .unwrap_or("POST")
+                .to_uppercase();
+            let content_type = cfg
+                .get("contentType")
+                .or_else(|| cfg.get("content_type"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("application/json");
             let mut req = match method.as_str() {
                 "GET" => client.get(url),
                 "POST" => client.post(url),
                 "PUT" => client.put(url),
                 "DELETE" => client.delete(url),
-                _ => return Err(crate::error::AppError::from(format!("不支持的 method: {}", method))),
+                _ => {
+                    return Err(crate::error::AppError::from(format!(
+                        "不支持的 method: {}",
+                        method
+                    )))
+                }
             };
             req = req.header("Content-Type", content_type);
             if let Some(headers) = cfg.get("headers").and_then(|v| v.as_object()) {
                 for (k, v) in headers {
-                    if let Some(val) = v.as_str() { req = req.header(k.as_str(), val); }
+                    if let Some(val) = v.as_str() {
+                        req = req.header(k.as_str(), val);
+                    }
                 }
             }
             if method != "GET" {
                 req = req.body(text.clone());
             }
-            let resp = req.send().await.map_err(|e| crate::error::AppError::from(e.to_string()))?;
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| crate::error::AppError::from(e.to_string()))?;
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            Ok(format!("http {} sent: {}", status, body.chars().take(500).collect::<String>()))
+            Ok(format!(
+                "http {} sent: {}",
+                status,
+                body.chars().take(500).collect::<String>()
+            ))
         }
-        other => Err(crate::error::AppError::from(format!("未知 webhook kind: {}", other))),
+        other => Err(crate::error::AppError::from(format!(
+            "未知 webhook kind: {}",
+            other
+        ))),
     }
 }
 
@@ -298,10 +451,15 @@ pub async fn execute_workflow(app: &AppHandle, id: &str) -> AppResult<WorkflowRu
             "web_fetch" => run_node_web_fetch(&node.config).await,
             "llm" => run_node_llm(&node.config, &outputs).await,
             "webhook" => run_node_webhook(&node.config, &outputs).await,
-            _ => Err(crate::error::AppError::from(format!("未知节点类型: {}", node.node_type))),
+            _ => Err(crate::error::AppError::from(format!(
+                "未知节点类型: {}",
+                node.node_type
+            ))),
         };
         match result {
-            Ok(v) => { outputs.insert(nid.clone(), v); }
+            Ok(v) => {
+                outputs.insert(nid.clone(), v);
+            }
             Err(e) => {
                 error = Some(format!("节点 {} 失败: {}", nid, e));
                 break;
@@ -309,7 +467,11 @@ pub async fn execute_workflow(app: &AppHandle, id: &str) -> AppResult<WorkflowRu
         }
     }
 
-    let status = if error.is_some() { "failure" } else { "success" };
+    let status = if error.is_some() {
+        "failure"
+    } else {
+        "success"
+    };
     let run = WorkflowRun {
         started_at,
         finished_at: Utc::now().to_rfc3339(),
@@ -341,17 +503,26 @@ pub fn spawn_scheduler(app: AppHandle) -> SchedulerHandle {
     tauri::async_runtime::spawn(async move {
         let mut task_handles: Vec<tauri::async_runtime::JoinHandle<()>> = Vec::new();
         let load_and_spawn = |handles: &mut Vec<tauri::async_runtime::JoinHandle<()>>| {
-            for h in handles.drain(..) { h.abort(); }
+            for h in handles.drain(..) {
+                h.abort();
+            }
             let workflows = list_workflows_sync().unwrap_or_default();
-            for wf in workflows.into_iter().filter(|w| w.enabled && !w.cron.trim().is_empty()) {
+            for wf in workflows
+                .into_iter()
+                .filter(|w| w.enabled && !w.cron.trim().is_empty())
+            {
                 let id = wf.id.clone();
                 let cron_expr = to_six_field(&wf.cron);
-                let Ok(schedule) = cron::Schedule::from_str(&cron_expr) else { continue };
+                let Ok(schedule) = cron::Schedule::from_str(&cron_expr) else {
+                    continue;
+                };
                 let app_inner = app_clone.clone();
                 handles.push(tauri::async_runtime::spawn(async move {
                     loop {
                         let now = Utc::now();
-                        let Some(next) = schedule.upcoming(Utc).next() else { return };
+                        let Some(next) = schedule.upcoming(Utc).next() else {
+                            return;
+                        };
                         let delta = (next - now).to_std().unwrap_or(Duration::from_secs(60));
                         tokio::time::sleep(delta).await;
                         let _ = execute_workflow(&app_inner, &id).await;
@@ -424,7 +595,11 @@ pub async fn workflow_run_now(app: AppHandle, id: String) -> AppResult<WorkflowR
 
 #[tauri::command]
 #[specta::specta]
-pub async fn workflow_set_enabled(app: AppHandle, id: String, enabled: bool) -> AppResult<Workflow> {
+pub async fn workflow_set_enabled(
+    app: AppHandle,
+    id: String,
+    enabled: bool,
+) -> AppResult<Workflow> {
     let mut wf = load_workflow(&id)?;
     wf.enabled = enabled;
     wf.updated_at = Utc::now().to_rfc3339();
@@ -436,11 +611,23 @@ pub async fn workflow_set_enabled(app: AppHandle, id: String, enabled: bool) -> 
 // ========== Chat 工具入口 ==========
 
 pub async fn tool_create_workflow(args: &Value, app: &AppHandle) -> AppResult<String> {
-    let name = args.get("name").and_then(|v| v.as_str()).ok_or("缺少 name")?.to_string();
-    let cron_expr = args.get("cron").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let enabled = args.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("缺少 name")?
+        .to_string();
+    let cron_expr = args
+        .get("cron")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let enabled = args
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     let nodes_val = args.get("nodes").ok_or("缺少 nodes")?;
-    let nodes: Vec<WorkflowNode> = serde_json::from_value(nodes_val.clone()).map_err(|e| crate::error::AppError::from(format!("nodes 解析失败: {}", e)))?;
+    let nodes: Vec<WorkflowNode> = serde_json::from_value(nodes_val.clone())
+        .map_err(|e| crate::error::AppError::from(format!("nodes 解析失败: {}", e)))?;
 
     let wf = Workflow {
         id: format!("wf-{}", Utc::now().timestamp_millis()),
@@ -455,21 +642,33 @@ pub async fn tool_create_workflow(args: &Value, app: &AppHandle) -> AppResult<St
     validate_workflow(&wf)?;
     save_workflow_sync(&wf)?;
     notify_reload(app).await;
-    Ok(format!("已创建工作流：id={} name={} cron={} enabled={}", wf.id, wf.name, wf.cron, wf.enabled))
+    Ok(format!(
+        "已创建工作流：id={} name={} cron={} enabled={}",
+        wf.id, wf.name, wf.cron, wf.enabled
+    ))
 }
 
 pub async fn tool_run_workflow_now(args: &Value, app: &AppHandle) -> AppResult<String> {
     let id = args.get("id").and_then(|v| v.as_str()).ok_or("缺少 id")?;
     let run = execute_workflow(app, id).await?;
-    Ok(format!("运行完成 status={} outputs={}", run.status, serde_json::to_string(&run.outputs).unwrap_or_default()))
+    Ok(format!(
+        "运行完成 status={} outputs={}",
+        run.status,
+        serde_json::to_string(&run.outputs).unwrap_or_default()
+    ))
 }
 
 pub async fn tool_list_workflows(_app: &AppHandle) -> AppResult<String> {
     let list = list_workflows_sync()?;
-    let brief: Vec<Value> = list.iter().map(|w| json!({
-        "id": w.id, "name": w.name, "cron": w.cron, "enabled": w.enabled,
-        "nodeCount": w.nodes.len(),
-        "lastStatus": w.last_run.as_ref().map(|r| r.status.clone()),
-    })).collect();
+    let brief: Vec<Value> = list
+        .iter()
+        .map(|w| {
+            json!({
+                "id": w.id, "name": w.name, "cron": w.cron, "enabled": w.enabled,
+                "nodeCount": w.nodes.len(),
+                "lastStatus": w.last_run.as_ref().map(|r| r.status.clone()),
+            })
+        })
+        .collect();
     Ok(serde_json::to_string_pretty(&brief).unwrap_or_default())
 }

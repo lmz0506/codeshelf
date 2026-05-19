@@ -14,9 +14,7 @@ use std::path::Path;
 use sqlx::Acquire;
 
 use crate::storage::db::pool;
-use crate::storage::{
-    ChatMessage, ChatSession, ClipboardEntry, CompactionIndex, Project,
-};
+use crate::storage::{ChatMessage, ChatSession, ClipboardEntry, CompactionIndex, Project};
 
 // ============ Projects ============
 
@@ -110,9 +108,12 @@ pub async fn migrate_chat(data_dir: &Path) -> AppResult<()> {
         .map_err(|e| crate::error::AppError::from(format!("读取 conversations 失败: {}", e)))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| crate::error::AppError::from(format!("读取条目失败: {}", e)))?;
+        let entry =
+            entry.map_err(|e| crate::error::AppError::from(format!("读取条目失败: {}", e)))?;
         let path = entry.path();
-        let ft = entry.file_type().map_err(|e| crate::error::AppError::from(format!("读取类型失败: {}", e)))?;
+        let ft = entry
+            .file_type()
+            .map_err(|e| crate::error::AppError::from(format!("读取类型失败: {}", e)))?;
 
         // 顶层 *.json 文件 = 一个 session
         if ft.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json") {
@@ -186,7 +187,9 @@ async fn migrate_one_session(path: &Path, session_id: &str) -> AppResult<(usize,
     .bind(&session.current_compaction_version)
     .execute(&mut *tx)
     .await
-    .map_err(|e| crate::error::AppError::from(format!("插入 session {} 失败: {}", session.id, e)))?;
+    .map_err(|e| {
+        crate::error::AppError::from(format!("插入 session {} 失败: {}", session.id, e))
+    })?;
 
     let msg_count = session.messages.len();
     for (idx, m) in session.messages.iter().enumerate() {
@@ -222,9 +225,9 @@ async fn migrate_one_session(path: &Path, session_id: &str) -> AppResult<(usize,
         }
     }
 
-    tx.commit()
-        .await
-        .map_err(|e| crate::error::AppError::from(format!("提交 session {} 事务失败: {}", session_id, e)))?;
+    tx.commit().await.map_err(|e| {
+        crate::error::AppError::from(format!("提交 session {} 事务失败: {}", session_id, e))
+    })?;
 
     Ok((1, msg_count))
 }
@@ -338,10 +341,12 @@ pub async fn migrate_clipboard(data_dir: &Path) -> AppResult<()> {
         log::debug!("clipboard_history.json 不存在，跳过");
         return Ok(());
     }
-    let raw = fs::read_to_string(&path)
-        .map_err(|e| crate::error::AppError::from(format!("读取 clipboard_history.json 失败: {}", e)))?;
-    let entries: Vec<ClipboardEntry> = serde_json::from_str(&raw)
-        .map_err(|e| crate::error::AppError::from(format!("解析 clipboard_history.json 失败: {}", e)))?;
+    let raw = fs::read_to_string(&path).map_err(|e| {
+        crate::error::AppError::from(format!("读取 clipboard_history.json 失败: {}", e))
+    })?;
+    let entries: Vec<ClipboardEntry> = serde_json::from_str(&raw).map_err(|e| {
+        crate::error::AppError::from(format!("解析 clipboard_history.json 失败: {}", e))
+    })?;
 
     let pool = pool();
     let mut conn = pool
@@ -369,7 +374,9 @@ pub async fn migrate_clipboard(data_dir: &Path) -> AppResult<()> {
         .bind(&e.note)
         .execute(&mut *tx)
         .await
-        .map_err(|err| crate::error::AppError::from(format!("插入 clipboard 条目 {} 失败: {}", e.id, err)))?;
+        .map_err(|err| {
+            crate::error::AppError::from(format!("插入 clipboard 条目 {} 失败: {}", e.id, err))
+        })?;
     }
 
     tx.commit()
@@ -415,7 +422,9 @@ pub async fn migrate_stats(data_dir: &Path) -> AppResult<()> {
         .bind(ps.last_updated)
         .execute(&mut *tx)
         .await
-        .map_err(|e| crate::error::AppError::from(format!("插入 project_stats {} 失败: {}", proj_path, e)))?;
+        .map_err(|e| {
+            crate::error::AppError::from(format!("插入 project_stats {} 失败: {}", proj_path, e))
+        })?;
 
         for (date, count) in &ps.commits_by_date {
             sqlx::query(
@@ -428,7 +437,9 @@ pub async fn migrate_stats(data_dir: &Path) -> AppResult<()> {
             .bind(*count as i64)
             .execute(&mut *tx)
             .await
-            .map_err(|e| crate::error::AppError::from(format!("插入 commits_by_date 失败: {}", e)))?;
+            .map_err(|e| {
+                crate::error::AppError::from(format!("插入 commits_by_date 失败: {}", e))
+            })?;
         }
 
         for (idx, rc) in ps.recent_commits.iter().enumerate() {
@@ -450,7 +461,9 @@ pub async fn migrate_stats(data_dir: &Path) -> AppResult<()> {
             .bind(&rc.project_name)
             .execute(&mut *tx)
             .await
-            .map_err(|e| crate::error::AppError::from(format!("插入 recent_commits 失败: {}", e)))?;
+            .map_err(|e| {
+                crate::error::AppError::from(format!("插入 recent_commits 失败: {}", e))
+            })?;
         }
     }
 
@@ -483,7 +496,9 @@ pub async fn migrate_stats(data_dir: &Path) -> AppResult<()> {
     .bind(cache.last_updated.to_string())
     .execute(&mut *tx)
     .await
-    .map_err(|e| crate::error::AppError::from(format!("插入 stats_meta last_updated 失败: {}", e)))?;
+    .map_err(|e| {
+        crate::error::AppError::from(format!("插入 stats_meta last_updated 失败: {}", e))
+    })?;
 
     tx.commit()
         .await

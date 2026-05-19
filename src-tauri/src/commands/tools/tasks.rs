@@ -28,24 +28,24 @@ pub(super) fn read_tasks(session_id: &str) -> AppResult<Vec<ChatTask>> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let text = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取任务失败: {}", e)))?;
-    serde_json::from_str(&text).map_err(|e| crate::error::AppError::from(format!("解析任务失败: {}", e)))
+    let text = fs::read_to_string(&path)
+        .map_err(|e| crate::error::AppError::from(format!("读取任务失败: {}", e)))?;
+    serde_json::from_str(&text)
+        .map_err(|e| crate::error::AppError::from(format!("解析任务失败: {}", e)))
 }
 
 pub(super) fn write_tasks(session_id: &str, tasks: &[ChatTask]) -> AppResult<()> {
     let path = session_tasks_path(session_id)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
     }
-    let text = serde_json::to_string_pretty(tasks).map_err(|e| crate::error::AppError::from(format!("序列化任务失败: {}", e)))?;
+    let text = serde_json::to_string_pretty(tasks)
+        .map_err(|e| crate::error::AppError::from(format!("序列化任务失败: {}", e)))?;
     fs::write(&path, text).map_err(|e| crate::error::AppError::from(format!("写入任务失败: {}", e)))
 }
 
-pub(super) fn tool_task_create(
-    ctx: &ToolCtx,
-    args: &Value,
-    app: &AppHandle,
-) -> AppResult<String> {
+pub(super) fn tool_task_create(ctx: &ToolCtx, args: &Value, app: &AppHandle) -> AppResult<String> {
     let subject = args
         .get("subject")
         .and_then(|v| v.as_str())
@@ -75,11 +75,7 @@ pub(super) fn tool_task_create(
     Ok(format!("已创建任务 {}", task_id))
 }
 
-pub(super) fn tool_task_update(
-    ctx: &ToolCtx,
-    args: &Value,
-    app: &AppHandle,
-) -> AppResult<String> {
+pub(super) fn tool_task_update(ctx: &ToolCtx, args: &Value, app: &AppHandle) -> AppResult<String> {
     let task_id = args
         .get("taskId")
         .and_then(|v| v.as_str())

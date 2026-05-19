@@ -1,7 +1,7 @@
 // 文件下载模块 - 支持断点续传、重试机制、下载队列管理
 
-use crate::error::AppResult;
 use super::{current_time, generate_id, DownloadConfig, DownloadTask};
+use crate::error::AppResult;
 use crate::storage;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -57,10 +57,10 @@ fn load_tasks_from_file() -> AppResult<HashMap<String, DownloadTask>> {
         .map_err(|e| crate::error::AppError::from(format!("读取下载任务失败: {}", e)))?;
 
     // 直接解析为任务数组
-    let tasks: Vec<DownloadTask> = serde_json::from_str(&content)
-        .unwrap_or_default();
+    let tasks: Vec<DownloadTask> = serde_json::from_str(&content).unwrap_or_default();
 
-    let result: HashMap<String, DownloadTask> = tasks.into_iter()
+    let result: HashMap<String, DownloadTask> = tasks
+        .into_iter()
         .map(|mut t| {
             // 重启后，下载中的任务变为暂停
             if t.status == "downloading" {
@@ -227,9 +227,7 @@ async fn download_file(task_id: &str, url: &str, save_path: &str) -> AppResult<(
 
     // 检查是否存在部分下载的文件（断点续传）
     let existing_size = if Path::new(save_path).exists() {
-        fs::metadata(save_path)
-            .map(|m| m.len())
-            .unwrap_or(0)
+        fs::metadata(save_path).map(|m| m.len()).unwrap_or(0)
     } else {
         0
     };
@@ -264,7 +262,10 @@ async fn download_file(task_id: &str, url: &str, save_path: &str) -> AppResult<(
     // 检查响应状态
     let status = response.status();
     if !status.is_success() && status.as_u16() != 206 {
-        return Err(crate::error::AppError::from(format!("HTTP 错误: {}", status)));
+        return Err(crate::error::AppError::from(format!(
+            "HTTP 错误: {}",
+            status
+        )));
     }
 
     // 从响应头获取文件大小（如果 HEAD 请求没有获取到）
@@ -294,7 +295,8 @@ async fn download_file(task_id: &str, url: &str, save_path: &str) -> AppResult<(
 
     // 确保目录存在
     if let Some(parent) = Path::new(save_path).parent() {
-        fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
     }
 
     // 打开文件（追加模式用于断点续传）
@@ -304,7 +306,8 @@ async fn download_file(task_id: &str, url: &str, save_path: &str) -> AppResult<(
             .open(save_path)
             .map_err(|e| crate::error::AppError::from(format!("打开文件失败: {}", e)))?
     } else {
-        File::create(save_path).map_err(|e| crate::error::AppError::from(format!("创建文件失败: {}", e)))?
+        File::create(save_path)
+            .map_err(|e| crate::error::AppError::from(format!("创建文件失败: {}", e)))?
     };
 
     // 下载数据
@@ -321,7 +324,8 @@ async fn download_file(task_id: &str, url: &str, save_path: &str) -> AppResult<(
             return Err(crate::error::AppError::from("下载已取消".to_string()));
         }
 
-        let chunk = chunk.map_err(|e| crate::error::AppError::from(format!("读取数据失败: {}", e)))?;
+        let chunk =
+            chunk.map_err(|e| crate::error::AppError::from(format!("读取数据失败: {}", e)))?;
         file.write_all(&chunk)
             .map_err(|e| crate::error::AppError::from(format!("写入文件失败: {}", e)))?;
 
@@ -430,10 +434,13 @@ pub async fn resume_download(task_id: String) -> AppResult<()> {
         tasks.get(&task_id).cloned()
     };
 
-    let task = task.ok_or_else(|| crate::error::AppError::from(format!("任务不存在: {}", task_id)))?;
+    let task =
+        task.ok_or_else(|| crate::error::AppError::from(format!("任务不存在: {}", task_id)))?;
 
     if task.status != "paused" {
-        return Err(crate::error::AppError::from("任务未暂停，无法恢复".to_string()));
+        return Err(crate::error::AppError::from(
+            "任务未暂停，无法恢复".to_string(),
+        ));
     }
 
     // 重置取消标志

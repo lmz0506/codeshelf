@@ -110,7 +110,8 @@ fn get_app_settings() -> AppResult<AppSettings> {
     if !path.exists() {
         return Ok(AppSettings::default());
     }
-    let content = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取应用设置失败: {}", e)))?;
+    let content = fs::read_to_string(&path)
+        .map_err(|e| crate::error::AppError::from(format!("读取应用设置失败: {}", e)))?;
     let settings: AppSettings = serde_json::from_str(&content).unwrap_or_default();
     Ok(settings)
 }
@@ -146,7 +147,8 @@ pub async fn migrate_chat_history_dir(new_dir: String) -> AppResult<String> {
     let new_path = PathBuf::from(new_dir);
     if !new_path.exists() {
         if let Some(parent) = new_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目标目录失败: {}", e)))?;
+            fs::create_dir_all(parent)
+                .map_err(|e| crate::error::AppError::from(format!("创建目标目录失败: {}", e)))?;
         }
     } else {
         let is_empty = fs::read_dir(&new_path)
@@ -155,10 +157,13 @@ pub async fn migrate_chat_history_dir(new_dir: String) -> AppResult<String> {
             .is_none();
 
         if !is_empty {
-            return Err(crate::error::AppError::from("目标目录必须为空目录".to_string()));
+            return Err(crate::error::AppError::from(
+                "目标目录必须为空目录".to_string(),
+            ));
         }
 
-        fs::remove_dir(&new_path).map_err(|e| crate::error::AppError::from(format!("清理目标目录失败: {}", e)))?;
+        fs::remove_dir(&new_path)
+            .map_err(|e| crate::error::AppError::from(format!("清理目标目录失败: {}", e)))?;
     }
 
     let old_dir = resolve_chat_history_dir()?;
@@ -171,7 +176,8 @@ pub async fn migrate_chat_history_dir(new_dir: String) -> AppResult<String> {
     }
 
     // 迁移 tasks.json 等物理文件；旧的 chat session JSON（如果未清理）也一起搬走
-    fs::rename(&old_dir, &new_path).map_err(|e| crate::error::AppError::from(format!("迁移会话目录失败: {}", e)))?;
+    fs::rename(&old_dir, &new_path)
+        .map_err(|e| crate::error::AppError::from(format!("迁移会话目录失败: {}", e)))?;
 
     Ok(new_path.to_string_lossy().to_string())
 }
@@ -230,8 +236,7 @@ const MESSAGE_SELECT: &str = "SELECT id, role, content, created_at, tokens, thin
     FROM chat_messages";
 
 fn parse_json_value(s: &Option<String>) -> Option<serde_json::Value> {
-    s.as_ref()
-        .and_then(|raw| serde_json::from_str(raw).ok())
+    s.as_ref().and_then(|raw| serde_json::from_str(raw).ok())
 }
 
 fn message_from_row(row: MessageDbRow) -> ChatMessage {
@@ -329,8 +334,16 @@ async fn read_session_full(session_id: &str) -> AppResult<Option<ChatSession>> {
     let mut session = session_from_row(row);
     session.messages = read_session_messages(session_id).await?;
     let (allowed, enabled) = read_session_tools(session_id).await?;
-    session.allowed_tools = if allowed.is_empty() { None } else { Some(allowed) };
-    session.enabled_tools = if enabled.is_empty() { None } else { Some(enabled) };
+    session.allowed_tools = if allowed.is_empty() {
+        None
+    } else {
+        Some(allowed)
+    };
+    session.enabled_tools = if enabled.is_empty() {
+        None
+    } else {
+        Some(enabled)
+    };
     Ok(Some(session))
 }
 
@@ -480,15 +493,7 @@ async fn write_session_full(session: &ChatSession) -> AppResult<()> {
 #[tauri::command]
 #[specta::specta]
 pub async fn list_chat_sessions() -> AppResult<Vec<ChatSessionSummary>> {
-    let rows: Vec<(
-        String,
-        String,
-        String,
-        String,
-        String,
-        String,
-        Option<i64>,
-    )> = sqlx::query_as(
+    let rows: Vec<(String, String, String, String, String, String, Option<i64>)> = sqlx::query_as(
         "SELECT id, title, provider_id, model_id, created_at, updated_at, pinned
          FROM chat_sessions ORDER BY updated_at DESC",
     )
@@ -501,12 +506,11 @@ pub async fn list_chat_sessions() -> AppResult<Vec<ChatSessionSummary>> {
     }
 
     // 一次性查所有 message_count
-    let count_rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT session_id, COUNT(*) FROM chat_messages GROUP BY session_id",
-    )
-    .fetch_all(pool())
-    .await
-    .map_err(|e| crate::error::AppError::from(format!("统计消息条数失败: {}", e)))?;
+    let count_rows: Vec<(String, i64)> =
+        sqlx::query_as("SELECT session_id, COUNT(*) FROM chat_messages GROUP BY session_id")
+            .fetch_all(pool())
+            .await
+            .map_err(|e| crate::error::AppError::from(format!("统计消息条数失败: {}", e)))?;
 
     let mut counts: HashMap<String, i64> = HashMap::new();
     for (sid, c) in count_rows {
@@ -515,19 +519,21 @@ pub async fn list_chat_sessions() -> AppResult<Vec<ChatSessionSummary>> {
 
     Ok(rows
         .into_iter()
-        .map(|(id, title, provider_id, model_id, created_at, updated_at, pinned)| {
-            let message_count = counts.get(&id).copied().unwrap_or(0) as usize;
-            ChatSessionSummary {
-                id,
-                title,
-                provider_id,
-                model_id,
-                created_at,
-                updated_at,
-                message_count,
-                pinned: pinned.map(|x| x != 0),
-            }
-        })
+        .map(
+            |(id, title, provider_id, model_id, created_at, updated_at, pinned)| {
+                let message_count = counts.get(&id).copied().unwrap_or(0) as usize;
+                ChatSessionSummary {
+                    id,
+                    title,
+                    provider_id,
+                    model_id,
+                    created_at,
+                    updated_at,
+                    message_count,
+                    pinned: pinned.map(|x| x != 0),
+                }
+            },
+        )
         .collect())
 }
 
@@ -586,20 +592,15 @@ pub async fn save_chat_session(mut session: ChatSession) -> AppResult<ChatSessio
 
 #[tauri::command]
 #[specta::specta]
-pub async fn rename_chat_session(
-    session_id: String,
-    title: String,
-) -> AppResult<ChatSession> {
+pub async fn rename_chat_session(session_id: String, title: String) -> AppResult<ChatSession> {
     let now = current_iso_time();
-    let result = sqlx::query(
-        "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?",
-    )
-    .bind(&title)
-    .bind(&now)
-    .bind(&session_id)
-    .execute(pool())
-    .await
-    .map_err(|e| crate::error::AppError::from(format!("重命名会话失败: {}", e)))?;
+    let result = sqlx::query("UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?")
+        .bind(&title)
+        .bind(&now)
+        .bind(&session_id)
+        .execute(pool())
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("重命名会话失败: {}", e)))?;
 
     if result.rows_affected() == 0 {
         return Err(crate::error::AppError::from("会话不存在".to_string()));
@@ -701,7 +702,9 @@ pub async fn save_compaction(input: SaveCompactionInput) -> AppResult<Compaction
         .bind(&input.session_id)
         .execute(&mut *tx)
         .await
-        .map_err(|e| crate::error::AppError::from(format!("更新 current_compaction_version 失败: {}", e)))?;
+        .map_err(|e| {
+            crate::error::AppError::from(format!("更新 current_compaction_version 失败: {}", e))
+        })?;
 
     tx.commit()
         .await
@@ -723,13 +726,14 @@ pub async fn list_compactions(session_id: String) -> AppResult<CompactionIndex> 
     .await
     .map_err(|e| crate::error::AppError::from(format!("查询压缩列表失败: {}", e)))?;
 
-    let current: Option<(Option<String>,)> = sqlx::query_as(
-        "SELECT current_compaction_version FROM chat_sessions WHERE id = ?",
-    )
-    .bind(&session_id)
-    .fetch_optional(pool())
-    .await
-    .map_err(|e| crate::error::AppError::from(format!("查询 current_compaction_version 失败: {}", e)))?;
+    let current: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT current_compaction_version FROM chat_sessions WHERE id = ?")
+            .bind(&session_id)
+            .fetch_optional(pool())
+            .await
+            .map_err(|e| {
+                crate::error::AppError::from(format!("查询 current_compaction_version 失败: {}", e))
+            })?;
 
     let versions: Vec<CompactionMeta> = rows
         .into_iter()
@@ -771,13 +775,17 @@ pub async fn get_compaction(
     let target = match version {
         Some(v) => Some(v),
         None => {
-            let row: Option<(Option<String>,)> = sqlx::query_as(
-                "SELECT current_compaction_version FROM chat_sessions WHERE id = ?",
-            )
-            .bind(&session_id)
-            .fetch_optional(pool())
-            .await
-            .map_err(|e| crate::error::AppError::from(format!("查询 current_compaction_version 失败: {}", e)))?;
+            let row: Option<(Option<String>,)> =
+                sqlx::query_as("SELECT current_compaction_version FROM chat_sessions WHERE id = ?")
+                    .bind(&session_id)
+                    .fetch_optional(pool())
+                    .await
+                    .map_err(|e| {
+                        crate::error::AppError::from(format!(
+                            "查询 current_compaction_version 失败: {}",
+                            e
+                        ))
+                    })?;
             row.and_then(|(v,)| v)
         }
     };
@@ -919,7 +927,10 @@ pub async fn chat_complete(request: ChatStreamRequest) -> AppResult<String> {
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(crate::error::AppError::from(format!("HTTP {}: {}", status, text)));
+        return Err(crate::error::AppError::from(format!(
+            "HTTP {}: {}",
+            status, text
+        )));
     }
     let parsed: serde_json::Value = response
         .json()
@@ -947,12 +958,7 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResul
 
     let app_handle = app.clone();
     let handle = tokio::spawn(async move {
-        let response = client
-            .post(&url)
-            .headers(headers)
-            .json(&body)
-            .send()
-            .await;
+        let response = client.post(&url).headers(headers).json(&body).send().await;
 
         let send_error = |err: String| async {
             let mut ev = ChatStreamEvent::new(&request_id);
@@ -1001,7 +1007,9 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResul
             let reasoning = message
                 .and_then(|v| v.get("reasoning_content"))
                 .and_then(|v| v.as_str());
-            let tool_calls = message.and_then(|v| v.get("tool_calls")).and_then(|v| v.as_array());
+            let tool_calls = message
+                .and_then(|v| v.get("tool_calls"))
+                .and_then(|v| v.as_array());
             let finish_reason = choice0
                 .and_then(|v| v.get("finish_reason"))
                 .and_then(|v| v.as_str())
@@ -1019,7 +1027,10 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResul
             }
             if let Some(calls) = tool_calls {
                 for (idx, call) in calls.iter().enumerate() {
-                    let id = call.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let id = call
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                     let func = call.get("function");
                     let name = func
                         .and_then(|v| v.get("name"))
@@ -1105,11 +1116,12 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResul
                             .and_then(|v| v.as_array())
                         {
                             for call in tool_calls {
-                                let index = call
-                                    .get("index")
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(0) as u32;
-                                let id = call.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                let index =
+                                    call.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                let id = call
+                                    .get("id")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
                                 let func = call.get("function");
                                 let name = func
                                     .and_then(|v| v.get("name"))

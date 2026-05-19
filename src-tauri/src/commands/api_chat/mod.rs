@@ -20,9 +20,7 @@ use crate::error::AppResult;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::storage::{
-    get_storage_config, ApiEndpoint, ApiGroup,
-};
+use crate::storage::{get_storage_config, ApiEndpoint, ApiGroup};
 
 mod endpoints;
 mod execute;
@@ -52,7 +50,8 @@ pub(super) fn sessions_dir() -> AppResult<PathBuf> {
 
 pub(super) fn ensure_parent(path: &Path) -> AppResult<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
     }
     Ok(())
 }
@@ -62,19 +61,22 @@ pub(super) fn load_groups() -> AppResult<Vec<ApiGroup>> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let content = fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取 groups 失败: {}", e)))?;
+    let content = fs::read_to_string(&path)
+        .map_err(|e| crate::error::AppError::from(format!("读取 groups 失败: {}", e)))?;
     if content.trim().is_empty() {
         return Ok(Vec::new());
     }
-    serde_json::from_str(&content).map_err(|e| crate::error::AppError::from(format!("解析 groups 失败: {}", e)))
+    serde_json::from_str(&content)
+        .map_err(|e| crate::error::AppError::from(format!("解析 groups 失败: {}", e)))
 }
 
 pub(super) fn write_groups(groups: &[ApiGroup]) -> AppResult<()> {
     let path = groups_file()?;
     ensure_parent(&path)?;
-    let content =
-        serde_json::to_string_pretty(groups).map_err(|e| crate::error::AppError::from(format!("序列化 groups 失败: {}", e)))?;
-    fs::write(&path, content).map_err(|e| crate::error::AppError::from(format!("保存 groups 失败: {}", e)))
+    let content = serde_json::to_string_pretty(groups)
+        .map_err(|e| crate::error::AppError::from(format!("序列化 groups 失败: {}", e)))?;
+    fs::write(&path, content)
+        .map_err(|e| crate::error::AppError::from(format!("保存 groups 失败: {}", e)))
 }
 
 pub(super) fn load_endpoints() -> AppResult<Vec<ApiEndpoint>> {
@@ -82,12 +84,13 @@ pub(super) fn load_endpoints() -> AppResult<Vec<ApiEndpoint>> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let content =
-        fs::read_to_string(&path).map_err(|e| crate::error::AppError::from(format!("读取 endpoints 失败: {}", e)))?;
+    let content = fs::read_to_string(&path)
+        .map_err(|e| crate::error::AppError::from(format!("读取 endpoints 失败: {}", e)))?;
     if content.trim().is_empty() {
         return Ok(Vec::new());
     }
-    serde_json::from_str(&content).map_err(|e| crate::error::AppError::from(format!("解析 endpoints 失败: {}", e)))
+    serde_json::from_str(&content)
+        .map_err(|e| crate::error::AppError::from(format!("解析 endpoints 失败: {}", e)))
 }
 
 pub(super) fn write_endpoints(endpoints: &[ApiEndpoint]) -> AppResult<()> {
@@ -95,7 +98,8 @@ pub(super) fn write_endpoints(endpoints: &[ApiEndpoint]) -> AppResult<()> {
     ensure_parent(&path)?;
     let content = serde_json::to_string_pretty(endpoints)
         .map_err(|e| crate::error::AppError::from(format!("序列化 endpoints 失败: {}", e)))?;
-    fs::write(&path, content).map_err(|e| crate::error::AppError::from(format!("保存 endpoints 失败: {}", e)))
+    fs::write(&path, content)
+        .map_err(|e| crate::error::AppError::from(format!("保存 endpoints 失败: {}", e)))
 }
 
 pub(super) fn session_path(dir: &Path, id: &str) -> PathBuf {

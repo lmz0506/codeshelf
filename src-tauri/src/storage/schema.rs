@@ -12,8 +12,8 @@ pub struct Project {
     pub name: String,
     pub path: String,
     pub is_favorite: bool,
-    pub tags: Vec<String>,      // 分类（单选，但保留数组兼容）
-    pub labels: Vec<String>,    // 标签（多选）
+    pub tags: Vec<String>,   // 分类（单选，但保留数组兼容）
+    pub labels: Vec<String>, // 标签（多选）
     pub created_at: String,
     pub updated_at: String,
     pub last_opened: Option<String>,
@@ -353,7 +353,6 @@ pub struct ChatSessionSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<bool>,
 }
-
 
 /// 获取当前 ISO 时间字符串
 pub fn current_iso_time() -> String {

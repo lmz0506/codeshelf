@@ -22,7 +22,6 @@ import { useSettingsStore, type Theme } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import type { Project, Notification, AppShortcutBinding, AiProviderConfig } from "@/types";
-import type { GeneratedResume } from "@/types/resume";
 import type { ToolType } from "@/types/toolbox";
 
 const queryClient = new QueryClient({
@@ -83,7 +82,7 @@ async function initializeApp() {
       invoke<AppShortcutBinding[]>("get_app_shortcuts"),
       invoke<AiProviderConfig[]>("get_ai_providers"),
       invoke<string[]>("get_sensitive_file_patterns"),
-      invoke<GeneratedResume[]>("get_resumes"),
+      invoke<unknown[]>("get_resumes"),
     ]);
 
     // 转换终端配置格式
@@ -128,7 +127,7 @@ async function initializeApp() {
     });
     useNotificationsStore.setState({ notifications: notificationsFormatted });
     useAiProvidersStore.setState({ aiProviders: normalizedAiProviders });
-    useResumeStore.setState({ savedResumes: savedResumes || [] });
+    useResumeStore.getState().setSavedResumes(savedResumes || []);
     useUiStore.setState({ initialized: true });
 
     console.log("应用初始化完成，已从 data 目录加载数据");

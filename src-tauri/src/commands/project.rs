@@ -49,8 +49,17 @@ type ProjectRow = (
 const PROJECT_SELECT: &str = "SELECT id, name, path, is_favorite, created_at, updated_at, last_opened, editor_id, claude_env_name FROM projects";
 
 fn project_from_row(row: ProjectRow, tags: Vec<String>, labels: Vec<String>) -> Project {
-    let (id, name, path, is_favorite, created_at, updated_at, last_opened, editor_id, claude_env_name) =
-        row;
+    let (
+        id,
+        name,
+        path,
+        is_favorite,
+        created_at,
+        updated_at,
+        last_opened,
+        editor_id,
+        claude_env_name,
+    ) = row;
     Project {
         id,
         name,
@@ -99,13 +108,11 @@ async fn fetch_project_by_id(id: &str) -> AppResult<Option<Project>> {
 /// 取所有项目（一次查询拉全部 + 各拉一次 tags/labels，避免 N+1）
 async fn fetch_all_projects() -> AppResult<Vec<Project>> {
     let pool = pool();
-    let rows: Vec<ProjectRow> = sqlx::query_as(&format!(
-        "{} ORDER BY updated_at DESC",
-        PROJECT_SELECT
-    ))
-    .fetch_all(pool)
-    .await
-    .map_err(|e| crate::error::AppError::from(format!("查询项目列表失败: {}", e)))?;
+    let rows: Vec<ProjectRow> =
+        sqlx::query_as(&format!("{} ORDER BY updated_at DESC", PROJECT_SELECT))
+            .fetch_all(pool)
+            .await
+            .map_err(|e| crate::error::AppError::from(format!("查询项目列表失败: {}", e)))?;
 
     if rows.is_empty() {
         return Ok(Vec::new());
@@ -117,12 +124,11 @@ async fn fetch_all_projects() -> AppResult<Vec<Project>> {
             .await
             .map_err(|e| crate::error::AppError::from(format!("查询全量 tags 失败: {}", e)))?;
 
-    let all_labels: Vec<(String, String)> = sqlx::query_as(
-        "SELECT project_id, label FROM project_labels ORDER BY project_id, label",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| crate::error::AppError::from(format!("查询全量 labels 失败: {}", e)))?;
+    let all_labels: Vec<(String, String)> =
+        sqlx::query_as("SELECT project_id, label FROM project_labels ORDER BY project_id, label")
+            .fetch_all(pool)
+            .await
+            .map_err(|e| crate::error::AppError::from(format!("查询全量 labels 失败: {}", e)))?;
 
     let mut tags_map: HashMap<String, Vec<String>> = HashMap::new();
     for (pid, tag) in all_tags {
@@ -202,12 +208,14 @@ pub async fn create_project(input: CreateProjectInput) -> AppResult<Project> {
     .map_err(|e| crate::error::AppError::from(format!("插入项目失败: {}", e)))?;
 
     for tag in &tags {
-        sqlx::query("INSERT INTO project_tags (project_id, tag) VALUES (?, ?) ON CONFLICT DO NOTHING")
-            .bind(&id)
-            .bind(tag)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| crate::error::AppError::from(format!("插入 tag 失败: {}", e)))?;
+        sqlx::query(
+            "INSERT INTO project_tags (project_id, tag) VALUES (?, ?) ON CONFLICT DO NOTHING",
+        )
+        .bind(&id)
+        .bind(tag)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("插入 tag 失败: {}", e)))?;
     }
     for label in &labels {
         sqlx::query(
@@ -386,15 +394,13 @@ pub async fn toggle_favorite(id: String) -> AppResult<Project> {
 #[specta::specta]
 pub async fn update_last_opened(id: String) -> AppResult<Project> {
     let now = current_iso_time();
-    let result = sqlx::query(
-        "UPDATE projects SET last_opened = ?, updated_at = ? WHERE id = ?",
-    )
-    .bind(&now)
-    .bind(&now)
-    .bind(&id)
-    .execute(pool())
-    .await
-    .map_err(|e| crate::error::AppError::from(format!("更新 last_opened 失败: {}", e)))?;
+    let result = sqlx::query("UPDATE projects SET last_opened = ?, updated_at = ? WHERE id = ?")
+        .bind(&now)
+        .bind(&now)
+        .bind(&id)
+        .execute(pool())
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("更新 last_opened 失败: {}", e)))?;
 
     if result.rows_affected() == 0 {
         return Err(crate::error::AppError::from("项目不存在".to_string()));
@@ -407,9 +413,7 @@ pub async fn update_last_opened(id: String) -> AppResult<Project> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn batch_update_projects(
-    updates: Vec<UpdateProjectInput>,
-) -> AppResult<Vec<Project>> {
+pub async fn batch_update_projects(updates: Vec<UpdateProjectInput>) -> AppResult<Vec<Project>> {
     let now = current_iso_time();
     let pool = pool();
 
@@ -450,7 +454,9 @@ pub async fn batch_update_projects(
                 .bind(&input.id)
                 .execute(&mut *tx)
                 .await
-                .map_err(|e| crate::error::AppError::from(format!("更新 updated_at 失败: {}", e)))?;
+                .map_err(|e| {
+                    crate::error::AppError::from(format!("更新 updated_at 失败: {}", e))
+                })?;
         }
 
         if let Some(tags) = &input.tags {
@@ -536,9 +542,7 @@ pub async fn batch_delete_projects(ids: Vec<String>) -> AppResult<()> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn import_projects(
-    new_projects: Vec<CreateProjectInput>,
-) -> AppResult<Vec<Project>> {
+pub async fn import_projects(new_projects: Vec<CreateProjectInput>) -> AppResult<Vec<Project>> {
     let mut imported = Vec::new();
     let pool = pool();
 
@@ -632,20 +636,15 @@ pub async fn reload_projects() -> AppResult<Vec<Project>> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn set_project_editor(
-    id: String,
-    editor_id: Option<String>,
-) -> AppResult<Project> {
+pub async fn set_project_editor(id: String, editor_id: Option<String>) -> AppResult<Project> {
     let now = current_iso_time();
-    let result = sqlx::query(
-        "UPDATE projects SET editor_id = ?, updated_at = ? WHERE id = ?",
-    )
-    .bind(&editor_id)
-    .bind(&now)
-    .bind(&id)
-    .execute(pool())
-    .await
-    .map_err(|e| crate::error::AppError::from(format!("更新 editor_id 失败: {}", e)))?;
+    let result = sqlx::query("UPDATE projects SET editor_id = ?, updated_at = ? WHERE id = ?")
+        .bind(&editor_id)
+        .bind(&now)
+        .bind(&id)
+        .execute(pool())
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("更新 editor_id 失败: {}", e)))?;
 
     if result.rows_affected() == 0 {
         return Err(crate::error::AppError::from("项目不存在".to_string()));
@@ -663,15 +662,16 @@ pub async fn set_project_claude_env(
     claude_env_name: Option<String>,
 ) -> AppResult<Project> {
     let now = current_iso_time();
-    let result = sqlx::query(
-        "UPDATE projects SET claude_env_name = ?, updated_at = ? WHERE id = ?",
-    )
-    .bind(&claude_env_name)
-    .bind(&now)
-    .bind(&id)
-    .execute(pool())
-    .await
-    .map_err(|e| crate::error::AppError::from(format!("更新 claude_env_name 失败: {}", e)))?;
+    let result =
+        sqlx::query("UPDATE projects SET claude_env_name = ?, updated_at = ? WHERE id = ?")
+            .bind(&claude_env_name)
+            .bind(&now)
+            .bind(&id)
+            .execute(pool())
+            .await
+            .map_err(|e| {
+                crate::error::AppError::from(format!("更新 claude_env_name 失败: {}", e))
+            })?;
 
     if result.rows_affected() == 0 {
         return Err(crate::error::AppError::from("项目不存在".to_string()));

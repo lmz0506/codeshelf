@@ -1,8 +1,8 @@
 // 快捷键备忘工具 - 预置 Mac/Windows 常用快捷键，支持自定义编辑、搜索、导入导出
 
+use super::{generate_id, ShortcutEntry, ShortcutInput};
 use crate::error::AppResult;
 use crate::storage::config::get_storage_config;
-use super::{ShortcutEntry, ShortcutInput, generate_id};
 
 // ============== 文件读写 ==============
 
@@ -55,12 +55,28 @@ fn default_shortcuts() -> Vec<ShortcutEntry> {
         ("default_mac_system_010", "切换应用", "Command + Tab"),
         ("default_mac_system_011", "截屏", "Command + Shift + 3"),
         ("default_mac_system_012", "截取区域", "Command + Shift + 4"),
-        ("default_mac_system_013", "Spotlight 搜索", "Command + Space"),
-        ("default_mac_system_014", "前往文件夹", "Command + Shift + G"),
-        ("default_mac_system_015", "复制文件路径", "Command + Option + C"),
+        (
+            "default_mac_system_013",
+            "Spotlight 搜索",
+            "Command + Space",
+        ),
+        (
+            "default_mac_system_014",
+            "前往文件夹",
+            "Command + Shift + G",
+        ),
+        (
+            "default_mac_system_015",
+            "复制文件路径",
+            "Command + Option + C",
+        ),
         ("default_mac_system_016", "光标移到行首", "Command + Left"),
         ("default_mac_system_017", "光标移到行尾", "Command + Right"),
-        ("default_mac_system_018", "强制退出", "Command + Option + Esc"),
+        (
+            "default_mac_system_018",
+            "强制退出",
+            "Command + Option + Esc",
+        ),
     ];
 
     for (id, desc, keys) in mac_system {
@@ -272,7 +288,9 @@ pub async fn add_shortcut(input: ShortcutInput) -> AppResult<ShortcutEntry> {
 pub async fn update_shortcut(id: String, input: ShortcutInput) -> AppResult<ShortcutEntry> {
     let mut shortcuts = read_shortcuts_file()?;
 
-    let entry = shortcuts.iter_mut().find(|s| s.id == id)
+    let entry = shortcuts
+        .iter_mut()
+        .find(|s| s.id == id)
         .ok_or_else(|| crate::error::AppError::from(format!("快捷键 {} 不存在", id)))?;
 
     // 默认项首次编辑时保存原始按键
@@ -306,11 +324,15 @@ pub async fn update_shortcut(id: String, input: ShortcutInput) -> AppResult<Shor
 pub async fn delete_shortcut(id: String) -> AppResult<()> {
     let mut shortcuts = read_shortcuts_file()?;
 
-    let idx = shortcuts.iter().position(|s| s.id == id)
+    let idx = shortcuts
+        .iter()
+        .position(|s| s.id == id)
         .ok_or_else(|| crate::error::AppError::from(format!("快捷键 {} 不存在", id)))?;
 
     if shortcuts[idx].is_default {
-        return Err(crate::error::AppError::from("不能删除默认快捷键".to_string()));
+        return Err(crate::error::AppError::from(
+            "不能删除默认快捷键".to_string(),
+        ));
     }
 
     shortcuts.remove(idx);
@@ -324,9 +346,7 @@ pub async fn reset_shortcuts() -> AppResult<Vec<ShortcutEntry>> {
     let existing = read_shortcuts_file()?;
 
     // 保留用户自定义项
-    let user_custom: Vec<ShortcutEntry> = existing.into_iter()
-        .filter(|s| !s.is_default)
-        .collect();
+    let user_custom: Vec<ShortcutEntry> = existing.into_iter().filter(|s| !s.is_default).collect();
 
     // 生成完整默认列表
     let mut result = default_shortcuts();

@@ -1,7 +1,7 @@
 // 仓库扫描与初始化：scan_directory / is_git_repo / git_init
 
-use crate::error::AppResult;
 use super::{run_git_command, GitRepo};
+use crate::error::AppResult;
 
 #[tauri::command]
 #[specta::specta]
@@ -17,7 +17,8 @@ fn scan_for_repos(path: &str, repos: &mut Vec<GitRepo>, depth: u32) -> AppResult
         return Ok(());
     }
 
-    let entries = std::fs::read_dir(path).map_err(|e| crate::error::AppError::from(e.to_string()))?;
+    let entries =
+        std::fs::read_dir(path).map_err(|e| crate::error::AppError::from(e.to_string()))?;
 
     for entry in entries.flatten() {
         let entry_path = entry.path();

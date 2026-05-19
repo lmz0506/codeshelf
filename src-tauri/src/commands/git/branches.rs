@@ -1,7 +1,7 @@
 // 分支命令：get_branches / checkout_branch / create_branch
 
-use crate::error::AppResult;
 use super::{run_git_command, BranchInfo};
+use crate::error::AppResult;
 
 #[tauri::command]
 #[specta::specta]
@@ -19,13 +19,15 @@ pub async fn get_branches(path: String) -> AppResult<Vec<BranchInfo>> {
             let is_remote = name.starts_with("remotes/");
 
             // Extract upstream from [origin/branch] format
-            let upstream = line
-                .find('[')
-                .and_then(|start| {
-                    line[start..].find(']').map(|end| {
-                        line[start + 1..start + end].split(':').next().unwrap_or("").to_string()
-                    })
-                });
+            let upstream = line.find('[').and_then(|start| {
+                line[start..].find(']').map(|end| {
+                    line[start + 1..start + end]
+                        .split(':')
+                        .next()
+                        .unwrap_or("")
+                        .to_string()
+                })
+            });
 
             BranchInfo {
                 name: name.trim_start_matches("remotes/").to_string(),

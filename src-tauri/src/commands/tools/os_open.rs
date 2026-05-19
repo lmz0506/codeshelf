@@ -6,21 +6,29 @@ use serde_json::Value;
 use super::ctx::expand_home;
 
 pub(super) async fn tool_open_path(args: &Value) -> AppResult<String> {
-    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
+    let path = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or("缺少 path")?;
     let path = expand_home(path);
     crate::commands::system::open_in_explorer(path.clone()).await?;
     Ok(format!("已在文件管理器中打开：{}", path))
 }
 
 pub(super) async fn tool_open_in_editor(args: &Value) -> AppResult<String> {
-    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
-    let path = expand_home(path);
-    let editor = args
-        .get("editor")
+    let path = args
+        .get("path")
         .and_then(|v| v.as_str())
-        .map(expand_home);
+        .ok_or("缺少 path")?;
+    let path = expand_home(path);
+    let editor = args.get("editor").and_then(|v| v.as_str()).map(expand_home);
     if let Some(e) = &editor {
-        if e.contains("&&") || e.contains("||") || e.contains(';') || e.contains('|') || e.contains('`') {
+        if e.contains("&&")
+            || e.contains("||")
+            || e.contains(';')
+            || e.contains('|')
+            || e.contains('`')
+        {
             return Err("editor 参数包含危险字符".into());
         }
     }
@@ -33,7 +41,10 @@ pub(super) async fn tool_open_in_editor(args: &Value) -> AppResult<String> {
 }
 
 pub(super) async fn tool_open_terminal(args: &Value) -> AppResult<String> {
-    let path = args.get("path").and_then(|v| v.as_str()).ok_or("缺少 path")?;
+    let path = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or("缺少 path")?;
     let path = expand_home(path);
     let terminal = args
         .get("terminal")

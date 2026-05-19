@@ -1,20 +1,20 @@
 // UDP 客户端/服务器实现
 
-use crate::error::AppResult;
 use super::types::*;
 use crate::commands::toolbox::generate_id;
+use crate::error::AppResult;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, RwLock};
-use tauri::{AppHandle, Emitter};
 
 /// 全局 UDP 套接字存储
 use once_cell::sync::Lazy;
-use tokio::sync::RwLock as TokioRwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::sync::RwLock as TokioRwLock;
 
 pub static UDP_SOCKETS: Lazy<TokioRwLock<HashMap<String, UdpSocketState>>> =
     Lazy::new(|| TokioRwLock::new(HashMap::new()));
@@ -56,7 +56,10 @@ pub async fn start_udp_session(
     // 如果是客户端模式，连接到目标
     let target_addr = if mode == SessionMode::Client {
         let addr = format!("{}:{}", host, port);
-        Some(addr.parse::<SocketAddr>().map_err(|e| crate::error::AppError::from(format!("解析地址失败: {}", e)))?)
+        Some(
+            addr.parse::<SocketAddr>()
+                .map_err(|e| crate::error::AppError::from(format!("解析地址失败: {}", e)))?,
+        )
     } else {
         None
     };
@@ -69,9 +72,7 @@ pub async fn start_udp_session(
     };
 
     // 获取本地绑定地址
-    let local_addr = socket.local_addr()
-        .map(|a| a.to_string())
-        .ok();
+    let local_addr = socket.local_addr().map(|a| a.to_string()).ok();
     log::info!("Netcat UDP 会话启动, 本地地址: {:?}", local_addr);
 
     {
@@ -95,14 +96,20 @@ pub async fn start_udp_session(
     let (send_tx, mut send_rx) = mpsc::channel::<(Vec<u8>, Option<SocketAddr>)>(100);
 
     // 保存到全局存储
-    UDP_SOCKETS.write().await.insert(session_id.clone(), UdpSocketState {
-        send_tx,
-        target_addr,
-    });
+    UDP_SOCKETS.write().await.insert(
+        session_id.clone(),
+        UdpSocketState {
+            send_tx,
+            target_addr,
+        },
+    );
 
     // 创建 shutdown 标志
     let shutdown_flag = Arc::new(AtomicBool::new(false));
-    UDP_SHUTDOWN_FLAGS.write().await.insert(session_id.clone(), shutdown_flag.clone());
+    UDP_SHUTDOWN_FLAGS
+        .write()
+        .await
+        .insert(session_id.clone(), shutdown_flag.clone());
 
     let socket_clone = socket.clone();
     let session_state_clone = session_state.clone();
@@ -155,15 +162,19 @@ pub async fn start_udp_session(
         loop {
             // 检查 shutdown 标志
             if shutdown_flag_recv.load(Ordering::SeqCst) {
-                log::info!("Netcat UDP 接收任务收到停止信号: session={}", session_id_clone);
+                log::info!(
+                    "Netcat UDP 接收任务收到停止信号: session={}",
+                    session_id_clone
+                );
                 break;
             }
 
             // 使用较短的超时 (100ms)
             let recv_result = tokio::time::timeout(
                 std::time::Duration::from_millis(100),
-                socket_clone.recv_from(&mut buffer)
-            ).await;
+                socket_clone.recv_from(&mut buffer),
+            )
+            .await;
 
             match recv_result {
                 Ok(Ok((n, addr))) => {
@@ -174,7 +185,8 @@ pub async fn start_udp_session(
                         data,
                         addr.to_string(),
                         mode_clone,
-                    ).await;
+                    )
+                    .await;
                 }
                 Ok(Err(e)) => {
                     log::error!("UDP 接收失败: {}", e);
@@ -203,7 +215,12 @@ pub async fn start_udp_session(
         let mut state = session_state_clone.write().await;
         state.session.status = SessionStatus::Disconnected;
 
-        emit_status_changed(&app_clone, &session_id_clone, SessionStatus::Disconnected, None);
+        emit_status_changed(
+            &app_clone,
+            &session_id_clone,
+            SessionStatus::Disconnected,
+            None,
+        );
     });
 
     Ok(())
@@ -218,11 +235,17 @@ pub async fn send_udp_data(
     let sockets = UDP_SOCKETS.read().await;
     if let Some(socket_state) = sockets.get(session_id) {
         let addr = match target_addr {
-            Some(addr_str) => Some(addr_str.parse::<SocketAddr>().map_err(|e| crate::error::AppError::from(format!("解析地址失败: {}", e)))?),
+            Some(addr_str) => Some(
+                addr_str
+                    .parse::<SocketAddr>()
+                    .map_err(|e| crate::error::AppError::from(format!("解析地址失败: {}", e)))?,
+            ),
             None => socket_state.target_addr,
         };
 
-        socket_state.send_tx.send((data, addr))
+        socket_state
+            .send_tx
+            .send((data, addr))
             .await
             .map_err(|e| crate::error::AppError::from(format!("发送失败: {}", e)))
     } else {
@@ -284,10 +307,13 @@ async fn handle_received_data(
                 state.session.client_count = state.clients.len() as u32;
 
                 // 发送新客户端事件
-                let _ = app.emit("netcat-event", NetcatEvent::ClientConnected {
-                    session_id: state.session.id.clone(),
-                    client,
-                });
+                let _ = app.emit(
+                    "netcat-event",
+                    NetcatEvent::ClientConnected {
+                        session_id: state.session.id.clone(),
+                        client,
+                    },
+                );
             } else if let Some(client) = state.clients.get_mut(&client_id) {
                 client.bytes_received += data.len() as u64;
                 client.last_activity = now;
@@ -320,19 +346,30 @@ async fn handle_received_data(
     };
 
     // 发送事件
-    let _ = app.emit("netcat-event", NetcatEvent::MessageReceived {
-        session_id,
-        message,
-    });
+    let _ = app.emit(
+        "netcat-event",
+        NetcatEvent::MessageReceived {
+            session_id,
+            message,
+        },
+    );
 }
 
 /// 发送状态变更事件
-fn emit_status_changed(app: &AppHandle, session_id: &str, status: SessionStatus, error: Option<String>) {
-    let _ = app.emit("netcat-event", NetcatEvent::StatusChanged {
-        session_id: session_id.to_string(),
-        status,
-        error,
-    });
+fn emit_status_changed(
+    app: &AppHandle,
+    session_id: &str,
+    status: SessionStatus,
+    error: Option<String>,
+) {
+    let _ = app.emit(
+        "netcat-event",
+        NetcatEvent::StatusChanged {
+            session_id: session_id.to_string(),
+            status,
+            error,
+        },
+    );
 }
 
 /// 获取当前时间戳
@@ -347,11 +384,10 @@ fn current_timestamp() -> u64 {
 fn bytes_to_display_string(data: &[u8]) -> String {
     match String::from_utf8(data.to_vec()) {
         Ok(s) => s,
-        Err(_) => {
-            data.iter()
-                .map(|b| format!("{:02X}", b))
-                .collect::<Vec<_>>()
-                .join(" ")
-        }
+        Err(_) => data
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect::<Vec<_>>()
+            .join(" "),
     }
 }

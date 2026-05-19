@@ -1,7 +1,7 @@
 // 端口扫描模块 - 支持并发扫描、超时控制、进度回调
 
-use crate::error::AppResult;
 use super::{common_ports, port_service_name, ScanConfig, ScanResult};
+use crate::error::AppResult;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -159,8 +159,8 @@ pub async fn check_port(
     port: u16,
     timeout_ms: Option<u64>,
 ) -> AppResult<ScanResult> {
-    let target_ip =
-        IpAddr::from_str(&target).map_err(|_| crate::error::AppError::from(format!("无效的 IP 地址: {}", target)))?;
+    let target_ip = IpAddr::from_str(&target)
+        .map_err(|_| crate::error::AppError::from(format!("无效的 IP 地址: {}", target)))?;
 
     let timeout_duration = Duration::from_millis(timeout_ms.unwrap_or(3000));
     let addr = SocketAddr::new(target_ip, port);

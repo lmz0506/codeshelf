@@ -1,7 +1,9 @@
 // 工作区状态与冲突处理：get_git_status / 冲突相关命令
 
+use super::{
+    is_system_junk_file, run_git_command, unquote_git_path, ConflictFileContent, GitStatus,
+};
 use crate::error::AppResult;
-use super::{is_system_junk_file, run_git_command, unquote_git_path, ConflictFileContent, GitStatus};
 
 #[tauri::command]
 #[specta::specta]
@@ -60,7 +62,10 @@ pub async fn get_git_status(path: String) -> AppResult<GitStatus> {
 
     Ok(GitStatus {
         branch,
-        is_clean: staged.is_empty() && unstaged.is_empty() && untracked.is_empty() && conflicted.is_empty(),
+        is_clean: staged.is_empty()
+            && unstaged.is_empty()
+            && untracked.is_empty()
+            && conflicted.is_empty(),
         staged,
         unstaged,
         untracked,
@@ -71,7 +76,10 @@ pub async fn get_git_status(path: String) -> AppResult<GitStatus> {
 }
 
 fn get_ahead_behind(path: &str) -> (u32, u32) {
-    let output = run_git_command(path, &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]);
+    let output = run_git_command(
+        path,
+        &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+    );
 
     if let Ok(result) = output {
         let parts: Vec<&str> = result.split_whitespace().collect();
@@ -90,7 +98,10 @@ fn git_show_stage(path: &str, stage: &str, file: &str) -> Option<String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_conflict_file_content(path: String, file: String) -> AppResult<ConflictFileContent> {
+pub async fn get_conflict_file_content(
+    path: String,
+    file: String,
+) -> AppResult<ConflictFileContent> {
     let worktree = std::fs::read_to_string(std::path::Path::new(&path).join(&file)).ok();
     Ok(ConflictFileContent {
         file: file.clone(),
@@ -103,11 +114,19 @@ pub async fn get_conflict_file_content(path: String, file: String) -> AppResult<
 
 #[tauri::command]
 #[specta::specta]
-pub async fn git_checkout_conflict_version(path: String, file: String, version: String) -> AppResult<String> {
+pub async fn git_checkout_conflict_version(
+    path: String,
+    file: String,
+    version: String,
+) -> AppResult<String> {
     match version.as_str() {
         "ours" => run_git_command(&path, &["checkout", "--ours", "--", &file])?,
         "theirs" => run_git_command(&path, &["checkout", "--theirs", "--", &file])?,
-        _ => return Err(crate::error::AppError::from("version 必须是 ours 或 theirs".to_string())),
+        _ => {
+            return Err(crate::error::AppError::from(
+                "version 必须是 ours 或 theirs".to_string(),
+            ))
+        }
     };
     run_git_command(&path, &["add", "--", &file])
 }

@@ -394,7 +394,11 @@ fn normalize_mcp_key(value: &str) -> String {
             break;
         }
     }
-    token.trim_matches('"').trim_matches('\'').trim().to_string()
+    token
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim()
+        .to_string()
 }
 
 async fn handle_json_rpc(req: JsonRpcRequest) -> Option<JsonRpcResponse> {
@@ -472,9 +476,7 @@ fn initialize_result(params: Option<&Value>) -> Result<Value, JsonRpcError> {
 }
 
 async fn tools_list_result() -> Result<Value, JsonRpcError> {
-    let endpoints = list_api_endpoints()
-        .await
-        .map_err(internal_error)?;
+    let endpoints = list_api_endpoints().await.map_err(internal_error)?;
     let (tools, _) = build_mcp_tool_index(&endpoints);
 
     Ok(json!({ "tools": tools }))
@@ -482,21 +484,24 @@ async fn tools_list_result() -> Result<Value, JsonRpcError> {
 
 async fn tools_call_result(params: Option<Value>) -> Result<Value, JsonRpcError> {
     let params_value = params.ok_or_else(|| {
-        json_rpc_error(-32602, "Invalid params", Some(json!({ "message": "missing params" })))
-    })?;
-    let params: ToolsCallParams = serde_json::from_value(params_value)
-        .map_err(|e| json_rpc_error(-32602, "Invalid params", Some(json!({ "message": e.to_string() }))))?;
-
-    let endpoints = list_api_endpoints()
-        .await
-        .map_err(internal_error)?;
-    let (_, tool_name_map) = build_mcp_tool_index(&endpoints);
-    let endpoint_id = tool_name_map.get(&params.name).ok_or_else(|| {
         json_rpc_error(
             -32602,
-            "Unknown tool",
-            Some(json!({ "name": params.name })),
+            "Invalid params",
+            Some(json!({ "message": "missing params" })),
         )
+    })?;
+    let params: ToolsCallParams = serde_json::from_value(params_value).map_err(|e| {
+        json_rpc_error(
+            -32602,
+            "Invalid params",
+            Some(json!({ "message": e.to_string() })),
+        )
+    })?;
+
+    let endpoints = list_api_endpoints().await.map_err(internal_error)?;
+    let (_, tool_name_map) = build_mcp_tool_index(&endpoints);
+    let endpoint_id = tool_name_map.get(&params.name).ok_or_else(|| {
+        json_rpc_error(-32602, "Unknown tool", Some(json!({ "name": params.name })))
     })?;
     let arguments = params.arguments.unwrap_or_else(|| json!({}));
     let arguments_json = serde_json::to_string(&arguments).map_err(internal_error)?;
@@ -594,7 +599,11 @@ fn endpoint_tool_name(endpoint: &ApiEndpoint, used: &mut HashMap<String, usize>)
     if *count > 0 {
         let collision_suffix = format!("_{}", *count + 1);
         let max = 64usize.saturating_sub(collision_suffix.len());
-        name = format!("{}{}", name.chars().take(max).collect::<String>(), collision_suffix);
+        name = format!(
+            "{}{}",
+            name.chars().take(max).collect::<String>(),
+            collision_suffix
+        );
     }
     *count += 1;
     name

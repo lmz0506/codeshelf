@@ -61,7 +61,9 @@ pub(super) fn list_host_aliases_from_config() -> Vec<String> {
 }
 
 /// 连接 SSH 并完成认证，返回 client handle
-pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> AppResult<client::Handle<SshClient>> {
+pub(super) async fn connect_and_authenticate(
+    tunnel: &SshTunnel,
+) -> AppResult<client::Handle<SshClient>> {
     let config = Arc::new(client::Config {
         // None = 不做 inactivity 检测；保活由 keepalive_interval 负责。
         // 之前误用 Some(Duration::from_secs(0)) 反而会"0 秒后超时"，立刻断开。
@@ -82,7 +84,9 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> AppResult<cl
     };
 
     if effective_user.is_empty() {
-        return Err(crate::error::AppError::from("SSH 用户名不能为空".to_string()));
+        return Err(crate::error::AppError::from(
+            "SSH 用户名不能为空".to_string(),
+        ));
     }
     if effective_host.is_empty() {
         return Err(crate::error::AppError::from("SSH 主机不能为空".to_string()));
@@ -95,10 +99,9 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> AppResult<cl
         effective_port
     );
 
-    let mut session =
-        client::connect(config, (effective_host.as_str(), effective_port), SshClient)
-            .await
-            .map_err(|e| crate::error::AppError::from(format!("SSH 连接失败: {}", e)))?;
+    let mut session = client::connect(config, (effective_host.as_str(), effective_port), SshClient)
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("SSH 连接失败: {}", e)))?;
 
     let success = match &tunnel.auth {
         SshAuthMethod::Password { password } => session
@@ -107,10 +110,14 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> AppResult<cl
             .map_err(|e| crate::error::AppError::from(format!("SSH 密码认证失败: {}", e)))?
             .success(),
 
-        SshAuthMethod::Key { key_path, passphrase } => {
+        SshAuthMethod::Key {
+            key_path,
+            passphrase,
+        } => {
             let pp = passphrase.as_deref().filter(|s| !s.is_empty());
-            let key = load_secret_key(key_path, pp)
-                .map_err(|e| crate::error::AppError::from(format!("加载私钥失败 ({}): {}", key_path, e)))?;
+            let key = load_secret_key(key_path, pp).map_err(|e| {
+                crate::error::AppError::from(format!("加载私钥失败 ({}): {}", key_path, e))
+            })?;
             let hash = session
                 .best_supported_rsa_hash()
                 .await
@@ -147,7 +154,9 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> AppResult<cl
                 let hash = session
                     .best_supported_rsa_hash()
                     .await
-                    .map_err(|e| crate::error::AppError::from(format!("协商 RSA hash 失败: {}", e)))?
+                    .map_err(|e| {
+                        crate::error::AppError::from(format!("协商 RSA hash 失败: {}", e))
+                    })?
                     .flatten();
                 let res = session
                     .authenticate_publickey(
@@ -155,7 +164,12 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> AppResult<cl
                         PrivateKeyWithHashAlg::new(Arc::new(key), hash),
                     )
                     .await
-                    .map_err(|e| crate::error::AppError::from(format!("SSH 私钥认证失败 ({}): {}", path_str, e)))?;
+                    .map_err(|e| {
+                        crate::error::AppError::from(format!(
+                            "SSH 私钥认证失败 ({}): {}",
+                            path_str, e
+                        ))
+                    })?;
                 if res.success() {
                     authed = true;
                     break;
@@ -164,7 +178,9 @@ pub(super) async fn connect_and_authenticate(tunnel: &SshTunnel) -> AppResult<cl
                 }
             }
             if !authed {
-                return Err(crate::error::AppError::from(last_err.unwrap_or_else(|| "所有 IdentityFile 认证均失败".to_string())));
+                return Err(crate::error::AppError::from(
+                    last_err.unwrap_or_else(|| "所有 IdentityFile 认证均失败".to_string()),
+                ));
             }
             true
         }

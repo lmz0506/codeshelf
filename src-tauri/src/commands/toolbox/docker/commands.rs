@@ -1,4 +1,3 @@
-use crate::error::AppResult;
 use super::ai::generate_dockerfile_with_ai;
 use super::templates::generate_template;
 use super::types::{
@@ -6,17 +5,23 @@ use super::types::{
     DockerContainerInfo, DockerImageInfo, DockerRunInput, DockerStatus,
 };
 use super::utils::{
-    current_platform, project_root, resolve_existing_project_file, resolve_project_file, run_docker,
-    walk_dockerfiles,
+    current_platform, project_root, resolve_existing_project_file, resolve_project_file,
+    run_docker, walk_dockerfiles,
 };
+use crate::error::AppResult;
 use serde_json::Value;
 use std::fs;
 
 fn label<'a>(labels: &'a Value, key: &str) -> Option<&'a str> {
-    labels.get(key).and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty())
+    labels
+        .get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
 }
 
-fn compose_meta(container_id: &str) -> (Option<String>, Option<String>, Option<String>, Vec<String>) {
+fn compose_meta(
+    container_id: &str,
+) -> (Option<String>, Option<String>, Option<String>, Vec<String>) {
     let inspect = run_docker(&["inspect", container_id], None);
     if !inspect.success {
         return (None, None, None, Vec::new());
@@ -84,7 +89,8 @@ pub async fn docker_read_dockerfile(
 ) -> AppResult<String> {
     let root = project_root(&project_path)?;
     let full = resolve_existing_project_file(&root, &dockerfile_path)?;
-    fs::read_to_string(full).map_err(|e| crate::error::AppError::from(format!("读取 Dockerfile 失败: {}", e)))
+    fs::read_to_string(full)
+        .map_err(|e| crate::error::AppError::from(format!("读取 Dockerfile 失败: {}", e)))
 }
 
 #[tauri::command]
@@ -96,7 +102,8 @@ pub async fn docker_write_dockerfile(
 ) -> AppResult<()> {
     let root = project_root(&project_path)?;
     let full = resolve_project_file(&root, &dockerfile_path)?;
-    fs::write(full, content).map_err(|e| crate::error::AppError::from(format!("写入 Dockerfile 失败: {}", e)))
+    fs::write(full, content)
+        .map_err(|e| crate::error::AppError::from(format!("写入 Dockerfile 失败: {}", e)))
 }
 
 #[tauri::command]
@@ -395,7 +402,10 @@ fn json_to_yaml(value: &Value, indent: usize) -> String {
             map.iter()
                 .map(|(key, item)| {
                     let rendered = json_to_yaml(item, indent + 2);
-                    if matches!(item, Value::Array(_) | Value::Object(_)) && rendered != "[]" && rendered != "{}" {
+                    if matches!(item, Value::Array(_) | Value::Object(_))
+                        && rendered != "[]"
+                        && rendered != "{}"
+                    {
                         format!("{}{}:\n{}", " ".repeat(indent), key, rendered)
                     } else {
                         format!("{}{}: {}", " ".repeat(indent), key, rendered)

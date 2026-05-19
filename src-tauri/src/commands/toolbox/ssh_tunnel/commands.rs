@@ -6,7 +6,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 
-use super::super::{current_time, generate_id, SshAuthMethod, SshTunnel, SshTunnelInput, SshTunnelStats};
+use super::super::{
+    current_time, generate_id, SshAuthMethod, SshTunnel, SshTunnelInput, SshTunnelStats,
+};
 use super::auth::{connect_and_authenticate, list_host_aliases_from_config};
 use super::runtime::{run_tunnel_server, update_tunnel_stats};
 use super::{
@@ -28,14 +30,19 @@ pub async fn add_ssh_tunnel(input: SshTunnelInput) -> AppResult<SshTunnel> {
         return Err(crate::error::AppError::from("远程主机不能为空".to_string()));
     }
     if matches!(&input.auth, SshAuthMethod::SshConfig { host_alias } if host_alias.is_empty()) {
-        return Err(crate::error::AppError::from("SSH config Host 别名不能为空".to_string()));
+        return Err(crate::error::AppError::from(
+            "SSH config Host 别名不能为空".to_string(),
+        ));
     }
 
     {
         let tunnels = SSH_TUNNELS.lock().await;
         for t in tunnels.values() {
             if t.local_port == input.local_port && t.status == "running" {
-                return Err(crate::error::AppError::from(format!("端口 {} 已被其他隧道使用", input.local_port)));
+                return Err(crate::error::AppError::from(format!(
+                    "端口 {} 已被其他隧道使用",
+                    input.local_port
+                )));
             }
         }
     }
@@ -68,7 +75,10 @@ pub async fn add_ssh_tunnel(input: SshTunnelInput) -> AppResult<SshTunnel> {
         log::error!("保存 SSH 隧道失败: {}", e);
         let mut tunnels = SSH_TUNNELS.lock().await;
         tunnels.remove(&id);
-        return Err(crate::error::AppError::from(format!("保存 SSH 隧道失败: {}", e)));
+        return Err(crate::error::AppError::from(format!(
+            "保存 SSH 隧道失败: {}",
+            e
+        )));
     }
 
     Ok(tunnel)
@@ -76,17 +86,15 @@ pub async fn add_ssh_tunnel(input: SshTunnelInput) -> AppResult<SshTunnel> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn update_ssh_tunnel(
-    tunnel_id: String,
-    input: SshTunnelInput,
-) -> AppResult<SshTunnel> {
+pub async fn update_ssh_tunnel(tunnel_id: String, input: SshTunnelInput) -> AppResult<SshTunnel> {
     ensure_tunnels_loaded().await;
 
     let old = {
         let tunnels = SSH_TUNNELS.lock().await;
         tunnels.get(&tunnel_id).cloned()
     };
-    let old = old.ok_or_else(|| crate::error::AppError::from(format!("隧道不存在: {}", tunnel_id)))?;
+    let old =
+        old.ok_or_else(|| crate::error::AppError::from(format!("隧道不存在: {}", tunnel_id)))?;
 
     if old.status == "running" {
         stop_ssh_tunnel(tunnel_id.clone()).await?;
@@ -111,7 +119,10 @@ pub async fn update_ssh_tunnel(
         log::error!("保存 SSH 隧道失败: {}", e);
         let mut tunnels = SSH_TUNNELS.lock().await;
         tunnels.insert(tunnel_id.clone(), old);
-        return Err(crate::error::AppError::from(format!("保存 SSH 隧道失败: {}", e)));
+        return Err(crate::error::AppError::from(format!(
+            "保存 SSH 隧道失败: {}",
+            e
+        )));
     }
 
     let tunnels = SSH_TUNNELS.lock().await;
@@ -143,7 +154,10 @@ pub async fn remove_ssh_tunnel(tunnel_id: String) -> AppResult<()> {
             let mut tunnels = SSH_TUNNELS.lock().await;
             tunnels.insert(tunnel_id, t);
         }
-        return Err(crate::error::AppError::from(format!("保存 SSH 隧道失败: {}", e)));
+        return Err(crate::error::AppError::from(format!(
+            "保存 SSH 隧道失败: {}",
+            e
+        )));
     }
 
     Ok(())
@@ -158,7 +172,8 @@ pub async fn start_ssh_tunnel(tunnel_id: String) -> AppResult<()> {
         let tunnels = SSH_TUNNELS.lock().await;
         tunnels.get(&tunnel_id).cloned()
     };
-    let tunnel = tunnel.ok_or_else(|| crate::error::AppError::from(format!("隧道不存在: {}", tunnel_id)))?;
+    let tunnel =
+        tunnel.ok_or_else(|| crate::error::AppError::from(format!("隧道不存在: {}", tunnel_id)))?;
 
     if tunnel.status == "running" {
         return Err(crate::error::AppError::from("隧道已在运行中".to_string()));
@@ -173,20 +188,18 @@ pub async fn start_ssh_tunnel(tunnel_id: String) -> AppResult<()> {
     }
 
     // 连接 + 认证（失败立即返回）
-    let handle = connect_and_authenticate(&tunnel)
-        .await
-        .map_err(|e| {
-            // 记录错误
-            let id = tunnel_id.clone();
-            let err = e.to_string();
-            tokio::spawn(async move {
-                let mut tunnels = SSH_TUNNELS.lock().await;
-                if let Some(t) = tunnels.get_mut(&id) {
-                    t.last_error = Some(err);
-                }
-            });
-            e
-        })?;
+    let handle = connect_and_authenticate(&tunnel).await.map_err(|e| {
+        // 记录错误
+        let id = tunnel_id.clone();
+        let err = e.to_string();
+        tokio::spawn(async move {
+            let mut tunnels = SSH_TUNNELS.lock().await;
+            if let Some(t) = tunnels.get_mut(&id) {
+                t.last_error = Some(err);
+            }
+        });
+        e
+    })?;
 
     let controller = Arc::new(SshTunnelController::new());
 
@@ -229,7 +242,9 @@ pub async fn start_ssh_tunnel(tunnel_id: String) -> AppResult<()> {
         // 关闭 SSH 会话
         {
             let h = ssh_handle.lock().await;
-            let _ = h.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+            let _ = h
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
         }
 
         // 状态置回 stopped

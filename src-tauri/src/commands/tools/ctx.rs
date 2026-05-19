@@ -25,11 +25,11 @@ pub(super) async fn load_ctx(session_id: &str) -> AppResult<ToolCtx> {
 
 /// 校验某路径是否在 allowed_cwd 内（canonicalize 后比较）
 pub(super) fn require_under_cwd(ctx: &ToolCtx, target: &Path) -> AppResult<PathBuf> {
-    let base = ctx
-        .allowed_cwd
-        .as_ref()
-        .ok_or_else(|| crate::error::AppError::from("会话未设置 allowedCwd，禁止写/执行类工具".to_string()))?;
-    let base_canon = fs::canonicalize(base).map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
+    let base = ctx.allowed_cwd.as_ref().ok_or_else(|| {
+        crate::error::AppError::from("会话未设置 allowedCwd，禁止写/执行类工具".to_string())
+    })?;
+    let base_canon = fs::canonicalize(base)
+        .map_err(|e| crate::error::AppError::from(format!("allowedCwd 无效: {}", e)))?;
 
     // 允许目标文件不存在（Write 新建）；对其父目录做校验
     let candidate = if target.is_absolute() {
@@ -38,13 +38,14 @@ pub(super) fn require_under_cwd(ctx: &ToolCtx, target: &Path) -> AppResult<PathB
         base_canon.join(target)
     };
     let check = if candidate.exists() {
-        fs::canonicalize(&candidate).map_err(|e| crate::error::AppError::from(format!("目标路径无效: {}", e)))?
+        fs::canonicalize(&candidate)
+            .map_err(|e| crate::error::AppError::from(format!("目标路径无效: {}", e)))?
     } else {
         let parent = candidate
             .parent()
             .ok_or_else(|| crate::error::AppError::from("目标路径无父目录".to_string()))?;
-        let parent_canon =
-            fs::canonicalize(parent).map_err(|e| crate::error::AppError::from(format!("目标父目录无效: {}", e)))?;
+        let parent_canon = fs::canonicalize(parent)
+            .map_err(|e| crate::error::AppError::from(format!("目标父目录无效: {}", e)))?;
         parent_canon.join(candidate.file_name().unwrap_or_default())
     };
     if !check.starts_with(&base_canon) {

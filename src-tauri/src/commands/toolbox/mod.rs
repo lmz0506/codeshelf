@@ -1,15 +1,15 @@
 // 工具箱模块 - 包含端口扫描、文件下载、进程管理、端口转发、静态服务、Claude Code 配置功能
 
-pub mod scanner;
-pub mod downloader;
-pub mod process;
-pub mod forwarder;
-pub mod server;
 pub mod claude_code;
-pub mod netcat;
-pub mod shortcuts;
 pub mod clipboard;
 pub mod docker;
+pub mod downloader;
+pub mod forwarder;
+pub mod netcat;
+pub mod process;
+pub mod scanner;
+pub mod server;
+pub mod shortcuts;
 pub mod ssh_tunnel;
 
 use serde::{Deserialize, Serialize};
@@ -113,8 +113,8 @@ pub struct ProcessInfo {
     pub local_addr: Option<String>,
     pub remote_addr: Option<String>,
     pub status: String,
-    pub memory: u64,  // 字节
-    pub cpu: f32,     // 百分比
+    pub memory: u64, // 字节
+    pub cpu: f32,    // 百分比
     pub working_dir: Option<String>,
     pub cmd: Option<String>,
 }
@@ -348,18 +348,12 @@ pub struct AccessLog {
 pub fn common_ports() -> Vec<u16> {
     vec![
         // Web 服务
-        80, 443, 8080, 8443, 8000, 8888, 3000, 3001, 5000, 5173, 4200,
-        // 数据库
-        3306, 5432, 27017, 6379, 9200, 5984,
-        // SSH/FTP/Telnet
-        21, 22, 23, 2222,
-        // 邮件
-        25, 110, 143, 465, 587, 993, 995,
-        // 远程桌面
-        3389, 5900, 5901,
-        // 消息队列
-        5672, 15672, 9092, 2181,
-        // 其他服务
+        80, 443, 8080, 8443, 8000, 8888, 3000, 3001, 5000, 5173, 4200, // 数据库
+        3306, 5432, 27017, 6379, 9200, 5984, // SSH/FTP/Telnet
+        21, 22, 23, 2222, // 邮件
+        25, 110, 143, 465, 587, 993, 995, // 远程桌面
+        3389, 5900, 5901, // 消息队列
+        5672, 15672, 9092, 2181, // 其他服务
         53, 67, 68, 69, 161, 162, 389, 636, 1433, 1521, 11211,
     ]
 }

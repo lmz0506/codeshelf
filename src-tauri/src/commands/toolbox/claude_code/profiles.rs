@@ -10,7 +10,10 @@ use super::{ConfigProfile, EnvType};
 /// 获取保存的配置档案列表
 #[tauri::command]
 #[specta::specta]
-pub async fn get_config_profiles(env_type: EnvType, env_name: String) -> AppResult<Vec<ConfigProfile>> {
+pub async fn get_config_profiles(
+    env_type: EnvType,
+    env_name: String,
+) -> AppResult<Vec<ConfigProfile>> {
     let profiles_path = get_profiles_storage_path(&env_type, &env_name);
 
     if !profiles_path.exists() {
@@ -51,10 +54,13 @@ pub async fn save_config_profile(
 
     // 新建档案
     let profile = ConfigProfile {
-        id: format!("{:x}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock before UNIX epoch")
-            .as_nanos()),
+        id: format!(
+            "{:x}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock before UNIX epoch")
+                .as_nanos()
+        ),
         name,
         description,
         settings,
@@ -71,7 +77,11 @@ pub async fn save_config_profile(
 /// 删除配置档案
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_config_profile(env_type: EnvType, env_name: String, profile_id: String) -> AppResult<()> {
+pub async fn delete_config_profile(
+    env_type: EnvType,
+    env_name: String,
+    profile_id: String,
+) -> AppResult<()> {
     let mut profiles = get_config_profiles(env_type.clone(), env_name.clone()).await?;
     profiles.retain(|p| p.id != profile_id);
     save_profiles(&env_type, &env_name, &profiles)
@@ -88,7 +98,8 @@ pub async fn apply_config_profile(
 ) -> AppResult<()> {
     let profiles = get_config_profiles(env_type.clone(), env_name.clone()).await?;
 
-    let profile = profiles.iter()
+    let profile = profiles
+        .iter()
         .find(|p| p.id == profile_id)
         .ok_or_else(|| crate::error::AppError::from("配置档案不存在".to_string()))?;
 
@@ -112,7 +123,9 @@ fn get_profiles_storage_path(env_type: &EnvType, env_name: &str) -> PathBuf {
 
     // 使用安装目录的 data 文件夹
     match storage::get_storage_config() {
-        Ok(config) => config.data_dir.join(format!("claude_profiles_{}.json", env_suffix)),
+        Ok(config) => config
+            .data_dir
+            .join(format!("claude_profiles_{}.json", env_suffix)),
         Err(e) => {
             log::error!("获取存储配置失败: {}", e);
             // 如果无法获取配置，使用当前目录的 data 文件夹
@@ -147,7 +160,9 @@ pub async fn create_profile_from_current(
     profile_name: String,
     description: Option<String>,
 ) -> AppResult<ConfigProfile> {
-    let content = super::config_io::read_claude_config_file(env_type.clone(), env_name.clone(), config_path).await?;
+    let content =
+        super::config_io::read_claude_config_file(env_type.clone(), env_name.clone(), config_path)
+            .await?;
 
     let settings: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| crate::error::AppError::from(format!("解析配置失败: {}", e)))?;

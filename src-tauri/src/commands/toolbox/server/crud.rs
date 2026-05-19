@@ -27,7 +27,10 @@ pub async fn create_server(input: ServerConfigInput) -> AppResult<ServerConfig> 
     // 检查目录是否存在
     let root_path = PathBuf::from(&input.root_dir);
     if !root_path.exists() {
-        return Err(crate::error::AppError::from(format!("目录不存在: {}", input.root_dir)));
+        return Err(crate::error::AppError::from(format!(
+            "目录不存在: {}",
+            input.root_dir
+        )));
     }
 
     // 检查端口是否已被使用
@@ -35,7 +38,10 @@ pub async fn create_server(input: ServerConfigInput) -> AppResult<ServerConfig> 
         let servers = SERVERS.lock().await;
         for server in servers.values() {
             if server.port == input.port && server.status == "running" {
-                return Err(crate::error::AppError::from(format!("端口 {} 已被其他服务使用", input.port)));
+                return Err(crate::error::AppError::from(format!(
+                    "端口 {} 已被其他服务使用",
+                    input.port
+                )));
             }
         }
     }
@@ -45,7 +51,11 @@ pub async fn create_server(input: ServerConfigInput) -> AppResult<ServerConfig> 
         Some(ref prefix) if prefix == "/" => "/".to_string(),
         Some(ref prefix) if !prefix.is_empty() => {
             let p = prefix.trim_matches('/');
-            if p.is_empty() { "/".to_string() } else { format!("/{}", p) }
+            if p.is_empty() {
+                "/".to_string()
+            } else {
+                format!("/{}", p)
+            }
         }
         _ => {
             // 默认使用目录名作为前缀
@@ -88,7 +98,10 @@ pub async fn create_server(input: ServerConfigInput) -> AppResult<ServerConfig> 
         // 移除刚添加的配置，因为无法持久化
         let mut servers = SERVERS.lock().await;
         servers.remove(&server_id);
-        return Err(crate::error::AppError::from(format!("保存服务配置失败: {}", e)));
+        return Err(crate::error::AppError::from(format!(
+            "保存服务配置失败: {}",
+            e
+        )));
     }
 
     Ok(config)
@@ -150,7 +163,8 @@ pub async fn start_server(server_id: String) -> AppResult<String> {
         servers.get(&server_id).cloned()
     };
 
-    let config = config.ok_or_else(|| crate::error::AppError::from(format!("服务不存在: {}", server_id)))?;
+    let config =
+        config.ok_or_else(|| crate::error::AppError::from(format!("服务不存在: {}", server_id)))?;
 
     if config.status == "running" {
         return Err(crate::error::AppError::from("服务已在运行中".to_string()));
@@ -264,7 +278,10 @@ pub async fn remove_server(server_id: String) -> AppResult<()> {
             let mut servers = SERVERS.lock().await;
             servers.insert(server_id, config);
         }
-        return Err(crate::error::AppError::from(format!("保存服务配置失败: {}", e)));
+        return Err(crate::error::AppError::from(format!(
+            "保存服务配置失败: {}",
+            e
+        )));
     }
 
     Ok(())
@@ -302,7 +319,8 @@ pub async fn update_server(server_id: String, input: ServerConfigInput) -> AppRe
         servers.get(&server_id).cloned()
     };
 
-    let current = current.ok_or_else(|| crate::error::AppError::from(format!("服务不存在: {}", server_id)))?;
+    let current = current
+        .ok_or_else(|| crate::error::AppError::from(format!("服务不存在: {}", server_id)))?;
     let old_config = current.clone();
 
     // 如果正在运行，先停止
@@ -316,7 +334,11 @@ pub async fn update_server(server_id: String, input: ServerConfigInput) -> AppRe
         Some(ref prefix) if prefix == "/" => "/".to_string(),
         Some(ref prefix) if !prefix.is_empty() => {
             let p = prefix.trim_matches('/');
-            if p.is_empty() { "/".to_string() } else { format!("/{}", p) }
+            if p.is_empty() {
+                "/".to_string()
+            } else {
+                format!("/{}", p)
+            }
         }
         _ => {
             // 默认使用目录名作为前缀
@@ -353,7 +375,10 @@ pub async fn update_server(server_id: String, input: ServerConfigInput) -> AppRe
         // 回滚：恢复旧配置
         let mut servers = SERVERS.lock().await;
         servers.insert(server_id.clone(), old_config);
-        return Err(crate::error::AppError::from(format!("保存服务配置失败: {}", e)));
+        return Err(crate::error::AppError::from(format!(
+            "保存服务配置失败: {}",
+            e
+        )));
     }
 
     let servers = SERVERS.lock().await;
