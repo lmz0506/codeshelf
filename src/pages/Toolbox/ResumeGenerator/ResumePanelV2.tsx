@@ -11,10 +11,12 @@ import {
   ChevronDown,
   ChevronUp,
   FileText as FileIcon,
+  Eye,
 } from "lucide-react";
 import type { AiProviderConfig } from "@/types";
 import type {
   JobDirection,
+  PersonalInfo,
   Tone,
   ProjectKnowledge,
   ResumeV2,
@@ -27,6 +29,7 @@ import { useResumeStore } from "@/stores/resumeStore";
 import { exportResumeV2ToMarkdownWithDialog } from "@/services/resume/export";
 import { Button, showToast } from "@/components/ui";
 import { EmptyState } from "@/components/common";
+import { ResumePreviewDialog } from "./ResumePreview";
 
 interface ResumePanelV2Props {
   knowledgeDocs: ProjectKnowledge[];
@@ -51,6 +54,7 @@ export function ResumePanelV2({
 }: ResumePanelV2Props) {
   const { resumeRun, startResumeRun, appendResumeStep, finishResumeRun } = useResumeStore();
   const running = resumeRun?.status === "running";
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const ready = knowledgeDocs.length > 0 && !!provider;
 
@@ -113,6 +117,18 @@ export function ResumePanelV2({
     } catch (err) {
       showToast("error", `保存失败: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  /// 预览面板里编辑后的 personalInfo 回写;立刻更新 resume 状态。
+  /// 是否落盘由父组件的 onSaveResume 流程决定 —— 这里只更新内存态。
+  const handlePersonalInfoChange = (info: PersonalInfo) => {
+    if (!resume) return;
+    const next: ResumeV2 = {
+      ...resume,
+      personalInfo: info,
+      updatedAt: new Date().toISOString(),
+    };
+    onResumeChange(next);
   };
 
   return (
@@ -180,6 +196,14 @@ export function ResumePanelV2({
               <h4 className="font-medium text-gray-900">项目经历</h4>
               <div className="flex items-center gap-2">
                 <Button
+                  onClick={() => setPreviewOpen(true)}
+                  variant="primary"
+                  size="sm"
+                  className="gap-1"
+                >
+                  <Eye size={14} /> 预览 / 导出 docx
+                </Button>
+                <Button
                   onClick={handleSave}
                   variant="secondary"
                   size="sm"
@@ -209,6 +233,13 @@ export function ResumePanelV2({
           </div>
         </>
       )}
+
+      <ResumePreviewDialog
+        open={previewOpen}
+        resume={resume}
+        onPersonalInfoChange={handlePersonalInfoChange}
+        onClose={() => setPreviewOpen(false)}
+      />
     </div>
   );
 }

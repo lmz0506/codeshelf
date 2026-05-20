@@ -4,6 +4,7 @@ import type {
   ResumeDataSource,
   GeneratedResume,
   JobDirection,
+  PersonalInfo,
   ProjectKnowledge,
   ResumeV2,
   SavedResume,
@@ -105,6 +106,51 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function normalizePersonalInfo(value: unknown): PersonalInfo | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const pickStrings = (input: unknown, keys: string[]): Record<string, string | undefined> => {
+    const out: Record<string, string | undefined> = {};
+    if (!input || typeof input !== "object") return out;
+    const obj = input as Record<string, unknown>;
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === "string" && v.trim() !== "") out[k] = v;
+    }
+    return out;
+  };
+  return {
+    basic: pickStrings(raw.basic, [
+      "name",
+      "gender",
+      "birthDate",
+      "phone",
+      "email",
+      "location",
+      "jobStatus",
+    ]) as PersonalInfo["basic"],
+    education: pickStrings(raw.education, [
+      "degree",
+      "school",
+      "major",
+      "graduationYear",
+    ]) as PersonalInfo["education"],
+    jobPreference: pickStrings(raw.jobPreference, [
+      "yearsOfExperience",
+      "expectedPosition",
+      "expectedSalary",
+      "expectedCity",
+    ]) as PersonalInfo["jobPreference"],
+    social: pickStrings(raw.social, [
+      "website",
+      "github",
+      "blog",
+      "linkedin",
+      "wechat",
+    ]) as PersonalInfo["social"],
+  };
+}
+
 function normalizeSavedResume(input: unknown): SavedResume | null {
   if (!input || typeof input !== "object") return null;
   const raw = input as Record<string, unknown>;
@@ -156,6 +202,7 @@ function normalizeSavedResume(input: unknown): SavedResume | null {
         };
       }),
     isSaved: raw.isSaved !== false,
+    personalInfo: normalizePersonalInfo(raw.personalInfo),
   };
 }
 

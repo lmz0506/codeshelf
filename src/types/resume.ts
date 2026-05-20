@@ -275,8 +275,64 @@ export interface ResumeV2 {
   skills: string[];
   experiences: ResumeProjectExperience[];
   isSaved: boolean;
+  /** HR 简历预览/docx 顶部固定栏的个人信息。Agent 不生成,用户在预览面板里手填。 */
+  personalInfo?: PersonalInfo;
 }
 
 /** 当前简历生成器持久化使用的格式。旧版 GeneratedResume 只作为历史兼容。 */
 export type SavedResume = ResumeV2;
+
+// ============== 个人信息(预览 / docx 顶部固定栏) ==============
+//
+// HR 简历模板里固定的「个人信息」区。值都是 string 可空 —— Agent 不会生成它们,
+// 用户在预览面板里手动填,填完跟简历一起持久化。导出 docx 时即使全空也会输出
+// 占位结构,方便用户在 Word 里继续手填。
+
+export interface PersonalInfoBasic {
+  name?: string;
+  gender?: string;
+  birthDate?: string;
+  phone?: string;
+  email?: string;
+  location?: string;
+  jobStatus?: string;
+}
+
+export interface PersonalInfoEducation {
+  degree?: string;
+  school?: string;
+  major?: string;
+  graduationYear?: string;
+}
+
+export interface PersonalInfoJobPreference {
+  yearsOfExperience?: string;
+  expectedPosition?: string;
+  expectedSalary?: string;
+  expectedCity?: string;
+}
+
+export interface PersonalInfoSocial {
+  website?: string;
+  github?: string;
+  blog?: string;
+  linkedin?: string;
+  wechat?: string;
+}
+
+export interface PersonalInfo {
+  basic: PersonalInfoBasic;
+  education: PersonalInfoEducation;
+  jobPreference: PersonalInfoJobPreference;
+  social: PersonalInfoSocial;
+}
+
+export function emptyPersonalInfo(): PersonalInfo {
+  return {
+    basic: {},
+    education: {},
+    jobPreference: {},
+    social: {},
+  };
+}
 

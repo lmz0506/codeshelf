@@ -3,8 +3,8 @@
 // 通过 tauri-specta 注册：调试构建时会把命令签名导出为 src/bindings.ts，供前端类型安全调用。
 
 use crate::commands::{
-    api_chat, chat, chat_bridge, extras, git, project, resume, resume_agent, settings, stats,
-    storage_admin, system, toolbox, tools, workflows,
+    api_chat, chat, chat_bridge, extras, git, project, resume, resume_agent, resume_docx,
+    settings, stats, storage_admin, system, toolbox, tools, workflows,
 };
 use crate::{keyboard_hook, mcp_gateway};
 use tauri_specta::{collect_commands, Builder};
@@ -306,6 +306,7 @@ pub fn make_builder() -> Builder<tauri::Wry> {
         // Resume
         resume::get_resumes,
         resume::save_resumes,
+        resume_docx::export_resume_docx,
         resume::save_resume_knowledge,
         resume::load_resume_knowledge,
         resume::list_resume_knowledge,
