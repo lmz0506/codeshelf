@@ -18,6 +18,9 @@ pub struct VirtualFile {
     pub content: String,
     pub mime_type: String,
     pub created_at: String,
+    // 为兼容前端 deepagents 的 file 元信息形状保留;Rust 侧的 read/ls 工具暂不读它,
+    // write 时维护 (LLM 如果未来要看时间戳能拿到正确值)。
+    #[allow(dead_code)]
     pub modified_at: String,
 }
 
