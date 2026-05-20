@@ -132,6 +132,12 @@ async fn run_inner(
     })?;
 
     let experiences = build_experiences(&request.knowledge_docs, &parsed);
+    if experiences_all_empty(&experiences) {
+        return Err(AppError::from(format!(
+            "LLM 返回了 {} 个项目但所有 STAR 字段都是空的(常见于 max_tokens 截断、上下文超长或模型偷懒)。请尝试减少同时生成的项目数,或更换模型。",
+            experiences.len()
+        )));
+    }
     let skills: Vec<String> = parsed
         .skills
         .into_iter()
@@ -226,12 +232,38 @@ fn build_system_prompt(direction: JobDirection, keywords: &[String], tone: Tone)
 ## skills(全局技能词云)
 去重,按重要性排序,15-20 个。
 
+## 输出 JSON 格式(必须严格按此结构,字段名一字不差)
+```json
+{{
+  "summary": "一句话个人简介,30-80 字。若不写返回空串",
+  "skills": ["技能1", "技能2", "...15-20 个"],
+  "experiences": [
+    {{
+      "projectId": "<原样拷贝>",
+      "projectName": "<原样拷贝>",
+      "techStack": ["技术1", "技术2", "..."],
+      "star": {{
+        "situation": "项目背景,60-150 字的完整段落",
+        "task": "承担任务,60-150 字的完整段落",
+        "action": "技术行动,100-200 字的完整段落",
+        "result": "项目成果,60-150 字的完整段落"
+      }}
+    }}
+  ]
+}}
+```
+
+**关键约束(违反任何一条都算失败):**
+- STAR 四个字段必须嵌在 `star` 对象内,**禁止**把它们提到 experience 顶层(不要写 `situation` / `task` 而漏掉 `star`)。
+- STAR 四个字段**禁止返回空串或省略号**,每段必须实际写满前述字数,即使背景知识不足也要根据已有信息合理推断。
+- 字段名严格使用 `situation` `task` `action` `result`(全小写英文,不要写成 `S` / `T` / `A` / `R`)。
+- experiences 数组顺序与用户消息中的项目列表一致,长度必须等于项目数。
+- projectId / projectName 必须原样拷贝输入值,不要改写、翻译或加空格。
+
 ## 硬性约束
 - 所有内容必须基于背景知识,禁止编造项目细节、人数、时间、指标。
 - 用中文撰写,技术术语保留英文原文。
-- experiences 数组顺序与用户消息中的项目列表一致。
-- projectId / projectName 必须原样拷贝,不要改写。
-- 输出严格按 schema 返回 JSON,不要附加任何说明文字。
+- 输出严格按上述结构返回 JSON,不要附加任何说明文字、Markdown 代码围栏或注释。
 "#,
         label = job_direction_label(direction),
         job_hint = job_hint(direction),
@@ -257,12 +289,36 @@ fn build_user_message(request: &RunResumeAgentRequest) -> String {
         ));
     }
     s.push_str("\n## 背景知识全文\n");
+    // 控制上下文总长度。DeepSeek-chat 128k 上下文,但是输出质量在 80k 之后明显下降;
+    // 每份知识单独限到 25k 字符,总和封顶 120k,超出部分截断并标注。截掉的是末尾,
+    // 项目首页 + 技术栈段一般在前面。
+    const PER_DOC_LIMIT: usize = 25_000;
+    const TOTAL_LIMIT: usize = 120_000;
+    let mut used = 0usize;
     for d in &request.knowledge_docs {
-        s.push_str(&format!(
+        let header = format!(
             "\n---\n### 项目: {} (projectId={})\n\n",
             d.project_name, d.project_id
-        ));
-        s.push_str(d.content.trim());
+        );
+        if used + header.chars().count() >= TOTAL_LIMIT {
+            s.push_str("\n---\n[剩余项目背景知识因长度限制被截断]\n");
+            break;
+        }
+        s.push_str(&header);
+        used += header.chars().count();
+
+        let body = d.content.trim();
+        let body_chars = body.chars().count();
+        let per_doc_budget = PER_DOC_LIMIT.min(TOTAL_LIMIT.saturating_sub(used));
+        if body_chars <= per_doc_budget {
+            s.push_str(body);
+            used += body_chars;
+        } else {
+            let truncated: String = body.chars().take(per_doc_budget).collect();
+            s.push_str(&truncated);
+            s.push_str("\n[本项目背景知识因长度限制被截断]");
+            used += per_doc_budget;
+        }
         s.push('\n');
     }
     s
@@ -360,13 +416,26 @@ struct ResumeOutputStar {
 
 /// 按输入 docs 顺序组装 experiences。即使 LLM 顺序错乱或某项匹配不到,
 /// 也保证返回数组长度 = docs 数,缺失字段填空串,UI 侧能正常渲染并提示手动编辑。
+///
+/// 匹配优先级:
+///   1. projectId / projectName 精确相等
+///   2. 位置兜底:若 docs 与 parsed.experiences 长度相同,按下标取 (LLM 会改写
+///      projectName 但顺序通常稳定,prompt 也强调按输入顺序输出)
 fn build_experiences(docs: &[KnowledgeDoc], parsed: &ResumeOutput) -> Vec<ResumeProjectExperience> {
+    let length_match = docs.len() == parsed.experiences.len();
     docs.iter()
-        .map(|doc| {
+        .enumerate()
+        .map(|(i, doc)| {
             let matched = parsed.experiences.iter().find(|e| {
                 e.project_id == doc.project_id || e.project_name == doc.project_name
             });
-            let star = matched
+            let positional = if matched.is_none() && length_match {
+                parsed.experiences.get(i)
+            } else {
+                None
+            };
+            let chosen = matched.or(positional);
+            let star = chosen
                 .and_then(|m| m.star.as_ref())
                 .map(|s| StarExperience {
                     situation: s.situation.clone(),
@@ -380,7 +449,7 @@ fn build_experiences(docs: &[KnowledgeDoc], parsed: &ResumeOutput) -> Vec<Resume
                     action: String::new(),
                     result: String::new(),
                 });
-            let tech_stack = matched
+            let tech_stack = chosen
                 .map(|m| m.tech_stack.clone())
                 .unwrap_or_default();
             ResumeProjectExperience {
@@ -393,6 +462,19 @@ fn build_experiences(docs: &[KnowledgeDoc], parsed: &ResumeOutput) -> Vec<Resume
             }
         })
         .collect()
+}
+
+/// 检测 LLM 是否实质上没产出内容 —— 所有项目的 STAR 字段全为空白。
+/// 通常发生在 max_tokens 截断、模型偷懒只填 schema 骨架等场景。让前端弹错而不是
+/// 静默返回「已生成」的空简历。
+fn experiences_all_empty(experiences: &[ResumeProjectExperience]) -> bool {
+    experiences.iter().all(|e| {
+        let s = &e.star_experience;
+        s.situation.trim().is_empty()
+            && s.task.trim().is_empty()
+            && s.action.trim().is_empty()
+            && s.result.trim().is_empty()
+    })
 }
 
 // =================== emit ===================

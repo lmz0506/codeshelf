@@ -53,12 +53,21 @@ fn serialize_messages(messages: &[ChatMessage]) -> Vec<Value> {
         .collect()
 }
 
+// 显式指定输出 token 上限。
+//
+// 必须设:DeepSeek 默认 max_tokens=4096,resume agent 一次要为 N 个项目产出 4 段 STAR,
+// 极易在第 3-4 个项目时被截断。json_object 模式被截断后,DeepSeek 偶尔会让模型把剩
+// 余字段填空串以保持合法 JSON,前端就看到「已生成」但 STAR 全空 —— 完全静默的失败。
+// 8192 是 DeepSeek 当前上限,对 OpenAI / Qwen 等也都在允许范围内。
+const MAX_OUTPUT_TOKENS: u32 = 8192;
+
 fn base_body(provider: &AiProviderConfig, model: &str, messages: &[ChatMessage], temperature: f32) -> Value {
     let mut body = json!({
         "model": model,
         "messages": serialize_messages(messages),
         "temperature": temperature,
         "stream": false,
+        "max_tokens": MAX_OUTPUT_TOKENS,
     });
     if is_deepseek(provider) {
         body["thinking"] = json!({"type": "disabled"});
