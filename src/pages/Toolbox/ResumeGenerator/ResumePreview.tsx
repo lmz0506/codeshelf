@@ -9,7 +9,7 @@
 // 输出占位结构,用户在 Word 里继续填。
 
 import { useEffect, useMemo, useState } from "react";
-import { FileText, FileDown, Save, ChevronDown, ChevronUp, Eye } from "lucide-react";
+import { FileDown, Save, ChevronDown, ChevronUp, Eye } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { Dialog } from "@/components/common";
@@ -63,7 +63,10 @@ export function ResumePreviewDialog({
 
   const handleSaveInfo = () => {
     onPersonalInfoChange(draft);
-    showToast("success", "个人信息已保存");
+    showToast(
+      "success",
+      "个人信息已应用,如需永久保存请回到工具栏点「保存」入库"
+    );
   };
 
   const handleExportDocx = async () => {
@@ -163,7 +166,7 @@ function PersonalInfoEditor({ draft, onChange }: PersonalInfoEditorProps) {
       </button>
       {open && (
         <div className="p-4 space-y-4 bg-white">
-          <FieldGroup title="基础信息" cols={2}>
+          <FieldGroup title="基础信息">
             {PERSONAL_INFO_BASIC_FIELDS.map((f) => (
               <Field
                 key={f.key}
@@ -178,7 +181,7 @@ function PersonalInfoEditor({ draft, onChange }: PersonalInfoEditorProps) {
               />
             ))}
           </FieldGroup>
-          <FieldGroup title="教育背景" cols={2}>
+          <FieldGroup title="教育背景">
             {PERSONAL_INFO_EDUCATION_FIELDS.map((f) => (
               <Field
                 key={f.key}
@@ -193,7 +196,7 @@ function PersonalInfoEditor({ draft, onChange }: PersonalInfoEditorProps) {
               />
             ))}
           </FieldGroup>
-          <FieldGroup title="求职偏好" cols={2}>
+          <FieldGroup title="求职偏好">
             {PERSONAL_INFO_JOB_FIELDS.map((f) => (
               <Field
                 key={f.key}
@@ -208,7 +211,7 @@ function PersonalInfoEditor({ draft, onChange }: PersonalInfoEditorProps) {
               />
             ))}
           </FieldGroup>
-          <FieldGroup title="社交链接" cols={2}>
+          <FieldGroup title="社交链接">
             {PERSONAL_INFO_SOCIAL_FIELDS.map((f) => (
               <Field
                 key={f.key}
@@ -231,17 +234,15 @@ function PersonalInfoEditor({ draft, onChange }: PersonalInfoEditorProps) {
 
 function FieldGroup({
   title,
-  cols,
   children,
 }: {
   title: string;
-  cols: number;
   children: React.ReactNode;
 }) {
   return (
     <div>
       <h4 className="text-xs font-medium text-gray-600 mb-2">{title}</h4>
-      <div className={`grid gap-2 grid-cols-${cols}`}>{children}</div>
+      <div className="grid gap-2 grid-cols-2">{children}</div>
     </div>
   );
 }
@@ -440,6 +441,3 @@ function SubBlock({ title, lines }: { title: string; lines: string[] }) {
     </div>
   );
 }
-
-// 占位 export 防止 tree shaking 警告 (FileText 在面板里也用于其它地方;留作备用)
-export const __unused = FileText;
