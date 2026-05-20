@@ -47,6 +47,7 @@ export function ResumePanelV2({
   onSaveResume,
 }: ResumePanelV2Props) {
   const [running, setRunning] = useState(false);
+  const [runningSteps, setRunningSteps] = useState<string[]>([]);
 
   const ready = knowledgeDocs.length > 0 && !!provider;
 
@@ -60,6 +61,7 @@ export function ResumePanelV2({
       return;
     }
     setRunning(true);
+    setRunningSteps([]);
     try {
       const next = await runResumeAgent({
         knowledgeDocs,
@@ -67,6 +69,21 @@ export function ResumePanelV2({
         jobDirection,
         jdKeywords,
         tone,
+        onStep: (step) => {
+          setRunningSteps((prev) => {
+            const label =
+              step.kind === "tool_call"
+                ? `调用 ${step.label ?? "tool"}`
+                : step.kind === "tool_result"
+                ? `${step.label ?? "tool"} 返回`
+                : step.kind === "todo_update"
+                ? `更新待办${step.detail ? `: ${step.detail}` : ""}`
+                : step.kind === "llm_text"
+                ? step.label ?? "模型输出"
+                : `错误: ${step.detail ?? ""}`;
+            return [...prev, label].slice(-30);
+          });
+        },
       });
       onResumeChange(next);
       showToast("success", "简历已生成");
@@ -147,6 +164,15 @@ export function ResumePanelV2({
         <div className="p-10 text-center text-blue-500 bg-blue-50 rounded-lg border border-blue-100 flex flex-col items-center gap-2">
           <Loader2 size={24} className="animate-spin" />
           <p className="text-sm">Agent 正在基于背景知识撰写项目经历...</p>
+          {runningSteps.length > 0 && (
+            <div className="mt-3 text-xs text-left text-blue-600/80 max-h-40 overflow-auto w-full max-w-md mx-auto">
+              {runningSteps.map((s, i) => (
+                <div key={i} className="font-mono py-0.5 truncate">
+                  {s}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
