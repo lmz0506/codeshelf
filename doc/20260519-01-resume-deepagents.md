@@ -127,3 +127,34 @@ LLM 调用模式从 Tauri 后端的 `chat_complete` invoke 改为前端直接用
 1. **模型 tool calling 兼容性**：Ollama 上部分本地模型不支持 OpenAI tool calling 协议；首次使用时若 Agent 持续无响应，需切换为支持 tool calling 的模型（DeepSeek、通义千问、Moonshot、OpenAI、Anthropic 兼容代理等）。
 2. **`src/bindings.ts` 重新生成**：新命令的类型化绑定需要跑 `cargo test export_bindings`；当前 Windows 环境下该 test 因 cdylib 入口点问题失败（`STATUS_ENTRYPOINT_NOT_FOUND`），不影响运行时（前端用 raw `invoke<T>` 调用），但 IDE 不会有类型提示。建议在 macOS/Linux 上重生 bindings 后提交。
 3. **bindings.ts 预存错误**：HEAD 上的 `src/bindings.ts` 自带 4 个 TS 错误（`ShortcutInput` 重复 + 未使用变量），与本次改动无关；`npm run build` 会因此失败，但所有业务代码已通过类型检查。
+
+## 七、后续协作约定（给后来人 / AI 助手看）
+
+> 重构主体已合并并进入持续修复阶段，后续接手前请先读这一节。
+
+### 7.1 本文档定位
+
+本文档是**完工存档**，不是 TODO 清单。"四、文件改动清单" 描述的是 `56bd9b7` 那次重构**已经落地**的事情，"五、验收" 章节标 ✅ 说明编译/功能已经过过一遍。
+
+后续接到与简历模块相关的任务时：
+
+- 默认认为文档列出的功能/文件/方法**都已存在**，先用 `git log` / `grep` 在代码里找一找再判断要不要新增。
+- 不要把文档的章节当成"应该实现而尚未实现"的项去补。
+- 想新增章节描述的东西时，先确认现有实现是不是已经覆盖（例如版本恢复 = `historyOpen` / `listResumeKnowledgeHistory` / `readResumeKnowledgeHistory`，不要再另起一个名字相近的"运行记录"/"流程明细"功能）。
+
+### 7.2 修 bug 任务的边界
+
+简历模块（`src/pages/Toolbox/ResumeGenerator/` 与 `src/services/resume/` + `src-tauri/src/commands/resume.rs`）目前处在迭代修复阶段，commit message 普遍是 "fix 简历"。修 bug 任务时：
+
+- 严格只动复现 bug 所需的最小范围。
+- 不要顺手新增 IPC 命令、新建独立 service 文件（如 `qualityCheck.ts` 这类）、加运行流程持久化、加额外 UI 入口。
+- 改动如果超出"修一个明确 bug"的范围（例如要新增 IPC、新文件、跨文件 >50 行），应该先和需求方对齐再动手。
+
+### 7.3 可观测性 / 质检 / 流程持久化类设施
+
+像「Agent 调用流程落盘 (`KnowledgeRunRecord` / `save_knowledge_run` 等)」「背景知识质量自动检查 (`qualityCheck.ts`)」「失败重试与重放」这类**辅助性设施**本身有价值，可以做，但要满足两个条件：
+
+1. **当成"优化功能"的正式任务来做**，不要在修 bug 时夹带；要有明确的需求来源。
+2. **在当前实现基础上扩展**，不要另起一套。例如：
+   - 想增强可追溯性 → 扩展现有 `listResumeKnowledgeHistory` 的元信息（加 `model` / `requestId` / `status` 字段），而不是另造平行的 `list_knowledge_runs`。
+   - 想加质检 → 先看 `runKnowledgeAgent` / `runResumeAgent` 内部已有的校验逻辑能不能加 hook 点，而不是新建一个独立模块。
