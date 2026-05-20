@@ -7,11 +7,11 @@ import {
   Wand2,
   Database,
   ListChecks,
-  History,
   Trash2,
   FileDown,
-  Edit3,
   Pencil,
+  Plus,
+  ChevronLeft,
 } from "lucide-react";
 import { useProjectsStore } from "@/stores/projectsStore";
 import { useAiProvidersStore } from "@/stores/aiProvidersStore";
@@ -28,6 +28,7 @@ import { ResumePanelV2 } from "./ResumePanelV2";
 import { SaveResumeDialog } from "./SaveResumeDialog";
 
 type Tab = "select" | "knowledge" | "resume";
+type View = "history" | "workflow";
 
 interface ResumeGeneratorProps {
   onBack: () => void;
@@ -44,6 +45,9 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     setSavedResumes,
   } = useResumeStore();
 
+  const [view, setView] = useState<View>(() =>
+    savedResumes.length > 0 ? "history" : "workflow"
+  );
   const [activeTab, setActiveTab] = useState<Tab>("select");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [jobDirection, setJobDirection] = useState<JobDirection>("backend");
@@ -138,6 +142,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     setTone(r.tone);
     setSelectedIds(new Set(r.experiences.map((e) => e.projectId)));
     setActiveTab("resume");
+    setView("workflow");
   };
 
   const handleDeleteSaved = async (e: React.MouseEvent, id: string) => {
@@ -332,67 +337,6 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
           下一步：生成 / 查看背景知识
         </Button>
       </div>
-
-      {savedResumes.length > 0 && (
-        <div className="pt-4 border-t border-gray-200">
-          <div className="flex items-center gap-2 mb-3">
-            <History size={16} className="text-gray-500" />
-            <h3 className="text-sm font-medium text-gray-900">历史简历</h3>
-            <span className="text-xs text-gray-400">({savedResumes.length})</span>
-          </div>
-          <div className="space-y-2 max-h-[260px] overflow-auto">
-            {savedResumes.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center justify-between gap-3 p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all group"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-gray-900 truncate">
-                    {r.name || `${r.jobDirection} · ${r.experiences.length} 个项目`}
-                    {r.isSaved && <span className="ml-1 text-xs text-green-600">已保存</span>}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {r.name
-                      ? `${r.jobDirection} · ${r.experiences.length} 个项目 · `
-                      : ""}
-                    {new Date(r.updatedAt || r.createdAt).toLocaleString("zh-CN")}
-                  </div>
-                </div>
-                <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => handleOpenSaved(r)}
-                    className="p-1.5 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600"
-                    title="加载到编辑器(用于重新生成)"
-                  >
-                    <Edit3 size={14} />
-                  </button>
-                  <button
-                    onClick={(e) => handleExportSaved(e, r)}
-                    className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
-                    title="导出 Markdown"
-                  >
-                    <FileDown size={14} />
-                  </button>
-                  <button
-                    onClick={(e) => handleRenameSaved(e, r)}
-                    className="p-1.5 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-600"
-                    title="重命名"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={(e) => handleDeleteSaved(e, r.id)}
-                    className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
-                    title="删除"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 
@@ -430,6 +374,67 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
           />
         </>
       )}
+    </div>
+  );
+
+  const renderHistoryView = () => (
+    <div className="flex-1 overflow-auto p-6">
+      <div className="max-w-4xl mx-auto space-y-5">
+        <div>
+          <h3 className="text-base font-medium text-gray-900">我的简历</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            选择一份继续编辑、导出，或新建一份。
+          </p>
+        </div>
+        <div className="space-y-2">
+          {savedResumes.map((r) => (
+            <div
+              key={r.id}
+              onClick={() => handleOpenSaved(r)}
+              className="flex items-center justify-between gap-3 p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all group cursor-pointer"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-gray-900 truncate">
+                  {r.name || `${r.jobDirection} · ${r.experiences.length} 个项目`}
+                </div>
+                <div className="text-xs text-gray-500 mt-1 flex items-center gap-2">
+                  <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                    {r.jobDirection}
+                  </span>
+                  <span>{r.experiences.length} 个项目</span>
+                  <span>·</span>
+                  <span>
+                    {new Date(r.updatedAt || r.createdAt).toLocaleString("zh-CN")}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => handleExportSaved(e, r)}
+                  className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+                  title="导出 Markdown"
+                >
+                  <FileDown size={14} />
+                </button>
+                <button
+                  onClick={(e) => handleRenameSaved(e, r)}
+                  className="p-1.5 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-600"
+                  title="重命名"
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  onClick={(e) => handleDeleteSaved(e, r.id)}
+                  className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                  title="删除"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 
@@ -498,16 +503,42 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     </div>
   );
 
+  const showHistory = view === "history" && savedResumes.length > 0;
+
+  const headerActions = showHistory ? (
+    <Button
+      onClick={() => {
+        setView("workflow");
+        setActiveTab("select");
+      }}
+      variant="primary"
+      size="sm"
+      className="gap-1.5"
+    >
+      <Plus size={14} /> 新建简历
+    </Button>
+  ) : savedResumes.length > 0 ? (
+    <button
+      onClick={() => setView("history")}
+      className="text-sm text-gray-600 hover:text-blue-600 flex items-center gap-1"
+    >
+      <ChevronLeft size={16} /> 我的简历
+    </button>
+  ) : null;
+
   return (
     <div className="flex flex-col h-full bg-white">
       <ToolPanelHeader
         title="简历生成器"
         icon={FileText}
         onBack={onBack}
+        actions={headerActions}
       />
 
       <div className="flex-1 flex flex-col min-h-0">
-        {activeTab === "knowledge" ? (
+        {showHistory ? (
+          renderHistoryView()
+        ) : activeTab === "knowledge" ? (
           <>
             <div className="px-6 pt-6 pb-4">
               <div className="max-w-4xl mx-auto">{renderTabs()}</div>
