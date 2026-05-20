@@ -27,6 +27,7 @@ import { EmptyState } from "@/components/common";
 interface KnowledgePanelProps {
   selectedProjects: Project[];
   provider: AiProviderConfig | null;
+  onNext?: () => void;
 }
 
 interface HistoryItem {
@@ -34,7 +35,7 @@ interface HistoryItem {
   size: number;
 }
 
-export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelProps) {
+export function KnowledgePanel({ selectedProjects, provider, onNext }: KnowledgePanelProps) {
   const {
     knowledgeDocs,
     upsertKnowledge,
@@ -203,6 +204,11 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
     showToast("success", "已删除");
   };
 
+  const generatedCount = useMemo(
+    () => selectedProjects.filter((p) => !!knowledgeDocs[p.id]).length,
+    [selectedProjects, knowledgeDocs]
+  );
+
   if (selectedProjects.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -215,7 +221,8 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
   }
 
   return (
-    <div className="flex-1 flex min-h-0">
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex min-h-0">
       {/* 左侧：项目列表 */}
       <div className="w-64 border-r border-gray-200 overflow-auto flex flex-col">
         <div className="px-3 py-2 text-xs text-gray-500 sticky top-0 bg-white border-b border-gray-100 flex items-center justify-between">
@@ -451,6 +458,25 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
           </>
         )}
       </div>
+      </div>
+
+      {onNext && (
+        <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 bg-white">
+          <div className="text-xs text-gray-500">
+            已生成 {generatedCount} / {selectedProjects.length} 个项目的背景知识
+          </div>
+          <Button
+            onClick={onNext}
+            disabled={generatedCount === 0 || bulkRunning}
+            variant="primary"
+            size="md"
+            className="gap-2"
+          >
+            <Wand2 size={16} />
+            下一步：生成简历
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

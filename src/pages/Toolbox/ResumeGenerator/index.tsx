@@ -512,7 +512,11 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
             <div className="px-6 pt-6 pb-4">
               <div className="max-w-4xl mx-auto">{renderTabs()}</div>
             </div>
-            <KnowledgePanel selectedProjects={selectedProjects} provider={defaultProvider} />
+            <KnowledgePanel
+              selectedProjects={selectedProjects}
+              provider={defaultProvider}
+              onNext={() => setActiveTab("resume")}
+            />
           </>
         ) : (
           <div className="flex-1 overflow-auto p-6">
