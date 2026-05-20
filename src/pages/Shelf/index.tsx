@@ -854,10 +854,20 @@ export function ShelfPage() {
         </div>
       )}
 
-      {/* Resume Generator */}
+      {/* Resume Generator —— 与 re-main-wrap 同框,留出侧边栏 + 6px 间距 + 圆角白底 */}
       {showResumeGenerator && (
-        <div className="fixed inset-0 z-50"
-          style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+        <div
+          className="fixed z-50 bg-white overflow-hidden flex flex-col"
+          style={{
+            top: 6,
+            right: 6,
+            bottom: 6,
+            left: sidebarCollapsed ? 6 : 206,
+            borderRadius: 12,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+            transition: '0.25s ease',
+          }}
+        >
           <ResumeGenerator onBack={() => setShowResumeGenerator(false)} />
         </div>
       )}

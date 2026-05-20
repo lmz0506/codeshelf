@@ -10,16 +10,19 @@ import {
   AlertCircle,
   CheckCircle2,
   Trash2,
+  Wand2,
 } from "lucide-react";
 import type { Project, AiProviderConfig } from "@/types";
 import type { ProjectKnowledge } from "@/types/resume";
 import { useResumeStore } from "@/stores/resumeStore";
 import { runKnowledgeAgent } from "@/services/resume/agents/knowledgeAgent";
+import type { AgentStep } from "@/services/resume/agents/resumeAgent";
 import {
   listResumeKnowledgeHistory,
   readResumeKnowledgeHistory,
 } from "@/services/resume/knowledgeStore";
-import { showToast } from "@/components/ui";
+import { Button, showToast } from "@/components/ui";
+import { EmptyState } from "@/components/common";
 
 interface KnowledgePanelProps {
   selectedProjects: Project[];
@@ -32,17 +35,24 @@ interface HistoryItem {
 }
 
 export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelProps) {
-  const { knowledgeDocs, upsertKnowledge, removeKnowledge, setKnowledgeInMemory } =
-    useResumeStore();
+  const {
+    knowledgeDocs,
+    upsertKnowledge,
+    removeKnowledge,
+    setKnowledgeInMemory,
+    knowledgeRuns,
+    startKnowledgeRun,
+    appendKnowledgeStep,
+    finishKnowledgeRun,
+  } = useResumeStore();
   const [activeProjectId, setActiveProjectId] = useState<string | null>(
     selectedProjects[0]?.id ?? null
   );
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>("");
-  const [running, setRunning] = useState(false);
-  const [runningSteps, setRunningSteps] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [bulkRunning, setBulkRunning] = useState(false);
 
   useEffect(() => {
     if (!activeProjectId && selectedProjects.length > 0) {
@@ -58,6 +68,12 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
     [selectedProjects, activeProjectId]
   );
   const activeDoc = activeProjectId ? knowledgeDocs[activeProjectId] : undefined;
+  const activeRun = activeProjectId ? knowledgeRuns[activeProjectId] : undefined;
+  const running = activeRun?.status === "running";
+  const pendingTargets = useMemo(
+    () => selectedProjects.filter((p) => !knowledgeDocs[p.id]),
+    [selectedProjects, knowledgeDocs]
+  );
 
   // 切换项目时退出编辑模式 + 重置草稿
   useEffect(() => {
@@ -76,54 +92,63 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
     }
   };
 
-  const handleGenerate = async () => {
-    if (!activeProject) return;
+  const generateOne = async (project: Project) => {
     if (!provider) {
       showToast("warning", "请先配置默认 AI 供应商");
       return;
     }
-    setRunning(true);
-    setRunningSteps([]);
+    const requestId = generateRequestId();
+    startKnowledgeRun(project.id, requestId);
     try {
+      const existing = knowledgeDocs[project.id]?.content;
       const { background } = await runKnowledgeAgent({
-        project: activeProject,
+        project,
         provider,
-        initialBackground: activeDoc?.content,
-        onStep: (step) => {
-          setRunningSteps((prev) => {
-            const next = [...prev];
-            const label =
-              step.kind === "tool_call"
-                ? `🔧 调用 ${step.label}`
-                : step.kind === "tool_result"
-                ? `✓ ${step.label ?? "tool"} 返回`
-                : step.kind === "todo_update"
-                ? `📋 更新待办`
-                : step.kind === "llm_text"
-                ? `💬 模型输出`
-                : `❌ ${step.detail ?? ""}`;
-            next.push(label);
-            return next.slice(-30);
-          });
-        },
+        initialBackground: existing,
+        onStep: (step) => appendKnowledgeStep(project.id, step),
       });
       const doc: ProjectKnowledge = {
-        projectId: activeProject.id,
-        projectName: activeProject.name,
-        projectPath: activeProject.path,
+        projectId: project.id,
+        projectName: project.name,
+        projectPath: project.path,
         content: background,
         updatedAt: new Date().toISOString(),
         userEdited: false,
       };
       await upsertKnowledge(doc, false);
-      showToast("success", "背景知识已生成");
+      finishKnowledgeRun(project.id);
+      showToast("success", `${project.name} 背景知识已生成`);
     } catch (err) {
-      showToast(
-        "error",
-        `生成失败: ${err instanceof Error ? err.message : String(err)}`
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      finishKnowledgeRun(project.id, msg);
+      showToast("error", `${project.name} 生成失败: ${msg}`);
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (!activeProject) return;
+    await generateOne(activeProject);
+  };
+
+  const handleGenerateAll = async () => {
+    if (!provider) {
+      showToast("warning", "请先配置默认 AI 供应商");
+      return;
+    }
+    if (pendingTargets.length === 0) {
+      showToast("info", "全部已选项目都已生成背景知识");
+      return;
+    }
+    setBulkRunning(true);
+    try {
+      for (const p of pendingTargets) {
+        if (!useResumeStore.getState().knowledgeDocs[p.id]) {
+          setActiveProjectId(p.id);
+          await generateOne(p);
+        }
+      }
     } finally {
-      setRunning(false);
+      setBulkRunning(false);
     }
   };
 
@@ -180,11 +205,11 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
 
   if (selectedProjects.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-400">
-        <div className="text-center">
-          <FileText size={48} className="mx-auto mb-3 opacity-50" />
-          <p>请先在「选项目」标签中选择至少一个项目</p>
-        </div>
+      <div className="flex-1 flex items-center justify-center">
+        <EmptyState
+          icon={FileText}
+          title="请先在「选项目」标签中选择至少一个项目"
+        />
       </div>
     );
   }
@@ -192,14 +217,30 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
   return (
     <div className="flex-1 flex min-h-0">
       {/* 左侧：项目列表 */}
-      <div className="w-64 border-r border-gray-200 overflow-auto">
-        <div className="px-3 py-2 text-xs text-gray-500 sticky top-0 bg-white border-b border-gray-100">
-          已选项目 ({selectedProjects.length})
+      <div className="w-64 border-r border-gray-200 overflow-auto flex flex-col">
+        <div className="px-3 py-2 text-xs text-gray-500 sticky top-0 bg-white border-b border-gray-100 flex items-center justify-between">
+          <span>已选项目 ({selectedProjects.length})</span>
+          {pendingTargets.length > 0 && (
+            <button
+              onClick={handleGenerateAll}
+              disabled={bulkRunning || !provider}
+              className="text-[11px] px-2 py-0.5 rounded text-blue-600 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              title={`顺序生成剩余 ${pendingTargets.length} 个项目`}
+            >
+              {bulkRunning ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : (
+                <Wand2 size={11} />
+              )}
+              一键生成 ({pendingTargets.length})
+            </button>
+          )}
         </div>
         <ul className="py-1">
           {selectedProjects.map((p) => {
             const has = !!knowledgeDocs[p.id];
             const isActive = activeProjectId === p.id;
+            const runState = knowledgeRuns[p.id];
             return (
               <li key={p.id}>
                 <button
@@ -211,7 +252,11 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
                   }`}
                 >
                   <span className="flex-1 truncate">{p.name}</span>
-                  {has ? (
+                  {runState?.status === "running" ? (
+                    <Loader2 size={14} className="animate-spin text-blue-500 flex-shrink-0" />
+                  ) : runState?.status === "error" ? (
+                    <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
+                  ) : has ? (
                     <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
                   ) : (
                     <span className="text-[10px] text-gray-400 flex-shrink-0">未生成</span>
@@ -234,58 +279,69 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {activeDoc && !editing && (
-                  <button
+                  <Button
                     onClick={() => {
                       setDraft(activeDoc.content);
                       setEditing(true);
                     }}
-                    className="px-2.5 py-1 text-xs border border-gray-200 rounded-md hover:bg-gray-50 flex items-center gap-1"
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1"
                   >
                     <Edit3 size={12} /> 编辑
-                  </button>
+                  </Button>
                 )}
                 {editing && (
                   <>
-                    <button
+                    <Button
                       onClick={() => {
                         setEditing(false);
                         setDraft(activeDoc?.content ?? "");
                       }}
-                      className="px-2.5 py-1 text-xs border border-gray-200 rounded-md hover:bg-gray-50"
+                      variant="secondary"
+                      size="sm"
                     >
                       取消
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={handleSaveDraft}
-                      className="px-2.5 py-1 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 flex items-center gap-1"
+                      variant="primary"
+                      size="sm"
+                      className="gap-1"
                     >
                       <Save size={12} /> 保存
-                    </button>
+                    </Button>
                   </>
                 )}
-                <button
+                <Button
                   onClick={async () => {
                     await refreshHistory();
                     setHistoryOpen((v) => !v);
                   }}
-                  className="px-2.5 py-1 text-xs border border-gray-200 rounded-md hover:bg-gray-50 flex items-center gap-1"
                   disabled={!activeDoc}
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1"
                 >
                   <History size={12} /> 历史
-                </button>
+                </Button>
                 {activeDoc && (
-                  <button
+                  <Button
                     onClick={handleDelete}
-                    className="px-2.5 py-1 text-xs border border-red-200 text-red-600 rounded-md hover:bg-red-50"
+                    variant="secondary"
+                    size="sm"
+                    className="border-red-200 text-red-600 hover:bg-red-50"
                     title="删除当前版本"
                   >
                     <Trash2 size={12} />
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button
                   onClick={handleGenerate}
                   disabled={running || !provider}
-                  className="px-3 py-1 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 flex items-center gap-1"
+                  variant="primary"
+                  size="sm"
+                  className="gap-1"
                 >
                   {running ? (
                     <>
@@ -298,7 +354,7 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
                       {activeDoc ? "重新生成" : "生成"}
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -337,12 +393,12 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
 
             <div className="flex-1 overflow-auto p-4 min-h-0">
               {!activeDoc && !running && (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                  <AlertCircle size={36} className="mb-3 opacity-50" />
-                  <p className="text-sm">此项目尚未生成背景知识</p>
-                  <p className="text-xs mt-1 text-gray-500">
-                    点击右上角「生成」按钮开始
-                  </p>
+                <div className="h-full flex items-center justify-center">
+                  <EmptyState
+                    icon={AlertCircle}
+                    title="此项目尚未生成背景知识"
+                    description="点击右上角「生成」按钮开始"
+                  />
                 </div>
               )}
               {running && (
@@ -352,10 +408,10 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
                     Agent 正在探索项目代码...
                   </div>
                   <div className="flex-1 overflow-auto rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs font-mono text-gray-700 space-y-0.5 min-h-0">
-                    {runningSteps.length === 0 ? (
+                    {!activeRun || activeRun.steps.length === 0 ? (
                       <div className="text-gray-400">等待 Agent 响应...</div>
                     ) : (
-                      runningSteps.map((s, i) => <div key={i}>{s}</div>)
+                      activeRun.steps.map((s, i) => <div key={i}>{formatStep(s)}</div>)
                     )}
                   </div>
                 </div>
@@ -397,4 +453,26 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
       </div>
     </div>
   );
+}
+
+function formatStep(step: AgentStep): string {
+  switch (step.kind) {
+    case "tool_call":
+      return `调用 ${step.label ?? "tool"}`;
+    case "tool_result":
+      return `${step.label ?? "tool"} 返回`;
+    case "todo_update":
+      return "更新待办";
+    case "llm_text":
+      return step.label ?? "模型输出";
+    default:
+      return `错误: ${step.detail ?? ""}`;
+  }
+}
+
+function generateRequestId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

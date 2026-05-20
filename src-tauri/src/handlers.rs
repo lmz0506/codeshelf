@@ -3,8 +3,8 @@
 // 通过 tauri-specta 注册：调试构建时会把命令签名导出为 src/bindings.ts，供前端类型安全调用。
 
 use crate::commands::{
-    api_chat, chat, chat_bridge, extras, git, project, resume, settings, stats, storage_admin,
-    system, toolbox, tools, workflows,
+    api_chat, chat, chat_bridge, extras, git, project, resume, resume_agent, settings, stats,
+    storage_admin, system, toolbox, tools, workflows,
 };
 use crate::{keyboard_hook, mcp_gateway};
 use tauri_specta::{collect_commands, Builder};
@@ -317,6 +317,11 @@ pub fn make_builder() -> Builder<tauri::Wry> {
         resume::resume_project_list_dir,
         resume::resume_project_read_file,
         resume::resume_project_grep,
+        // Resume Agent (Rust 侧 langchain/deepagents 替代)
+        resume_agent::run_resume_agent,
+        resume_agent::cancel_resume_agent,
+        resume_agent::run_knowledge_agent,
+        resume_agent::cancel_knowledge_agent,
         // Keyboard hook
         keyboard_hook::register_global_shortcuts,
         keyboard_hook::unregister_all_global_shortcuts,
@@ -334,13 +339,24 @@ mod tests {
     fn export_bindings() {
         use specta_typescript::{BigIntExportBehavior, Typescript};
 
+        let target = "../src/bindings.ts";
+
         // u64/usize 这种 JS Number 装不下的整数：默认 spec 会报错，
         // 我们的字段（messageCount、tail_kept 之类）都在安全范围内，所以走 Number。
         make_builder()
             .export(
                 Typescript::default().bigint(BigIntExportBehavior::Number),
-                "../src/bindings.ts",
+                target,
             )
             .expect("failed to export typescript bindings");
+
+        // tauri-specta 生成的代码里有 unused 符号 (TAURI_CHANNEL / __makeEvents__);
+        // 我们的 tsconfig 开了 noUnusedLocals,所以在文件顶部塞 @ts-nocheck 让
+        // 整个 bindings.ts 跳过类型检查 (它本来就是机器生成的)。
+        let content = std::fs::read_to_string(target).expect("read bindings");
+        if !content.trim_start().starts_with("// @ts-nocheck") {
+            std::fs::write(target, format!("// @ts-nocheck\n{}", content))
+                .expect("write bindings");
+        }
     }
 }
