@@ -262,6 +262,8 @@ export interface ResumeV2 {
   id: string;
   createdAt: string;
   updatedAt: string;
+  /** 用户自定义简历名字。可选,旧数据无此字段时回退到 `${jobDirection} · N 个项目` */
+  name?: string;
   jobDirection: JobDirection;
   jdKeywords: string[];
   tone: Tone;

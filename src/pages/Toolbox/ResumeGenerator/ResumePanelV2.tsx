@@ -22,6 +22,8 @@ import type {
   STARExperience,
 } from "@/types/resume";
 import { runResumeAgent } from "@/services/resume/agents/resumeAgent";
+import type { AgentStep } from "@/services/resume/agents/resumeAgent";
+import { useResumeStore } from "@/stores/resumeStore";
 import { exportResumeV2ToMarkdownWithDialog } from "@/services/resume/export";
 import { Button, showToast } from "@/components/ui";
 import { EmptyState } from "@/components/common";
@@ -47,8 +49,8 @@ export function ResumePanelV2({
   onResumeChange,
   onSaveResume,
 }: ResumePanelV2Props) {
-  const [running, setRunning] = useState(false);
-  const [runningSteps, setRunningSteps] = useState<string[]>([]);
+  const { resumeRun, startResumeRun, appendResumeStep, finishResumeRun } = useResumeStore();
+  const running = resumeRun?.status === "running";
 
   const ready = knowledgeDocs.length > 0 && !!provider;
 
@@ -61,8 +63,8 @@ export function ResumePanelV2({
       showToast("warning", "请先在「背景知识」页生成至少一份项目背景");
       return;
     }
-    setRunning(true);
-    setRunningSteps([]);
+    const requestId = generateRequestId();
+    startResumeRun(requestId);
     try {
       const next = await runResumeAgent({
         knowledgeDocs,
@@ -70,28 +72,15 @@ export function ResumePanelV2({
         jobDirection,
         jdKeywords,
         tone,
-        onStep: (step) => {
-          setRunningSteps((prev) => {
-            const label =
-              step.kind === "tool_call"
-                ? `调用 ${step.label ?? "tool"}`
-                : step.kind === "tool_result"
-                ? `${step.label ?? "tool"} 返回`
-                : step.kind === "todo_update"
-                ? `更新待办${step.detail ? `: ${step.detail}` : ""}`
-                : step.kind === "llm_text"
-                ? step.label ?? "模型输出"
-                : `错误: ${step.detail ?? ""}`;
-            return [...prev, label].slice(-30);
-          });
-        },
+        onStep: (step) => appendResumeStep(step),
       });
       onResumeChange(next);
+      finishResumeRun();
       showToast("success", "简历已生成");
     } catch (err) {
-      showToast("error", `生成失败: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setRunning(false);
+      const msg = err instanceof Error ? err.message : String(err);
+      finishResumeRun(msg);
+      showToast("error", `生成失败: ${msg}`);
     }
   };
 
@@ -121,7 +110,6 @@ export function ResumePanelV2({
     if (!resume) return;
     try {
       await onSaveResume(resume);
-      showToast("success", "已保存");
     } catch (err) {
       showToast("error", `保存失败: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -172,11 +160,11 @@ export function ResumePanelV2({
             <Loader2 size={18} className="animate-spin" />
             Agent 正在基于背景知识撰写项目经历...
           </div>
-          {runningSteps.length > 0 && (
+          {resumeRun && resumeRun.steps.length > 0 && (
             <div className="text-xs text-left text-blue-600/80 max-h-40 overflow-auto w-full max-w-md mx-auto">
-              {runningSteps.map((s, i) => (
+              {resumeRun.steps.map((s, i) => (
                 <div key={i} className="font-mono py-0.5 truncate">
-                  {s}
+                  {formatStep(s)}
                 </div>
               ))}
             </div>
@@ -387,4 +375,26 @@ function labelOf(key: "situation" | "task" | "action" | "result"): string {
     action: "A - 技术行动",
     result: "R - 项目成果",
   }[key];
+}
+
+function formatStep(step: AgentStep): string {
+  switch (step.kind) {
+    case "tool_call":
+      return `调用 ${step.label ?? "tool"}`;
+    case "tool_result":
+      return `${step.label ?? "tool"} 返回`;
+    case "todo_update":
+      return `更新待办${step.detail ? `: ${step.detail}` : ""}`;
+    case "llm_text":
+      return step.label ?? "模型输出";
+    default:
+      return `错误: ${step.detail ?? ""}`;
+  }
+}
+
+function generateRequestId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

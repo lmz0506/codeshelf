@@ -9,6 +9,7 @@ import type {
   SavedResume,
   STARExperience,
 } from "@/types/resume";
+import type { AgentStep } from "@/services/resume/agents/resumeAgent";
 import {
   loadResumeKnowledge,
   saveResumeKnowledge,
@@ -25,6 +26,28 @@ interface ResumeGeneratorState {
   isAnalyzing: boolean;
 }
 
+/** 单个项目背景知识 agent 的运行状态。按 projectId 隔离,跨页面/tab 不丢,关窗口才清。 */
+export interface KnowledgeRunState {
+  status: "running" | "done" | "error";
+  /** 最近 30 条进度,超出自动 slice */
+  steps: AgentStep[];
+  /** 用于 cancel_knowledge_agent IPC */
+  requestId: string;
+  startedAt: number;
+  error?: string;
+}
+
+/** 简历 agent 的运行状态。全局只有一个(simultaneously 只能跑一次简历生成)。 */
+export interface ResumeRunState {
+  status: "running" | "done" | "error";
+  steps: AgentStep[];
+  requestId: string;
+  startedAt: number;
+  error?: string;
+}
+
+const MAX_STEPS = 30;
+
 interface ResumeState {
   resumeGeneratorState: ResumeGeneratorState;
   savedResumes: SavedResume[];
@@ -32,6 +55,10 @@ interface ResumeState {
   knowledgeDocs: Record<string, ProjectKnowledge>;
   /** 背景知识是否已从磁盘载入过（避免重复 IO） */
   knowledgeLoaded: boolean;
+  /** 背景知识 agent 运行状态:projectId -> KnowledgeRunState */
+  knowledgeRuns: Record<string, KnowledgeRunState>;
+  /** 简历 agent 运行状态 */
+  resumeRun: ResumeRunState | null;
   setSavedResumes: (resumes: unknown[]) => void;
   saveCurrentResume: () => Promise<void>;
   loadSavedResume: (resume: SavedResume) => void;
@@ -49,6 +76,15 @@ interface ResumeState {
   setKnowledgeInMemory: (doc: ProjectKnowledge) => void;
   removeKnowledge: (projectId: string) => Promise<void>;
   getKnowledge: (projectId: string) => ProjectKnowledge | undefined;
+  // Agent run lifecycle
+  startKnowledgeRun: (projectId: string, requestId: string) => void;
+  appendKnowledgeStep: (projectId: string, step: AgentStep) => void;
+  finishKnowledgeRun: (projectId: string, error?: string) => void;
+  clearKnowledgeRun: (projectId: string) => void;
+  startResumeRun: (requestId: string) => void;
+  appendResumeStep: (step: AgentStep) => void;
+  finishResumeRun: (error?: string) => void;
+  clearResumeRun: () => void;
 }
 
 const INITIAL_STATE: ResumeGeneratorState = {
@@ -90,6 +126,7 @@ function normalizeSavedResume(input: unknown): SavedResume | null {
     id,
     createdAt,
     updatedAt,
+    name: typeof raw.name === "string" ? raw.name : undefined,
     jobDirection,
     jdKeywords: asStringArray(raw.jdKeywords),
     tone,
@@ -136,6 +173,8 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
   savedResumes: [],
   knowledgeDocs: {},
   knowledgeLoaded: false,
+  knowledgeRuns: {},
+  resumeRun: null,
   setSavedResumes: (savedResumes) => set({ savedResumes: normalizeSavedResumes(savedResumes) }),
   saveCurrentResume: async () => {
     const state = get();
@@ -282,4 +321,85 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
     }
   },
   getKnowledge: (projectId) => get().knowledgeDocs[projectId],
+
+  // ============== Agent 运行状态 ==============
+  startKnowledgeRun: (projectId, requestId) =>
+    set((s) => ({
+      knowledgeRuns: {
+        ...s.knowledgeRuns,
+        [projectId]: {
+          status: "running",
+          steps: [],
+          requestId,
+          startedAt: Date.now(),
+        },
+      },
+    })),
+  appendKnowledgeStep: (projectId, step) =>
+    set((s) => {
+      const cur = s.knowledgeRuns[projectId];
+      if (!cur) return s;
+      return {
+        knowledgeRuns: {
+          ...s.knowledgeRuns,
+          [projectId]: {
+            ...cur,
+            steps: [...cur.steps, step].slice(-MAX_STEPS),
+          },
+        },
+      };
+    }),
+  finishKnowledgeRun: (projectId, error) =>
+    set((s) => {
+      const cur = s.knowledgeRuns[projectId];
+      if (!cur) return s;
+      return {
+        knowledgeRuns: {
+          ...s.knowledgeRuns,
+          [projectId]: {
+            ...cur,
+            status: error ? "error" : "done",
+            error,
+          },
+        },
+      };
+    }),
+  clearKnowledgeRun: (projectId) =>
+    set((s) => {
+      if (!s.knowledgeRuns[projectId]) return s;
+      const next = { ...s.knowledgeRuns };
+      delete next[projectId];
+      return { knowledgeRuns: next };
+    }),
+  startResumeRun: (requestId) =>
+    set({
+      resumeRun: {
+        status: "running",
+        steps: [],
+        requestId,
+        startedAt: Date.now(),
+      },
+    }),
+  appendResumeStep: (step) =>
+    set((s) => {
+      if (!s.resumeRun) return s;
+      return {
+        resumeRun: {
+          ...s.resumeRun,
+          steps: [...s.resumeRun.steps, step].slice(-MAX_STEPS),
+        },
+      };
+    }),
+  finishResumeRun: (error) =>
+    set((s) => {
+      if (!s.resumeRun) return s;
+      return {
+        resumeRun: {
+          ...s.resumeRun,
+          status: error ? "error" : "done",
+          error,
+        },
+      };
+    }),
+  clearResumeRun: () => set({ resumeRun: null }),
 }));

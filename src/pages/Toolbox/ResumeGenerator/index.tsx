@@ -9,18 +9,23 @@ import {
   ListChecks,
   History,
   Trash2,
+  FileDown,
+  Edit3,
+  Pencil,
 } from "lucide-react";
 import { useProjectsStore } from "@/stores/projectsStore";
 import { useAiProvidersStore } from "@/stores/aiProvidersStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useResumeStore } from "@/stores/resumeStore";
 import type { JobDirection, Tone, ResumeV2 } from "@/types/resume";
+import { exportResumeV2ToMarkdownWithDialog } from "@/services/resume/export";
 import { Button, showToast } from "@/components/ui";
 import { EmptyState } from "@/components/common";
 import { ToolPanelHeader } from "../index";
 import { KnowledgePanel } from "./KnowledgePanel";
 import { JobConfigPanel } from "./JobConfigPanel";
 import { ResumePanelV2 } from "./ResumePanelV2";
+import { SaveResumeDialog } from "./SaveResumeDialog";
 
 type Tab = "select" | "knowledge" | "resume";
 
@@ -45,6 +50,8 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   const [jdKeywords, setJdKeywords] = useState<string[]>([]);
   const [tone, setTone] = useState<Tone>("professional");
   const [resume, setResume] = useState<ResumeV2 | null>(null);
+  const [saveDialogResume, setSaveDialogResume] = useState<ResumeV2 | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ResumeV2 | null>(null);
 
   // 启动加载磁盘上已有的背景知识
   useEffect(() => {
@@ -91,20 +98,36 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   };
 
   const handleSaveResume = async (r: ResumeV2) => {
+    // 打开命名 dialog,真正的写盘在 persistResume 里。返回 Promise 以兼容 ResumePanelV2 的 await。
+    setSaveDialogResume(r);
+  };
+
+  const defaultResumeName = useMemo(() => {
+    if (!saveDialogResume) return "";
+    if (saveDialogResume.name) return saveDialogResume.name;
+    const date = new Date().toLocaleDateString("zh-CN");
+    return `${saveDialogResume.jobDirection} · ${saveDialogResume.experiences.length} 个项目 · ${date}`;
+  }, [saveDialogResume]);
+
+  const persistResume = async (name: string) => {
+    if (!saveDialogResume) return;
     const stored: ResumeV2 = {
-      ...r,
+      ...saveDialogResume,
+      name,
       updatedAt: new Date().toISOString(),
       isSaved: true,
     };
-    const updated = [stored, ...savedResumes.filter((s) => s.id !== r.id)];
+    const updated = [stored, ...savedResumes.filter((s) => s.id !== stored.id)];
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("save_resumes", { data: updated });
       setSavedResumes(updated);
       setResume(stored);
+      setSaveDialogResume(null);
+      showToast("success", "已保存");
     } catch (err) {
       console.error("保存简历失败:", err);
-      throw err;
+      showToast("error", `保存失败: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -130,6 +153,42 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       return;
     }
     showToast("success", "已删除");
+  };
+
+  const handleExportSaved = async (e: React.MouseEvent, r: ResumeV2) => {
+    e.stopPropagation();
+    try {
+      const filePath = await exportResumeV2ToMarkdownWithDialog(r);
+      if (filePath) showToast("success", `已导出到 ${filePath}`);
+    } catch (err) {
+      showToast("error", `导出失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleRenameSaved = (e: React.MouseEvent, r: ResumeV2) => {
+    e.stopPropagation();
+    setRenameTarget(r);
+  };
+
+  const persistRename = async (name: string) => {
+    if (!renameTarget) return;
+    const renamed: ResumeV2 = {
+      ...renameTarget,
+      name,
+      updatedAt: new Date().toISOString(),
+    };
+    const updated = savedResumes.map((r) => (r.id === renamed.id ? renamed : r));
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("save_resumes", { data: updated });
+      setSavedResumes(updated);
+      if (resume?.id === renamed.id) setResume(renamed);
+      setRenameTarget(null);
+      showToast("success", "已重命名");
+    } catch (err) {
+      console.error(err);
+      showToast("error", `重命名失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const renderProviderStatus = () => {
@@ -281,29 +340,54 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
             <h3 className="text-sm font-medium text-gray-900">历史简历</h3>
             <span className="text-xs text-gray-400">({savedResumes.length})</span>
           </div>
-          <div className="space-y-2 max-h-[200px] overflow-auto">
+          <div className="space-y-2 max-h-[260px] overflow-auto">
             {savedResumes.map((r) => (
               <div
                 key={r.id}
-                onClick={() => handleOpenSaved(r)}
-                className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all group cursor-pointer"
+                className="flex items-center justify-between gap-3 p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all group"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-gray-900">
-                    {r.jobDirection} · {r.experiences.length} 个项目
+                  <div className="text-sm font-medium text-gray-900 truncate">
+                    {r.name || `${r.jobDirection} · ${r.experiences.length} 个项目`}
                     {r.isSaved && <span className="ml-1 text-xs text-green-600">已保存</span>}
                   </div>
                   <div className="text-xs text-gray-500 mt-0.5">
+                    {r.name
+                      ? `${r.jobDirection} · ${r.experiences.length} 个项目 · `
+                      : ""}
                     {new Date(r.updatedAt || r.createdAt).toLocaleString("zh-CN")}
                   </div>
                 </div>
-                <button
-                  onClick={(e) => handleDeleteSaved(e, r.id)}
-                  className="p-1.5 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                  title="删除"
-                >
-                  <Trash2 size={14} />
-                </button>
+                <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => handleOpenSaved(r)}
+                    className="p-1.5 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600"
+                    title="加载到编辑器(用于重新生成)"
+                  >
+                    <Edit3 size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => handleExportSaved(e, r)}
+                    className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+                    title="导出 Markdown"
+                  >
+                    <FileDown size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => handleRenameSaved(e, r)}
+                    className="p-1.5 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-600"
+                    title="重命名"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => handleDeleteSaved(e, r.id)}
+                    className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                    title="删除"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -440,6 +524,24 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
           </div>
         )}
       </div>
+
+      <SaveResumeDialog
+        open={!!saveDialogResume}
+        defaultName={defaultResumeName}
+        onCancel={() => setSaveDialogResume(null)}
+        onConfirm={persistResume}
+      />
+
+      <SaveResumeDialog
+        open={!!renameTarget}
+        title="重命名简历"
+        defaultName={
+          renameTarget?.name ||
+          `${renameTarget?.jobDirection ?? ""} · ${renameTarget?.experiences.length ?? 0} 个项目`
+        }
+        onCancel={() => setRenameTarget(null)}
+        onConfirm={persistRename}
+      />
     </div>
   );
 }
