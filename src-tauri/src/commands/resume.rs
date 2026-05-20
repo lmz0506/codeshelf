@@ -195,12 +195,78 @@ pub async fn save_resumes(data: serde_json::Value) -> AppResult<()> {
 
 // ============== 项目背景知识 ==============
 
+/// 一次知识生成 / 手编保存的元信息。
+/// 持久化为 `<id>.meta.json`(当前版本) 或 `<id>.history/<ts>.meta.json`(成功的历史版本) /
+/// `<id>.history/<ts>.fail.json`(失败/取消,无 md 内容)。
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeRunMeta {
+    pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_name: Option<String>,
+    pub started_at: String,
+    pub finished_at: String,
+    pub duration_ms: u64,
+    pub step_count: u32,
+    /// "agent" | "manual"
+    pub source: String,
+    /// "success" | "error" | "cancelled" | "manual"
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub quality_issues: Vec<QualityIssue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QualityIssue {
+    /// "warn" | "error"
+    pub severity: String,
+    /// 稳定的 code,UI 用它做样式分组:
+    /// missing_section | empty_section | placeholder_left | low_confidence
+    pub code: String,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct ResumeKnowledgeHistoryEntry {
     /// 文件名上的 timestamp（毫秒级 unix），同时充当主键
     pub timestamp: String,
-    /// 文件字节数（便于 UI 给个尺寸提示）
+    /// 文件字节数。fail 记录无 .md 时为 0。
     pub size: u64,
+    /// "success" | "error" | "cancelled" | "manual"。
+    /// legacy 条目(只有 .md 无 sidecar)回落 "success"。
+    pub status: String,
+    /// 是否能 restore;false 表示 fail 记录无内容。
+    pub has_content: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_warning_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_error_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadKnowledgeHistoryResponse {
+    /// 失败/取消记录为 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<KnowledgeRunMeta>,
 }
 
 fn timestamp_ms() -> String {
@@ -210,12 +276,34 @@ fn timestamp_ms() -> String {
     format!("{}", dur.as_millis())
 }
 
+/// `<id>.meta.json` —— 当前活动版本的元信息 sidecar。
+fn current_meta_path(config: &crate::storage::config::StorageConfig, project_id: &str) -> PathBuf {
+    let main = config.resume_knowledge_file(project_id);
+    main.with_extension("meta.json")
+}
+
+/// 把 KnowledgeRunMeta 写到给定路径。失败只 warn,不阻断主流程。
+fn write_meta_best_effort(path: &Path, meta: &KnowledgeRunMeta) {
+    match serde_json::to_string_pretty(meta) {
+        Ok(json) => {
+            if let Some(parent) = path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if let Err(e) = fs::write(path, json) {
+                log::warn!("写入 meta sidecar 失败 ({:?}): {}", path, e);
+            }
+        }
+        Err(e) => log::warn!("序列化 meta 失败 ({:?}): {}", path, e),
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn save_resume_knowledge(
     project_id: String,
     content: String,
-    _user_edited: bool,
+    user_edited: bool,
+    meta: Option<KnowledgeRunMeta>,
 ) -> AppResult<()> {
     if project_id.trim().is_empty() {
         return Err(AppError::invalid("project_id 不能为空"));
@@ -223,16 +311,24 @@ pub async fn save_resume_knowledge(
     let config = get_storage_config()?;
     config.ensure_dirs()?;
     let target = config.resume_knowledge_file(&project_id);
+    let target_meta = current_meta_path(config, &project_id);
 
-    // 备份旧版本
+    // 备份旧版本(.md + .meta.json 一起搬到 history/<ts>.md / <ts>.meta.json)
     if target.exists() {
         let history_dir = config.resume_knowledge_history_dir(&project_id);
         fs::create_dir_all(&history_dir)
             .map_err(|e| AppError::from(format!("创建历史目录失败: {}", e)))?;
-        let backup_name = format!("{}.md", timestamp_ms());
-        let backup_path = history_dir.join(backup_name);
-        fs::copy(&target, &backup_path)
+        let ts = timestamp_ms();
+        let backup_md = history_dir.join(format!("{}.md", ts));
+        fs::copy(&target, &backup_md)
             .map_err(|e| AppError::from(format!("备份历史版本失败: {}", e)))?;
+        if target_meta.exists() {
+            let backup_meta = history_dir.join(format!("{}.meta.json", ts));
+            // meta 备份失败不阻断
+            if let Err(e) = fs::copy(&target_meta, &backup_meta) {
+                log::warn!("备份历史 meta 失败 ({:?} -> {:?}): {}", target_meta, backup_meta, e);
+            }
+        }
     }
 
     // 确保父目录存在
@@ -242,6 +338,39 @@ pub async fn save_resume_knowledge(
     }
 
     fs::write(&target, content).map_err(|e| AppError::from(format!("写入背景知识失败: {}", e)))?;
+
+    // 写新版本的 meta sidecar:
+    // - 调用方传了 meta → 直接用(通常是 agent 成功路径,带 model/duration/qualityIssues)
+    // - 没传 → 合成一条 "manual" 元信息(替代被废弃的 _user_edited)
+    let final_meta = meta.unwrap_or_else(|| {
+        let now = chrono::Utc::now();
+        let now_str = now.to_rfc3339();
+        KnowledgeRunMeta {
+            request_id: format!("manual-{}", now.timestamp_millis()),
+            model_provider: None,
+            model_name: None,
+            started_at: now_str.clone(),
+            finished_at: now_str,
+            duration_ms: 0,
+            step_count: 0,
+            source: "manual".into(),
+            status: "manual".into(),
+            error: None,
+            quality_issues: Vec::new(),
+        }
+    });
+    // user_edited 信号:如果手编但调用方传了 agent meta(理论上不应该发生),用 user_edited 校正一下
+    let final_meta = if user_edited && final_meta.source == "agent" {
+        KnowledgeRunMeta {
+            source: "manual".into(),
+            status: "manual".into(),
+            ..final_meta
+        }
+    } else {
+        final_meta
+    };
+    write_meta_best_effort(&target_meta, &final_meta);
+
     Ok(())
 }
 
@@ -300,7 +429,20 @@ pub async fn list_resume_knowledge_history(
     if !dir.exists() {
         return Ok(Vec::new());
     }
-    let mut entries = Vec::new();
+    // 按 timestamp 聚合:每个 ts 可能有 .md / .meta.json / .fail.json 三类文件。
+    // - .md 有 → has_content=true, size 取 .md
+    // - .fail.json 存在 → status 来自 fail 元信息(failure/cancelled),无内容
+    // - .meta.json 存在但没 .md → 不太可能,但兼容:no content + meta status
+    // - 只有 .md 没任何 sidecar → legacy,status="success"
+    use std::collections::BTreeMap;
+    #[derive(Default)]
+    struct Bucket {
+        md_size: Option<u64>,
+        meta: Option<KnowledgeRunMeta>,
+        fail: Option<KnowledgeRunMeta>,
+    }
+    let mut buckets: BTreeMap<String, Bucket> = BTreeMap::new();
+
     let read =
         fs::read_dir(&dir).map_err(|e| AppError::from(format!("读取历史目录失败: {}", e)))?;
     for entry in read.flatten() {
@@ -308,19 +450,97 @@ pub async fn list_resume_knowledge_history(
         if !path.is_file() {
             continue;
         }
-        if path.extension().and_then(|s| s.to_str()) != Some("md") {
-            continue;
-        }
-        let stem = match path.file_stem().and_then(|s| s.to_str()) {
-            Some(s) => s.to_string(),
+        let name = match path.file_name().and_then(|s| s.to_str()) {
+            Some(n) => n.to_string(),
             None => continue,
         };
-        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-        entries.push(ResumeKnowledgeHistoryEntry {
-            timestamp: stem,
-            size,
-        });
+        // 三种合法后缀:.md / .meta.json / .fail.json
+        let (ts, kind) = if let Some(stem) = name.strip_suffix(".meta.json") {
+            (stem.to_string(), "meta")
+        } else if let Some(stem) = name.strip_suffix(".fail.json") {
+            (stem.to_string(), "fail")
+        } else if let Some(stem) = name.strip_suffix(".md") {
+            (stem.to_string(), "md")
+        } else {
+            continue;
+        };
+        let bucket = buckets.entry(ts).or_default();
+        match kind {
+            "md" => {
+                bucket.md_size = Some(entry.metadata().map(|m| m.len()).unwrap_or(0));
+            }
+            "meta" => {
+                if let Ok(s) = fs::read_to_string(&path) {
+                    bucket.meta = serde_json::from_str(&s).ok();
+                }
+            }
+            "fail" => {
+                if let Ok(s) = fs::read_to_string(&path) {
+                    bucket.fail = serde_json::from_str(&s).ok();
+                }
+            }
+            _ => {}
+        }
     }
+
+    let mut entries: Vec<ResumeKnowledgeHistoryEntry> = buckets
+        .into_iter()
+        .map(|(ts, b)| {
+            let (status, meta, has_content, size, error) = if let Some(fail) = b.fail {
+                (
+                    fail.status.clone(),
+                    Some(fail.clone()),
+                    false,
+                    0u64,
+                    fail.error.clone(),
+                )
+            } else if let Some(meta) = b.meta {
+                (
+                    meta.status.clone(),
+                    Some(meta.clone()),
+                    b.md_size.is_some(),
+                    b.md_size.unwrap_or(0),
+                    meta.error.clone(),
+                )
+            } else {
+                // legacy: 只有 .md
+                (
+                    "success".to_string(),
+                    None,
+                    b.md_size.is_some(),
+                    b.md_size.unwrap_or(0),
+                    None,
+                )
+            };
+            let (warn_n, err_n) = if let Some(m) = &meta {
+                let w = m
+                    .quality_issues
+                    .iter()
+                    .filter(|i| i.severity == "warn")
+                    .count() as u32;
+                let e = m
+                    .quality_issues
+                    .iter()
+                    .filter(|i| i.severity == "error")
+                    .count() as u32;
+                (Some(w), Some(e))
+            } else {
+                (None, None)
+            };
+            ResumeKnowledgeHistoryEntry {
+                timestamp: ts,
+                size,
+                status,
+                has_content,
+                model_name: meta.as_ref().and_then(|m| m.model_name.clone()),
+                duration_ms: meta.as_ref().map(|m| m.duration_ms),
+                step_count: meta.as_ref().map(|m| m.step_count),
+                quality_warning_count: warn_n,
+                quality_error_count: err_n,
+                error,
+            }
+        })
+        .collect();
     // 按 timestamp 倒序（最近的优先）
     entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     Ok(entries)
@@ -331,7 +551,7 @@ pub async fn list_resume_knowledge_history(
 pub async fn read_resume_knowledge_history(
     project_id: String,
     timestamp: String,
-) -> AppResult<String> {
+) -> AppResult<ReadKnowledgeHistoryResponse> {
     if project_id.trim().is_empty() || timestamp.trim().is_empty() {
         return Err(AppError::invalid("project_id 或 timestamp 不能为空"));
     }
@@ -340,13 +560,35 @@ pub async fn read_resume_knowledge_history(
         return Err(AppError::invalid("非法 timestamp"));
     }
     let config = get_storage_config()?;
-    let path = config
-        .resume_knowledge_history_dir(&project_id)
-        .join(format!("{}.md", timestamp));
-    if !path.exists() {
+    let dir = config.resume_knowledge_history_dir(&project_id);
+    let md = dir.join(format!("{}.md", timestamp));
+    let meta_path = dir.join(format!("{}.meta.json", timestamp));
+    let fail_path = dir.join(format!("{}.fail.json", timestamp));
+
+    let content = if md.exists() {
+        Some(
+            fs::read_to_string(&md)
+                .map_err(|e| AppError::from(format!("读取历史版本失败: {}", e)))?,
+        )
+    } else {
+        None
+    };
+    let meta = if meta_path.exists() {
+        fs::read_to_string(&meta_path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<KnowledgeRunMeta>(&s).ok())
+    } else if fail_path.exists() {
+        fs::read_to_string(&fail_path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<KnowledgeRunMeta>(&s).ok())
+    } else {
+        None
+    };
+
+    if content.is_none() && meta.is_none() {
         return Err(AppError::invalid("历史版本不存在"));
     }
-    fs::read_to_string(&path).map_err(|e| AppError::from(format!("读取历史版本失败: {}", e)))
+    Ok(ReadKnowledgeHistoryResponse { content, meta })
 }
 
 #[tauri::command]
@@ -360,6 +602,38 @@ pub async fn delete_resume_knowledge(project_id: String) -> AppResult<()> {
     if target.exists() {
         fs::remove_file(&target).map_err(|e| AppError::from(format!("删除背景知识失败: {}", e)))?;
     }
+    // meta sidecar 同步删除(允许不存在)
+    let target_meta = current_meta_path(config, &project_id);
+    if target_meta.exists() {
+        if let Err(e) = fs::remove_file(&target_meta) {
+            log::warn!("删除 meta sidecar 失败 ({:?}): {}", target_meta, e);
+        }
+    }
+    Ok(())
+}
+
+/// 记录一次 agent 失败/取消运行,产出一条 `<id>.history/<ts>.fail.json`-only 条目。
+/// 无 .md 内容,UI 上会显示 status icon + 模型/错误信息,但不能 restore。
+#[tauri::command]
+#[specta::specta]
+pub async fn record_knowledge_failure(
+    project_id: String,
+    meta: KnowledgeRunMeta,
+) -> AppResult<()> {
+    if project_id.trim().is_empty() {
+        return Err(AppError::invalid("project_id 不能为空"));
+    }
+    let config = get_storage_config()?;
+    config.ensure_dirs()?;
+    let history_dir = config.resume_knowledge_history_dir(&project_id);
+    fs::create_dir_all(&history_dir)
+        .map_err(|e| AppError::from(format!("创建历史目录失败: {}", e)))?;
+    let ts = timestamp_ms();
+    let fail_path = history_dir.join(format!("{}.fail.json", ts));
+    let json = serde_json::to_string_pretty(&meta)
+        .map_err(|e| AppError::from(format!("序列化失败元信息失败: {}", e)))?;
+    fs::write(&fail_path, json)
+        .map_err(|e| AppError::from(format!("写入失败元信息失败: {}", e)))?;
     Ok(())
 }
 

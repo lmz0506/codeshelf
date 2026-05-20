@@ -8,9 +8,15 @@ import {
   History,
   Eye,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Trash2,
   Wand2,
+  XCircle,
+  Ban,
+  PencilLine,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import type { Project, AiProviderConfig } from "@/types";
 import type { ProjectKnowledge } from "@/types/resume";
@@ -21,6 +27,11 @@ import {
   listResumeKnowledgeHistory,
   readResumeKnowledgeHistory,
 } from "@/services/resume/knowledgeStore";
+import type {
+  ResumeKnowledgeHistoryEntry,
+  KnowledgeRunMeta,
+  QualityIssue,
+} from "@/services/resume/knowledgeStore";
 import { Button, showToast } from "@/components/ui";
 import { EmptyState } from "@/components/common";
 
@@ -28,11 +39,6 @@ interface KnowledgePanelProps {
   selectedProjects: Project[];
   provider: AiProviderConfig | null;
   onNext?: () => void;
-}
-
-interface HistoryItem {
-  timestamp: string;
-  size: number;
 }
 
 export function KnowledgePanel({ selectedProjects, provider, onNext }: KnowledgePanelProps) {
@@ -51,8 +57,12 @@ export function KnowledgePanel({ selectedProjects, provider, onNext }: Knowledge
   );
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>("");
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [history, setHistory] = useState<ResumeKnowledgeHistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  /** 当前在历史列表里被展开看详情的 timestamp(null=折叠所有) */
+  const [expandedTs, setExpandedTs] = useState<string | null>(null);
+  /** 展开行对应的完整 meta(从 read_resume_knowledge_history 拿)。null=还没 fetch 或没 meta。 */
+  const [expandedMeta, setExpandedMeta] = useState<KnowledgeRunMeta | null>(null);
   const [bulkRunning, setBulkRunning] = useState(false);
 
   useEffect(() => {
@@ -81,6 +91,8 @@ export function KnowledgePanel({ selectedProjects, provider, onNext }: Knowledge
     setEditing(false);
     setDraft(activeDoc?.content ?? "");
     setHistoryOpen(false);
+    setExpandedTs(null);
+    setExpandedMeta(null);
   }, [activeProjectId, activeDoc?.content]);
 
   const refreshHistory = async () => {
@@ -102,7 +114,7 @@ export function KnowledgePanel({ selectedProjects, provider, onNext }: Knowledge
     startKnowledgeRun(project.id, requestId);
     try {
       const existing = knowledgeDocs[project.id]?.content;
-      const { background } = await runKnowledgeAgent({
+      const { background, meta, qualityIssues } = await runKnowledgeAgent({
         project,
         provider,
         initialBackground: existing,
@@ -115,14 +127,33 @@ export function KnowledgePanel({ selectedProjects, provider, onNext }: Knowledge
         content: background,
         updatedAt: new Date().toISOString(),
         userEdited: false,
+        qualityIssues,
       };
-      await upsertKnowledge(doc, false);
+      // 透传 agent meta:后端用它写 <id>.meta.json,UI 用它做事后追溯。
+      await upsertKnowledge(doc, false, meta);
       finishKnowledgeRun(project.id);
-      showToast("success", `${project.name} 背景知识已生成`);
+      const errCount = qualityIssues.filter((i) => i.severity === "error").length;
+      const warnCount = qualityIssues.filter((i) => i.severity === "warn").length;
+      if (errCount > 0) {
+        showToast("warning", `${project.name} 生成完成,但有 ${errCount} 个质量问题待修正`);
+      } else if (warnCount > 0) {
+        showToast("success", `${project.name} 已生成 (${warnCount} 个质量提示)`);
+      } else {
+        showToast("success", `${project.name} 背景知识已生成`);
+      }
+      // 历史列表正打开时自动刷新一下(新增了一条 .meta.json sidecar)
+      if (historyOpen && activeProjectId === project.id) {
+        void refreshHistory();
+      }
     } catch (err) {
+      // 失败/取消时后端 run_knowledge_agent 已经在 match Err 分支写了 .fail.json,
+      // 前端不要重复 record,只更新内存运行状态 + toast。
       const msg = err instanceof Error ? err.message : String(err);
       finishKnowledgeRun(project.id, msg);
       showToast("error", `${project.name} 生成失败: ${msg}`);
+      if (historyOpen && activeProjectId === project.id) {
+        void refreshHistory();
+      }
     }
   };
 
@@ -175,10 +206,18 @@ export function KnowledgePanel({ selectedProjects, provider, onNext }: Knowledge
     }
   };
 
-  const handleRestoreHistory = async (timestamp: string) => {
+  const handleRestoreHistory = async (entry: ResumeKnowledgeHistoryEntry) => {
     if (!activeProject) return;
+    if (!entry.hasContent) {
+      showToast("warning", "该条目没有可恢复的内容(失败/取消记录)");
+      return;
+    }
     try {
-      const content = await readResumeKnowledgeHistory(activeProject.id, timestamp);
+      const { content } = await readResumeKnowledgeHistory(activeProject.id, entry.timestamp);
+      if (content == null) {
+        showToast("warning", "该条目没有可恢复的内容");
+        return;
+      }
       setKnowledgeInMemory({
         projectId: activeProject.id,
         projectName: activeProject.name,
@@ -193,6 +232,27 @@ export function KnowledgePanel({ selectedProjects, provider, onNext }: Knowledge
       showToast(
         "error",
         `恢复失败: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  };
+
+  /// 展开/折叠某条历史详情。展开时按需 fetch meta(legacy 条目可能没有,显示 fallback)。
+  const handleToggleDetail = async (entry: ResumeKnowledgeHistoryEntry) => {
+    if (!activeProject) return;
+    if (expandedTs === entry.timestamp) {
+      setExpandedTs(null);
+      setExpandedMeta(null);
+      return;
+    }
+    setExpandedTs(entry.timestamp);
+    setExpandedMeta(null);
+    try {
+      const { meta } = await readResumeKnowledgeHistory(activeProject.id, entry.timestamp);
+      setExpandedMeta(meta ?? null);
+    } catch (err) {
+      showToast(
+        "error",
+        `读取详情失败: ${err instanceof Error ? err.message : String(err)}`
       );
     }
   };
@@ -366,7 +426,7 @@ export function KnowledgePanel({ selectedProjects, provider, onNext }: Knowledge
             </div>
 
             {historyOpen && (
-              <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 max-h-40 overflow-auto">
+              <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 max-h-72 overflow-auto">
                 {history.length === 0 ? (
                   <div className="text-xs text-amber-700">暂无历史版本</div>
                 ) : (
@@ -376,20 +436,98 @@ export function KnowledgePanel({ selectedProjects, provider, onNext }: Knowledge
                       const dateStr = isNaN(d.getTime())
                         ? h.timestamp
                         : d.toLocaleString("zh-CN");
+                      const isExpanded = expandedTs === h.timestamp;
                       return (
-                        <li
-                          key={h.timestamp}
-                          className="flex items-center justify-between text-xs text-amber-800"
-                        >
-                          <span>
-                            {dateStr} · {h.size} 字节
-                          </span>
-                          <button
-                            onClick={() => handleRestoreHistory(h.timestamp)}
-                            className="px-2 py-0.5 rounded border border-amber-300 hover:bg-amber-100"
-                          >
-                            恢复
-                          </button>
+                        <li key={h.timestamp}>
+                          <div className="flex items-center justify-between text-xs text-amber-800 gap-2">
+                            <button
+                              onClick={() => handleToggleDetail(h)}
+                              className="flex-1 min-w-0 flex items-center gap-2 text-left hover:bg-amber-100 rounded px-1 py-0.5"
+                              title="点击查看详情"
+                            >
+                              {isExpanded ? (
+                                <ChevronDown size={12} className="flex-shrink-0" />
+                              ) : (
+                                <ChevronRight size={12} className="flex-shrink-0" />
+                              )}
+                              <HistoryStatusIcon status={h.status} />
+                              <span className="truncate flex-1">{dateStr}</span>
+                              {h.modelName && (
+                                <span className="text-amber-600 truncate max-w-[120px]" title={h.modelName}>
+                                  {h.modelName}
+                                </span>
+                              )}
+                              {h.durationMs != null && h.durationMs > 0 && (
+                                <span className="text-amber-600">{formatDuration(h.durationMs)}</span>
+                              )}
+                              {h.stepCount != null && h.stepCount > 0 && (
+                                <span className="text-amber-600">{h.stepCount} 步</span>
+                              )}
+                              {h.hasContent && <span className="text-amber-600">{h.size} B</span>}
+                              {(h.qualityErrorCount ?? 0) > 0 && (
+                                <span className="px-1 rounded bg-red-100 text-red-700" title="质量错误">
+                                  ⨯{h.qualityErrorCount}
+                                </span>
+                              )}
+                              {(h.qualityWarningCount ?? 0) > 0 && (
+                                <span className="px-1 rounded bg-orange-100 text-orange-700" title="质量提示">
+                                  ⚠{h.qualityWarningCount}
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleRestoreHistory(h)}
+                              disabled={!h.hasContent}
+                              className="px-2 py-0.5 rounded border border-amber-300 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                              title={h.hasContent ? "恢复此版本" : "失败/取消记录,无内容可恢复"}
+                            >
+                              恢复
+                            </button>
+                          </div>
+                          {isExpanded && (
+                            <div className="ml-5 mt-1 p-2 rounded border border-amber-200 bg-white text-[11px] text-gray-700 space-y-1">
+                              {expandedMeta == null ? (
+                                <div className="text-gray-400">(legacy 条目或无元信息)</div>
+                              ) : (
+                                <>
+                                  <div>
+                                    <span className="text-gray-500">来源:</span> {expandedMeta.source} ·{" "}
+                                    <span className="text-gray-500">requestId:</span>{" "}
+                                    <code className="text-[10px]">{expandedMeta.requestId}</code>
+                                  </div>
+                                  {expandedMeta.modelProvider && (
+                                    <div>
+                                      <span className="text-gray-500">供应商:</span> {expandedMeta.modelProvider}
+                                    </div>
+                                  )}
+                                  {expandedMeta.error && (
+                                    <div className="text-red-700">
+                                      <span className="text-gray-500">错误:</span> {expandedMeta.error}
+                                    </div>
+                                  )}
+                                  {expandedMeta.qualityIssues.length > 0 && (
+                                    <div>
+                                      <div className="text-gray-500">质检 ({expandedMeta.qualityIssues.length}):</div>
+                                      <ul className="ml-3 list-disc space-y-0.5">
+                                        {expandedMeta.qualityIssues.map((q, i) => (
+                                          <li
+                                            key={i}
+                                            className={
+                                              q.severity === "error"
+                                                ? "text-red-700"
+                                                : "text-orange-700"
+                                            }
+                                          >
+                                            [{q.code}] {q.message}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
                         </li>
                       );
                     })}
@@ -424,20 +562,25 @@ export function KnowledgePanel({ selectedProjects, provider, onNext }: Knowledge
                 </div>
               )}
               {activeDoc && !running && (
-                editing ? (
-                  <textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    className="w-full h-full font-mono text-xs p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    placeholder="背景知识 Markdown..."
-                  />
-                ) : (
-                  <div className="prose prose-sm max-w-none">
-                    <pre className="text-xs whitespace-pre-wrap font-mono bg-gray-50 p-3 rounded-lg border border-gray-100">
-                      {activeDoc.content}
-                    </pre>
-                  </div>
-                )
+                <>
+                  {activeDoc.qualityIssues && activeDoc.qualityIssues.length > 0 && (
+                    <QualityBanner issues={activeDoc.qualityIssues} />
+                  )}
+                  {editing ? (
+                    <textarea
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      className="w-full h-full font-mono text-xs p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      placeholder="背景知识 Markdown..."
+                    />
+                  ) : (
+                    <div className="prose prose-sm max-w-none">
+                      <pre className="text-xs whitespace-pre-wrap font-mono bg-gray-50 p-3 rounded-lg border border-gray-100">
+                        {activeDoc.content}
+                      </pre>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -494,6 +637,59 @@ function formatStep(step: AgentStep): string {
     default:
       return `错误: ${step.detail ?? ""}`;
   }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const rest = Math.round(s - m * 60);
+  return `${m}m${rest}s`;
+}
+
+function HistoryStatusIcon({ status }: { status: string }) {
+  switch (status) {
+    case "success":
+      return <CheckCircle2 size={12} className="text-green-600 flex-shrink-0" aria-label="成功" />;
+    case "manual":
+      return <PencilLine size={12} className="text-blue-600 flex-shrink-0" aria-label="手编保存" />;
+    case "error":
+      return <XCircle size={12} className="text-red-600 flex-shrink-0" aria-label="失败" />;
+    case "cancelled":
+      return <Ban size={12} className="text-gray-500 flex-shrink-0" aria-label="取消" />;
+    default:
+      return <CheckCircle2 size={12} className="text-green-600 flex-shrink-0" />;
+  }
+}
+
+function QualityBanner({ issues }: { issues: QualityIssue[] }) {
+  const errors = issues.filter((i) => i.severity === "error");
+  const warns = issues.filter((i) => i.severity === "warn");
+  if (errors.length === 0 && warns.length === 0) return null;
+  const hasError = errors.length > 0;
+  const cls = hasError
+    ? "bg-red-50 border-red-200 text-red-800"
+    : "bg-amber-50 border-amber-200 text-amber-800";
+  const Icon = hasError ? AlertCircle : AlertTriangle;
+  return (
+    <div className={`mb-3 rounded-lg border p-3 text-xs ${cls}`}>
+      <div className="flex items-center gap-2 font-medium mb-1">
+        <Icon size={14} />
+        质量检查:{errors.length > 0 && ` ${errors.length} 个错误`}
+        {errors.length > 0 && warns.length > 0 && " ·"}
+        {warns.length > 0 && ` ${warns.length} 个提示`}
+      </div>
+      <ul className="ml-5 list-disc space-y-0.5">
+        {[...errors, ...warns].map((i, idx) => (
+          <li key={idx}>
+            <code className="text-[10px] mr-1">[{i.code}]</code>
+            {i.message}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function generateRequestId(): string {

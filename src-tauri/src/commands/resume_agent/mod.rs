@@ -11,6 +11,7 @@ pub mod types;
 
 mod knowledge_agent;
 mod llm;
+pub mod quality_check;
 mod resume_agent;
 
 pub use knowledge_agent::*;

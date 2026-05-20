@@ -312,6 +312,7 @@ pub fn make_builder() -> Builder<tauri::Wry> {
         resume::list_resume_knowledge_history,
         resume::read_resume_knowledge_history,
         resume::delete_resume_knowledge,
+        resume::record_knowledge_failure,
         resume::llm_proxy_request,
         resume::resume_project_index,
         resume::resume_project_list_dir,

@@ -228,6 +228,9 @@ export interface ProjectKnowledge {
   updatedAt: string;
   /** 是否为用户手编版本（区别于纯 Agent 生成） */
   userEdited: boolean;
+  /** 最近一次产出该版本的质检结果(内存态;来自 agent 返回的 qualityIssues)。
+   *  从磁盘 load 时为空——质量信息保存在历史元信息里,需要从 history 读 meta 才能拿到。 */
+  qualityIssues?: import("@/services/resume/knowledgeStore").QualityIssue[];
 }
 
 /** 背景知识的历史版本元数据（不含正文，按需 fetch） */

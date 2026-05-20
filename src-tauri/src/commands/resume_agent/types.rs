@@ -97,6 +97,8 @@ pub struct RunKnowledgeAgentRequest {
 #[serde(rename_all = "camelCase")]
 pub struct RunKnowledgeAgentResponse {
     pub background: String,
+    pub meta: crate::commands::resume::KnowledgeRunMeta,
+    pub quality_issues: Vec<crate::commands::resume::QualityIssue>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq)]

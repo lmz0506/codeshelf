@@ -16,6 +16,7 @@ import {
   listResumeKnowledge,
   deleteResumeKnowledge,
 } from "@/services/resume/knowledgeStore";
+import type { KnowledgeRunMeta } from "@/services/resume/knowledgeStore";
 
 interface ResumeGeneratorState {
   data: ResumeDataSource | null;
@@ -72,7 +73,7 @@ interface ResumeState {
   clearResumeGeneratorState: () => void;
   // 背景知识管理
   loadAllKnowledgeFromDisk: (resolveName?: (projectId: string) => { name?: string; path?: string } | undefined) => Promise<void>;
-  upsertKnowledge: (doc: ProjectKnowledge, userEdited: boolean) => Promise<void>;
+  upsertKnowledge: (doc: ProjectKnowledge, userEdited: boolean, meta?: KnowledgeRunMeta) => Promise<void>;
   setKnowledgeInMemory: (doc: ProjectKnowledge) => void;
   removeKnowledge: (projectId: string) => Promise<void>;
   getKnowledge: (projectId: string) => ProjectKnowledge | undefined;
@@ -290,7 +291,7 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
       set({ knowledgeLoaded: true });
     }
   },
-  upsertKnowledge: async (doc, userEdited) => {
+  upsertKnowledge: async (doc, userEdited, meta) => {
     const next: ProjectKnowledge = {
       ...doc,
       userEdited,
@@ -300,7 +301,7 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
       knowledgeDocs: { ...s.knowledgeDocs, [doc.projectId]: next },
     }));
     try {
-      await saveResumeKnowledge(doc.projectId, doc.content, userEdited);
+      await saveResumeKnowledge(doc.projectId, doc.content, userEdited, meta);
     } catch (err) {
       console.error("保存项目背景知识失败:", err);
       throw err;

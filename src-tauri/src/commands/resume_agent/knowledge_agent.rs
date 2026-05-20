@@ -10,6 +10,7 @@
 // 不用 deepagents / 任何 agent 框架:这就是两次 chat_completion + 中间夹文件读取。
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -20,11 +21,13 @@ use tokio::sync::RwLock;
 use tokio::task::AbortHandle;
 
 use super::llm::{chat_completion, pick_model, ChatMessage};
+use super::quality_check::check_knowledge_markdown;
 use super::types::{
     AgentStepEvent, AgentStepKind, RunKnowledgeAgentRequest, RunKnowledgeAgentResponse,
 };
 use crate::commands::resume::{
-    resume_project_index, resume_project_read_file, ResumeProjectIndex, ResumeProjectIndexFile,
+    record_knowledge_failure, resume_project_index, resume_project_read_file, KnowledgeRunMeta,
+    QualityIssue, ResumeProjectIndex, ResumeProjectIndexFile,
 };
 use crate::error::{AppError, AppResult};
 use crate::storage::schema::Project;
@@ -44,9 +47,23 @@ pub async fn run_knowledge_agent(
     request: RunKnowledgeAgentRequest,
 ) -> AppResult<RunKnowledgeAgentResponse> {
     let request_id = request.request_id.clone();
+    let project_id = request.project_id.clone();
     let app_handle = app.clone();
 
-    let join = tokio::spawn(async move { run_inner(app_handle, request).await });
+    // 提前拿 model_name + provider_name 以便所有结局都能写进 meta。
+    // 这里 pick_model 失败属于配置错误,不计入"运行失败",直接返回错给前端。
+    let model_config = pick_model(&request.provider)?;
+    let model_name = model_config.model.clone();
+    let provider_name = request.provider.name.clone();
+
+    let started = Utc::now();
+    let started_at = started.to_rfc3339();
+    let step_counter = Arc::new(AtomicUsize::new(0));
+    let counter_for_inner = step_counter.clone();
+
+    let join = tokio::spawn(async move {
+        run_inner(app_handle, request, counter_for_inner).await
+    });
     let abort = join.abort_handle();
     KNOWLEDGE_AGENT_ABORTS
         .write()
@@ -56,10 +73,61 @@ pub async fn run_knowledge_agent(
     let result = join.await;
     KNOWLEDGE_AGENT_ABORTS.write().await.remove(&request_id);
 
+    let finished = Utc::now();
+    let finished_at = finished.to_rfc3339();
+    let duration_ms =
+        (finished.timestamp_millis() - started.timestamp_millis()).max(0) as u64;
+    let step_count = step_counter.load(Ordering::Relaxed) as u32;
+
+    let build_meta = |status: &str, error: Option<String>, quality_issues: Vec<QualityIssue>| {
+        KnowledgeRunMeta {
+            request_id: request_id.clone(),
+            model_provider: Some(provider_name.clone()),
+            model_name: Some(model_name.clone()),
+            started_at: started_at.clone(),
+            finished_at: finished_at.clone(),
+            duration_ms,
+            step_count,
+            source: "agent".into(),
+            status: status.into(),
+            error,
+            quality_issues,
+        }
+    };
+
     match result {
-        Ok(inner) => inner,
-        Err(e) if e.is_cancelled() => Err(AppError::from("用户已取消")),
-        Err(e) => Err(AppError::from(format!("Agent 任务异常退出: {}", e))),
+        Ok(Ok(inner)) => {
+            let meta = build_meta("success", None, inner.quality_issues.clone());
+            Ok(RunKnowledgeAgentResponse {
+                background: inner.background,
+                meta,
+                quality_issues: inner.quality_issues,
+            })
+        }
+        Ok(Err(app_err)) => {
+            let msg = app_err.to_string();
+            let meta = build_meta("error", Some(msg.clone()), Vec::new());
+            // 失败落盘只 warn,不阻断把错误抛给前端
+            if let Err(e) = record_knowledge_failure(project_id, meta).await {
+                log::warn!("写入失败 meta 失败: {}", e);
+            }
+            Err(app_err)
+        }
+        Err(e) if e.is_cancelled() => {
+            let meta = build_meta("cancelled", Some("用户已取消".into()), Vec::new());
+            if let Err(e) = record_knowledge_failure(project_id, meta).await {
+                log::warn!("写入取消 meta 失败: {}", e);
+            }
+            Err(AppError::from("用户已取消"))
+        }
+        Err(e) => {
+            let msg = format!("Agent 任务异常退出: {}", e);
+            let meta = build_meta("error", Some(msg.clone()), Vec::new());
+            if let Err(e) = record_knowledge_failure(project_id, meta).await {
+                log::warn!("写入异常 meta 失败: {}", e);
+            }
+            Err(AppError::from(msg))
+        }
     }
 }
 
@@ -72,21 +140,29 @@ pub async fn cancel_knowledge_agent(request_id: String) -> AppResult<()> {
     Ok(())
 }
 
+/// 内层产出。外层用这个 + 自己记录的 startedAt/duration 组装最终 RunKnowledgeAgentResponse。
+struct InnerSuccess {
+    background: String,
+    quality_issues: Vec<QualityIssue>,
+}
+
 async fn run_inner(
     app: AppHandle,
     request: RunKnowledgeAgentRequest,
-) -> AppResult<RunKnowledgeAgentResponse> {
+    step_counter: Arc<AtomicUsize>,
+) -> AppResult<InnerSuccess> {
     let request_id = request.request_id.clone();
     let model_config = pick_model(&request.provider)?;
     let model = model_config.model.clone();
 
     let project = load_project(&request.project_id).await?;
 
-    emit_step(&app, &request_id, AgentStepKind::ToolCall, Some("建立项目索引".into()), None);
+    emit_step(&app, &request_id, &step_counter, AgentStepKind::ToolCall, Some("建立项目索引".into()), None);
     let index = resume_project_index(request.project_id.clone()).await?;
     emit_step(
         &app,
         &request_id,
+        &step_counter,
         AgentStepKind::ToolResult,
         Some("项目索引完成".into()),
         Some(format!(
@@ -98,7 +174,7 @@ async fn run_inner(
     let index_summary = build_index_summary(&index, &project);
 
     // ----- 第一轮:规划要读哪些文件 -----
-    emit_step(&app, &request_id, AgentStepKind::LlmText, Some("规划需要读取的关键文件".into()), None);
+    emit_step(&app, &request_id, &step_counter, AgentStepKind::LlmText, Some("规划需要读取的关键文件".into()), None);
     let plan_messages = vec![
         ChatMessage::system(
             "你是资深技术架构师。你只能基于用户提供的项目索引规划读取哪些文件。必须返回严格 JSON,不要 Markdown。"
@@ -124,6 +200,7 @@ async fn run_inner(
     emit_step(
         &app,
         &request_id,
+        &step_counter,
         AgentStepKind::TodoUpdate,
         None,
         Some(format!("计划读取 {} 个文件", planned_files.len())),
@@ -135,6 +212,7 @@ async fn run_inner(
         emit_step(
             &app,
             &request_id,
+            &step_counter,
             AgentStepKind::ToolCall,
             Some("读取文件".into()),
             Some(path.clone()),
@@ -145,6 +223,7 @@ async fn run_inner(
         emit_step(
             &app,
             &request_id,
+            &step_counter,
             AgentStepKind::ToolResult,
             Some(path.clone()),
             Some(format!("{} 字符", len)),
@@ -152,7 +231,7 @@ async fn run_inner(
     }
 
     // ----- 第二轮:生成背景知识 markdown -----
-    emit_step(&app, &request_id, AgentStepKind::LlmText, Some("生成背景知识文档".into()), None);
+    emit_step(&app, &request_id, &step_counter, AgentStepKind::LlmText, Some("生成背景知识文档".into()), None);
     let context = build_file_context(&read_files);
     let intro_line = if request.initial_background.is_some() {
         "这是更新流程。请结合现有背景知识和当前读到的项目文件,输出完整最新版 /background.md 内容。"
@@ -188,7 +267,11 @@ async fn run_inner(
     if background.is_empty() {
         return Err(AppError::from("模型没有产出背景知识内容"));
     }
-    Ok(RunKnowledgeAgentResponse { background })
+    let quality_issues = check_knowledge_markdown(&background);
+    Ok(InnerSuccess {
+        background,
+        quality_issues,
+    })
 }
 
 // =================== project 加载 ===================
@@ -531,10 +614,12 @@ fn extract_code_fence(s: &str) -> Option<&str> {
 fn emit_step(
     app: &AppHandle,
     request_id: &str,
+    counter: &Arc<AtomicUsize>,
     kind: AgentStepKind,
     label: Option<String>,
     detail: Option<String>,
 ) {
+    counter.fetch_add(1, Ordering::Relaxed);
     let event = AgentStepEvent {
         request_id: request_id.to_string(),
         kind,

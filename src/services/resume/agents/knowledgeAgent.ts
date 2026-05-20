@@ -5,6 +5,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import type { AiProviderConfig, Project } from "@/types";
+import type {
+  KnowledgeRunMeta,
+  QualityIssue,
+} from "@/services/resume/knowledgeStore";
 
 import type { AgentStep, AgentStepKind } from "./resumeAgent";
 
@@ -13,6 +17,8 @@ export type { AgentStep, AgentStepKind };
 export interface KnowledgeRunResult {
   background: string;
   steps: AgentStep[];
+  meta: KnowledgeRunMeta;
+  qualityIssues: QualityIssue[];
 }
 
 export interface RunKnowledgeAgentOptions {
@@ -33,6 +39,8 @@ interface AgentStepEventPayload {
 
 interface RunKnowledgeAgentResponse {
   background: string;
+  meta: KnowledgeRunMeta;
+  qualityIssues: QualityIssue[];
 }
 
 export async function runKnowledgeAgent(
@@ -72,7 +80,12 @@ export async function runKnowledgeAgent(
         },
       },
     );
-    return { background: result.background, steps };
+    return {
+      background: result.background,
+      steps,
+      meta: result.meta,
+      qualityIssues: result.qualityIssues,
+    };
   } finally {
     unlisten();
     opts.signal?.removeEventListener("abort", onAbort);
