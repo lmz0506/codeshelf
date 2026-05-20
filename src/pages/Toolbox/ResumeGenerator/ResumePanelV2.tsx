@@ -23,7 +23,8 @@ import type {
 } from "@/types/resume";
 import { runResumeAgent } from "@/services/resume/agents/resumeAgent";
 import { exportResumeV2ToMarkdownWithDialog } from "@/services/resume/export";
-import { showToast } from "@/components/ui";
+import { Button, showToast } from "@/components/ui";
+import { EmptyState } from "@/components/common";
 
 interface ResumePanelV2Props {
   knowledgeDocs: ProjectKnowledge[];
@@ -133,10 +134,12 @@ export function ResumePanelV2({
           基于 {knowledgeDocs.length} 份背景知识 · 岗位「{jobDirection}」 · 语气「{tone}」
           {jdKeywords.length > 0 && ` · ${jdKeywords.length} 个 JD 关键词`}
         </div>
-        <button
+        <Button
           onClick={handleGenerate}
           disabled={!ready || running}
-          className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+          variant="primary"
+          size="md"
+          className="gap-2"
         >
           {running ? (
             <>
@@ -149,23 +152,28 @@ export function ResumePanelV2({
               {resume ? "重新生成简历" : "生成简历"}
             </>
           )}
-        </button>
+        </Button>
       </div>
 
       {!resume && !running && (
-        <div className="p-10 text-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-          <FileIcon size={42} className="mx-auto mb-3 opacity-50" />
-          <p className="text-sm">尚未生成简历</p>
-          <p className="text-xs mt-1">先生成几份项目背景知识，再回来这里出简历</p>
+        <div className="bg-gray-50 rounded-lg border border-dashed border-gray-200">
+          <EmptyState
+            icon={FileIcon}
+            title="尚未生成简历"
+            description="先生成几份项目背景知识，再回来这里出简历"
+            className="py-10"
+          />
         </div>
       )}
 
       {running && !resume && (
-        <div className="p-10 text-center text-blue-500 bg-blue-50 rounded-lg border border-blue-100 flex flex-col items-center gap-2">
-          <Loader2 size={24} className="animate-spin" />
-          <p className="text-sm">Agent 正在基于背景知识撰写项目经历...</p>
+        <div className="p-6 bg-blue-50 rounded-lg border border-blue-100 flex flex-col items-center gap-3">
+          <div className="flex items-center gap-2 text-sm text-blue-600">
+            <Loader2 size={18} className="animate-spin" />
+            Agent 正在基于背景知识撰写项目经历...
+          </div>
           {runningSteps.length > 0 && (
-            <div className="mt-3 text-xs text-left text-blue-600/80 max-h-40 overflow-auto w-full max-w-md mx-auto">
+            <div className="text-xs text-left text-blue-600/80 max-h-40 overflow-auto w-full max-w-md mx-auto">
               {runningSteps.map((s, i) => (
                 <div key={i} className="font-mono py-0.5 truncate">
                   {s}
@@ -183,18 +191,22 @@ export function ResumePanelV2({
             <div className="flex items-center justify-between">
               <h4 className="font-medium text-gray-900">项目经历</h4>
               <div className="flex items-center gap-2">
-                <button
+                <Button
                   onClick={handleSave}
-                  className="px-3 py-1.5 text-xs border border-green-200 text-green-700 rounded-lg hover:bg-green-50 flex items-center gap-1"
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1 border-green-200 text-green-700 hover:bg-green-50"
                 >
                   <Save size={14} /> 保存
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={handleExportMarkdown}
-                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1"
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1"
                 >
                   <FileDown size={14} /> 导出 Markdown
-                </button>
+                </Button>
               </div>
             </div>
             <div className="space-y-3">
@@ -325,18 +337,12 @@ function ExperienceCard({
                 </div>
               ))}
               <div className="flex items-center justify-end gap-2">
-                <button
-                  onClick={cancelEdit}
-                  className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1"
-                >
+                <Button onClick={cancelEdit} variant="secondary" size="sm" className="gap-1">
                   <X size={12} /> 取消
-                </button>
-                <button
-                  onClick={save}
-                  className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-1"
-                >
+                </Button>
+                <Button onClick={save} variant="primary" size="sm" className="gap-1">
                   <Check size={12} /> 保存
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -356,13 +362,15 @@ function ExperienceCard({
                 <div className="text-center py-4 text-gray-400 text-sm">暂无内容</div>
               )}
               <div className="flex items-center justify-end pt-2 border-t border-gray-100">
-                <button
+                <Button
                   onClick={startEdit}
-                  className="px-3 py-1.5 text-xs border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 flex items-center gap-1"
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
                 >
                   {hasContent ? <Edit3 size={12} /> : <RotateCcw size={12} />}
                   {hasContent ? "编辑" : "手动填写"}
-                </button>
+                </Button>
               </div>
             </div>
           )}

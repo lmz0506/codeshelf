@@ -19,7 +19,8 @@ import {
   listResumeKnowledgeHistory,
   readResumeKnowledgeHistory,
 } from "@/services/resume/knowledgeStore";
-import { showToast } from "@/components/ui";
+import { Button, showToast } from "@/components/ui";
+import { EmptyState } from "@/components/common";
 
 interface KnowledgePanelProps {
   selectedProjects: Project[];
@@ -94,14 +95,14 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
             const next = [...prev];
             const label =
               step.kind === "tool_call"
-                ? `🔧 调用 ${step.label}`
+                ? `调用 ${step.label ?? "tool"}`
                 : step.kind === "tool_result"
-                ? `✓ ${step.label ?? "tool"} 返回`
+                ? `${step.label ?? "tool"} 返回`
                 : step.kind === "todo_update"
-                ? `📋 更新待办`
+                ? "更新待办"
                 : step.kind === "llm_text"
-                ? `💬 模型输出`
-                : `❌ ${step.detail ?? ""}`;
+                ? step.label ?? "模型输出"
+                : `错误: ${step.detail ?? ""}`;
             next.push(label);
             return next.slice(-30);
           });
@@ -180,11 +181,11 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
 
   if (selectedProjects.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-400">
-        <div className="text-center">
-          <FileText size={48} className="mx-auto mb-3 opacity-50" />
-          <p>请先在「选项目」标签中选择至少一个项目</p>
-        </div>
+      <div className="flex-1 flex items-center justify-center">
+        <EmptyState
+          icon={FileText}
+          title="请先在「选项目」标签中选择至少一个项目"
+        />
       </div>
     );
   }
@@ -234,58 +235,69 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {activeDoc && !editing && (
-                  <button
+                  <Button
                     onClick={() => {
                       setDraft(activeDoc.content);
                       setEditing(true);
                     }}
-                    className="px-2.5 py-1 text-xs border border-gray-200 rounded-md hover:bg-gray-50 flex items-center gap-1"
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1"
                   >
                     <Edit3 size={12} /> 编辑
-                  </button>
+                  </Button>
                 )}
                 {editing && (
                   <>
-                    <button
+                    <Button
                       onClick={() => {
                         setEditing(false);
                         setDraft(activeDoc?.content ?? "");
                       }}
-                      className="px-2.5 py-1 text-xs border border-gray-200 rounded-md hover:bg-gray-50"
+                      variant="secondary"
+                      size="sm"
                     >
                       取消
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={handleSaveDraft}
-                      className="px-2.5 py-1 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 flex items-center gap-1"
+                      variant="primary"
+                      size="sm"
+                      className="gap-1"
                     >
                       <Save size={12} /> 保存
-                    </button>
+                    </Button>
                   </>
                 )}
-                <button
+                <Button
                   onClick={async () => {
                     await refreshHistory();
                     setHistoryOpen((v) => !v);
                   }}
-                  className="px-2.5 py-1 text-xs border border-gray-200 rounded-md hover:bg-gray-50 flex items-center gap-1"
                   disabled={!activeDoc}
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1"
                 >
                   <History size={12} /> 历史
-                </button>
+                </Button>
                 {activeDoc && (
-                  <button
+                  <Button
                     onClick={handleDelete}
-                    className="px-2.5 py-1 text-xs border border-red-200 text-red-600 rounded-md hover:bg-red-50"
+                    variant="secondary"
+                    size="sm"
+                    className="border-red-200 text-red-600 hover:bg-red-50"
                     title="删除当前版本"
                   >
                     <Trash2 size={12} />
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button
                   onClick={handleGenerate}
                   disabled={running || !provider}
-                  className="px-3 py-1 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 flex items-center gap-1"
+                  variant="primary"
+                  size="sm"
+                  className="gap-1"
                 >
                   {running ? (
                     <>
@@ -298,7 +310,7 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
                       {activeDoc ? "重新生成" : "生成"}
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -337,12 +349,12 @@ export function KnowledgePanel({ selectedProjects, provider }: KnowledgePanelPro
 
             <div className="flex-1 overflow-auto p-4 min-h-0">
               {!activeDoc && !running && (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                  <AlertCircle size={36} className="mb-3 opacity-50" />
-                  <p className="text-sm">此项目尚未生成背景知识</p>
-                  <p className="text-xs mt-1 text-gray-500">
-                    点击右上角「生成」按钮开始
-                  </p>
+                <div className="h-full flex items-center justify-center">
+                  <EmptyState
+                    icon={AlertCircle}
+                    title="此项目尚未生成背景知识"
+                    description="点击右上角「生成」按钮开始"
+                  />
                 </div>
               )}
               {running && (
