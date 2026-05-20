@@ -145,7 +145,6 @@ pub async fn chat_completion(
         "messages": serialize_messages(messages),
         "temperature": temperature,
         "stream": false,
-        "parallel_tool_calls": false,
     });
     if is_deepseek(provider) {
         body["thinking"] = json!({"type": "disabled"});
@@ -169,14 +168,147 @@ pub async fn chat_completion(
                 .collect();
             body["tools"] = json!(arr);
             body["tool_choice"] = json!("auto");
+            // 只有带工具时才发 parallel_tool_calls,部分 provider 在无 tools 时
+            // 看到这个字段会 400 (字段未知 / 不允许)。
+            body["parallel_tool_calls"] = json!(false);
         }
+    }
+
+    let value = post_chat(provider, &url, body).await?;
+    parse_response(&value)
+}
+
+/// 用 response_format 强制 LLM 输出严格 JSON。优先 `json_schema`(grammar-constrained
+/// decoding,从根本上消除非法 JSON),失败时自动降级到 `json_object`(只保证合法 JSON,
+/// schema 由 prompt 描述),再失败则回退到不带 response_format(纯 prompt 约束)。
+///
+/// 返回原始 content 字符串,由调用方走 serde_json 解析。不带 tools。
+pub async fn chat_completion_json(
+    provider: &AiProviderConfig,
+    model: &str,
+    messages: &[ChatMessage],
+    schema: Value,
+    schema_name: &str,
+    temperature: f32,
+) -> AppResult<String> {
+    let url = format!(
+        "{}/chat/completions",
+        provider.base_url.trim_end_matches('/')
+    );
+
+    let json_schema_format = json!({
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema_name,
+            "schema": schema,
+            "strict": true,
+        }
+    });
+    match try_json_call(provider, &url, model, messages, temperature, Some(json_schema_format)).await {
+        Ok(content) => return Ok(content),
+        Err(LlmCallError::BadRequest { .. }) => {
+            // provider 不支持 json_schema → 降级到 json_object
+        }
+        Err(LlmCallError::Other(e)) => return Err(e),
+    }
+
+    let json_object_format = json!({"type": "json_object"});
+    match try_json_call(provider, &url, model, messages, temperature, Some(json_object_format)).await {
+        Ok(content) => return Ok(content),
+        Err(LlmCallError::BadRequest { .. }) => {
+            // 老 provider 连 json_object 都不支持 → 裸 prompt 兜底
+        }
+        Err(LlmCallError::Other(e)) => return Err(e),
+    }
+
+    try_json_call(provider, &url, model, messages, temperature, None)
+        .await
+        .map_err(|e| match e {
+            LlmCallError::BadRequest { status, body } => {
+                AppError::from(format!("LLM 响应 {}: {}", status, body))
+            }
+            LlmCallError::Other(e) => e,
+        })
+}
+
+enum LlmCallError {
+    BadRequest { status: u16, body: String },
+    Other(AppError),
+}
+
+async fn try_json_call(
+    provider: &AiProviderConfig,
+    url: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    temperature: f32,
+    response_format: Option<Value>,
+) -> Result<String, LlmCallError> {
+    let mut body = json!({
+        "model": model,
+        "messages": serialize_messages(messages),
+        "temperature": temperature,
+        "stream": false,
+    });
+    if is_deepseek(provider) {
+        body["thinking"] = json!({"type": "disabled"});
+    } else {
+        body["enable_thinking"] = json!(false);
+    }
+    if let Some(rf) = response_format {
+        body["response_format"] = rf;
     }
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(300))
         .build()
+        .map_err(|e| LlmCallError::Other(AppError::from(format!("创建 HTTP 客户端失败: {}", e))))?;
+    let mut req = client.post(url).json(&body);
+    if let Some(key) = provider.api_key.as_ref() {
+        let trimmed = key.trim();
+        if !trimmed.is_empty() {
+            req = req.bearer_auth(trimmed);
+        }
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| LlmCallError::Other(AppError::from(format!("LLM 请求失败: {}", e))))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        let preview: String = text.chars().take(800).collect();
+        // 400 通常代表参数被 provider 拒绝(包括 response_format 不支持);
+        // 5xx / 401 / 429 这些是真实运行时错误,直接抛。
+        if status.as_u16() == 400 {
+            return Err(LlmCallError::BadRequest {
+                status: status.as_u16(),
+                body: preview,
+            });
+        }
+        return Err(LlmCallError::Other(AppError::from(format!(
+            "LLM 响应 {}: {}",
+            status, preview
+        ))));
+    }
+    let value: Value = resp
+        .json()
+        .await
+        .map_err(|e| LlmCallError::Other(AppError::from(format!("解析 LLM JSON 响应失败: {}", e))))?;
+    let parsed = parse_response(&value).map_err(LlmCallError::Other)?;
+    Ok(parsed.content)
+}
+
+async fn post_chat(
+    provider: &AiProviderConfig,
+    url: &str,
+    body: Value,
+) -> AppResult<Value> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .build()
         .map_err(|e| AppError::from(format!("创建 HTTP 客户端失败: {}", e)))?;
-    let mut req = client.post(&url).json(&body);
+    let mut req = client.post(url).json(&body);
     if let Some(key) = provider.api_key.as_ref() {
         let trimmed = key.trim();
         if !trimmed.is_empty() {
@@ -196,11 +328,9 @@ pub async fn chat_completion(
             text.chars().take(800).collect::<String>()
         )));
     }
-    let value: Value = resp
-        .json()
+    resp.json()
         .await
-        .map_err(|e| AppError::from(format!("解析 LLM JSON 响应失败: {}", e)))?;
-    parse_response(&value)
+        .map_err(|e| AppError::from(format!("解析 LLM JSON 响应失败: {}", e)))
 }
 
 fn parse_response(value: &Value) -> AppResult<ChatResponse> {
