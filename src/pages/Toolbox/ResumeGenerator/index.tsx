@@ -12,6 +12,8 @@ import {
   Pencil,
   Plus,
   ChevronLeft,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import { useProjectsStore } from "@/stores/projectsStore";
 import { useAiProvidersStore } from "@/stores/aiProvidersStore";
@@ -19,6 +21,12 @@ import { useUiStore } from "@/stores/uiStore";
 import { useResumeStore } from "@/stores/resumeStore";
 import type { JobDirection, Tone, ResumeV2 } from "@/types/resume";
 import { exportResumeV2ToMarkdownWithDialog } from "@/services/resume/export";
+import {
+  loadResumePreference,
+  resolveResumeProvider,
+  saveResumePreference,
+  type ResumePreference,
+} from "@/services/resume/preferences";
 import { Button, showToast } from "@/components/ui";
 import { EmptyState } from "@/components/common";
 import { ToolPanelHeader } from "../index";
@@ -56,6 +64,12 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   const [resume, setResume] = useState<ResumeV2 | null>(null);
   const [saveDialogResume, setSaveDialogResume] = useState<ResumeV2 | null>(null);
   const [renameTarget, setRenameTarget] = useState<ResumeV2 | null>(null);
+  // 用户选过的 provider/model;null = 跟系统默认走。
+  const [preference, setPreference] = useState<ResumePreference | null>(() =>
+    loadResumePreference()
+  );
+  // 切换面板的展开/折叠
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // 启动加载磁盘上已有的背景知识
   useEffect(() => {
@@ -65,9 +79,24 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     });
   }, [loadAllKnowledgeFromDisk, projects]);
 
-  const defaultProvider = aiProviders.find((p) => p.isDefaultProvider && p.enabled) ?? null;
+  const resolved = useMemo(
+    () => resolveResumeProvider(aiProviders, preference),
+    [aiProviders, preference]
+  );
+  const effectiveProvider = resolved?.provider ?? null;
   const hasProviders = aiProviders.length > 0;
   const hasAvailableProvider = aiProviders.some((p) => p.enabled);
+
+  const selectableProviders = useMemo(
+    () => aiProviders.filter((p) => p.enabled && p.models.some((m) => m.enabled)),
+    [aiProviders]
+  );
+
+  const applyPreference = (next: ResumePreference | null) => {
+    setPreference(next);
+    saveResumePreference(next);
+    setPickerOpen(false);
+  };
 
   const selectedProjects = useMemo(
     () => projects.filter((p) => selectedIds.has(p.id)),
@@ -197,12 +226,12 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   };
 
   const renderProviderStatus = () => {
-    if (!hasProviders || !hasAvailableProvider || !defaultProvider) {
+    if (!hasProviders || !hasAvailableProvider || !resolved) {
       const msg = !hasProviders
         ? "未配置 AI 供应商"
         : !hasAvailableProvider
         ? "没有启用的 AI 供应商"
-        : "未设置默认 AI 供应商";
+        : "未找到可用的 AI 供应商 / 模型";
       return (
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
           <div className="flex items-start gap-3">
@@ -210,7 +239,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
             <div className="flex-1">
               <div className="font-medium text-amber-800">{msg}</div>
               <div className="text-sm text-amber-700 mt-1">
-                简历生成需要使用支持工具调用的 AI 模型。请先配置并启用一个默认供应商。
+                简历生成需要使用支持工具调用的 AI 模型。请先配置并启用一个供应商。
               </div>
               <Button
                 onClick={goToAISettings}
@@ -225,24 +254,97 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
         </div>
       );
     }
-    const defaultModel =
-      defaultProvider.models.find((m) => m.isDefault && m.enabled) ||
-      defaultProvider.models.find((m) => m.enabled);
+
     return (
-      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-        <div className="flex items-center gap-3">
+      <div className="bg-green-50 border border-green-200 rounded-lg">
+        <div className="flex items-center gap-3 p-3">
           <Bot size={18} className="text-green-600" />
           <div className="flex-1 text-sm text-green-800">
-            使用 <span className="font-medium">{defaultProvider.name}</span>
-            {defaultModel && <span className="text-green-600"> / {defaultModel.model}</span>}
+            使用 <span className="font-medium">{resolved.provider.name}</span>
+            <span className="text-green-600"> / {resolved.modelName}</span>
+            {resolved.source === "system" && (
+              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-white text-green-700 border border-green-200">
+                系统默认
+              </span>
+            )}
+            {resolved.source === "user" && (
+              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-white text-blue-700 border border-blue-200">
+                已自选
+              </span>
+            )}
           </div>
           <button
-            onClick={goToAISettings}
+            onClick={() => setPickerOpen((v) => !v)}
             className="text-xs text-green-700 hover:text-green-800 flex items-center gap-1"
           >
             <Settings size={12} /> 切换
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${pickerOpen ? "rotate-180" : ""}`}
+            />
           </button>
         </div>
+        {pickerOpen && (
+          <div className="border-t border-green-200 p-3 space-y-2 bg-white rounded-b-lg">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-gray-600">选择本页要使用的供应商和模型</span>
+              {resolved.source === "user" && (
+                <button
+                  onClick={() => applyPreference(null)}
+                  className="text-xs text-gray-500 hover:text-blue-600"
+                >
+                  恢复为系统默认
+                </button>
+              )}
+            </div>
+            <div className="space-y-2 max-h-72 overflow-auto">
+              {selectableProviders.map((p) => {
+                const enabledModels = p.models.filter((m) => m.enabled);
+                return (
+                  <div
+                    key={p.id}
+                    className="border border-gray-200 rounded-md overflow-hidden"
+                  >
+                    <div className="px-3 py-2 bg-gray-50 text-xs font-medium text-gray-700 flex items-center gap-2">
+                      {p.name}
+                      {p.isDefaultProvider && (
+                        <span className="text-[10px] text-gray-400">系统默认</span>
+                      )}
+                    </div>
+                    <div className="divide-y divide-gray-100">
+                      {enabledModels.map((m) => {
+                        const active =
+                          resolved.provider.id === p.id && resolved.modelId === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() =>
+                              applyPreference({ providerId: p.id, modelId: m.id })
+                            }
+                            className={`w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-blue-50 ${
+                              active ? "bg-blue-50 text-blue-700" : "text-gray-700"
+                            }`}
+                          >
+                            <span className="truncate">{m.model}</span>
+                            {active && <Check size={12} className="text-blue-600" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="pt-2 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={goToAISettings}
+                className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1"
+              >
+                <Settings size={12} /> 去 AI 设置增删供应商
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -364,7 +466,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
           />
           <ResumePanelV2
             knowledgeDocs={selectedKnowledgeDocs}
-            provider={defaultProvider}
+            provider={effectiveProvider}
             jobDirection={jobDirection}
             jdKeywords={jdKeywords}
             tone={tone}
@@ -545,7 +647,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
             </div>
             <KnowledgePanel
               selectedProjects={selectedProjects}
-              provider={defaultProvider}
+              provider={effectiveProvider}
               onNext={() => setActiveTab("resume")}
             />
           </>
