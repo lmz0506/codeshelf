@@ -111,8 +111,8 @@ async fn run_inner(
             MAX_PLAN_FILES, index_summary
         )),
     ];
-    let plan_resp = chat_completion(&request.provider, &model, &plan_messages, None, 0.2).await?;
-    let parsed_plan = safe_parse_json(&plan_resp.content)
+    let plan_resp = chat_completion(&request.provider, &model, &plan_messages, 0.2).await?;
+    let parsed_plan = safe_parse_json(&plan_resp)
         .ok_or_else(|| AppError::from("模型没有返回合法 JSON"))?;
     let mut planned_files = normalize_plan(&parsed_plan, &index);
     if planned_files.is_empty() {
@@ -183,8 +183,8 @@ async fn run_inner(
             ctx = context,
         )),
     ];
-    let final_resp = chat_completion(&request.provider, &model, &final_messages, None, 0.2).await?;
-    let background = final_resp.content.trim().to_string();
+    let final_resp = chat_completion(&request.provider, &model, &final_messages, 0.2).await?;
+    let background = final_resp.trim().to_string();
     if background.is_empty() {
         return Err(AppError::from("模型没有产出背景知识内容"));
     }
