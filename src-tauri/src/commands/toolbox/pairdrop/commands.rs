@@ -24,9 +24,30 @@ pub async fn pairdrop_start(port: Option<u16>) -> AppResult<ServiceStatus> {
     }
 
     let bind_port = port.unwrap_or(DEFAULT_PORT);
-    let (actual_port, state, stop_signal, task) = runtime::start_server(bind_port)
-        .await
-        .map_err(|e| crate::error::AppError::from(format!("启动跨设备传输服务失败: {}", e)))?;
+    let (actual_port, state, stop_signal, task) = match runtime::start_server(bind_port).await {
+        Ok(v) => v,
+        Err(e) if bind_port != 0 => {
+            // 固定端口失败（典型情况：Windows Hyper-V 静默保留了该端口段），
+            // 退回到 OS 随机端口,优先保证服务可用,代价是 QR 会变。
+            log::warn!(
+                "跨设备传输：固定端口 {} 启动失败({}),退回到随机端口",
+                bind_port,
+                e
+            );
+            runtime::start_server(0).await.map_err(|e2| {
+                crate::error::AppError::from(format!(
+                    "启动跨设备传输服务失败: 固定端口 {} 不可用({}); 随机端口也失败: {}",
+                    bind_port, e, e2
+                ))
+            })?
+        }
+        Err(e) => {
+            return Err(crate::error::AppError::from(format!(
+                "启动跨设备传输服务失败: {}",
+                e
+            )))
+        }
+    };
 
     let peer_count = state.peers.lock().await.len();
     *guard = Some(RunningService {

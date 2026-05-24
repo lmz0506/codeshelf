@@ -27,6 +27,7 @@ use serde::Deserialize;
 use serde_json::json;
 use socket2::{Domain, Socket, Type};
 use tokio::sync::mpsc;
+use tower_http::cors::{Any, CorsLayer};
 
 use super::assets::INDEX_HTML;
 use super::state::*;
@@ -60,6 +61,14 @@ pub async fn start_server(port: u16) -> AppResult<(u16, Arc<AppState>, Arc<tokio
         port: 0, // 占位，建立后会更新
     };
 
+    // 桌面端 React UI 跑在 tauri:// 或 localhost:1420,axum 跑在 127.0.0.1:port,
+    // 跨源 → 没 CORS 头浏览器会把响应吞掉,XHR 报 onerror(就是「网络中断」)。
+    // 这台服务本来就只在 LAN,鉴权靠一次性 token,因此放开 CORS 不影响安全。
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let app = Router::new()
         .route("/", get(serve_index))
         .route("/api/info", get(api_info))
@@ -71,7 +80,8 @@ pub async fn start_server(port: u16) -> AppResult<(u16, Arc<AppState>, Arc<tokio
         )
         .route("/api/file/:token", get(api_file))
         .route("/ws", any(ws_handler))
-        .with_state(handle.clone());
+        .with_state(handle.clone())
+        .layer(cors);
 
     // 绑定 socket
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -85,7 +95,24 @@ pub async fn start_server(port: u16) -> AppResult<(u16, Arc<AppState>, Arc<tokio
         .map_err(|e| crate::error::AppError::from(format!("设置非阻塞失败: {}", e)))?;
     socket
         .bind(&addr.into())
-        .map_err(|e| crate::error::AppError::from(format!("绑定端口失败: {}", e)))?;
+        .map_err(|e| {
+            let kind = e.kind();
+            let msg = if kind == std::io::ErrorKind::AddrInUse {
+                format!(
+                    "端口 {} 已被占用，请关闭占用该端口的程序后重试，或在「系统监控」中查看哪个进程在用",
+                    port
+                )
+            } else if kind == std::io::ErrorKind::PermissionDenied {
+                // Windows: WSAEACCES (10013) — 通常是 Hyper-V/WSL 保留了端口段
+                format!(
+                    "端口 {} 不允许绑定 (os error: {}); Windows 上一般是 Hyper-V/WSL 保留了端口段,可在 PowerShell 跑 `netsh interface ipv4 show excludedportrange protocol=tcp` 查看",
+                    port, e
+                )
+            } else {
+                format!("绑定端口 {} 失败: {}", port, e)
+            };
+            crate::error::AppError::from(msg)
+        })?;
     socket
         .listen(1024)
         .map_err(|e| crate::error::AppError::from(format!("监听失败: {}", e)))?;

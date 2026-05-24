@@ -277,9 +277,14 @@ export function usePairDropClient({ port, enabled }: UsePairDropClientArgs) {
               } catch (e) {
                 reject(e);
               }
-            } else reject(new Error("上传失败: " + xhr.status));
+            } else if (xhr.status === 413) {
+              reject(new Error("文件超过服务端上限"));
+            } else {
+              reject(new Error("上传失败: HTTP " + xhr.status));
+            }
           };
-          xhr.onerror = () => reject(new Error("网络错误"));
+          xhr.onerror = () => reject(new Error("网络中断,请检查端口是否仍然开放"));
+          xhr.ontimeout = () => reject(new Error("上传超时"));
           xhr.send(form);
         });
 

@@ -60,7 +60,7 @@ export function PairDrop({ onBack }: PairDropProps) {
           setServiceStatus(s);
         }
       } catch (e) {
-        showToast("error", "启动跨设备传输服务失败: " + (e instanceof Error ? e.message : String(e)));
+        showToast("error", e instanceof Error ? e.message : String(e));
       } finally {
         setLoading(false);
       }

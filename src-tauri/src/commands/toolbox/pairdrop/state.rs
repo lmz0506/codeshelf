@@ -10,8 +10,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex};
 
-/// 端口默认值
-pub const DEFAULT_PORT: u16 = 0; // 0 表示由系统分配
+/// 端口默认值。固定端口让 QR / URL 在重启后保持不变，方便手机收藏。
+/// 选 8421 是因为它在 1024-49151 的「注册端口」段，避开了 Windows 动态端口段（49152+），
+/// 那个段经常被 Hyper-V/WSL 静默保留导致 bind 报 10013/PermissionDenied。
+/// 若仍冲突,pairdrop_start 会自动退回到 OS 随机端口。
+pub const DEFAULT_PORT: u16 = 8421;
 
 /// 文件中继缓存的 TTL（秒）
 pub const FILE_TTL_SECS: u64 = 300; // 5 分钟
