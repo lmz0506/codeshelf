@@ -2671,8 +2671,12 @@ mcp_gateway_port?: number;
 /**
  * MCP Gateway 客户端访问密钥
  */
-mcp_gateway_keys?: McpGatewayKey[] }
-export type AppSettingsInput = { theme: string | null; view_mode: string | null; sidebar_collapsed: boolean | null; scan_depth: number | null; auto_update: boolean | null; chat_history_dir: string | null; chat_bridge_enabled: boolean | null; openclaw_relay_endpoint: string | null; bridge_provider_id: string | null; bridge_model_id: string | null; bridge_client_id: string | null; mcp_gateway_enabled: boolean | null; mcp_gateway_host: string | null; mcp_gateway_port: number | null; mcp_gateway_keys: McpGatewayKey[] | null }
+mcp_gateway_keys?: McpGatewayKey[];
+/**
+ * macOS：是否在 Dock 显示应用图标（false=纯菜单栏应用，true=Dock + 菜单栏）
+ */
+show_dock_icon?: boolean }
+export type AppSettingsInput = { theme: string | null; view_mode: string | null; sidebar_collapsed: boolean | null; scan_depth: number | null; auto_update: boolean | null; chat_history_dir: string | null; chat_bridge_enabled: boolean | null; openclaw_relay_endpoint: string | null; bridge_provider_id: string | null; bridge_model_id: string | null; bridge_client_id: string | null; mcp_gateway_enabled: boolean | null; mcp_gateway_host: string | null; mcp_gateway_port: number | null; mcp_gateway_keys: McpGatewayKey[] | null; show_dock_icon: boolean | null }
 export type AppShortcutBinding = { id: string; label: string; description: string; keys: string; defaultKeys: string; enabled: boolean; global?: boolean }
 /**
  * 当前 app 二进制 + 实际宿主机的架构状态

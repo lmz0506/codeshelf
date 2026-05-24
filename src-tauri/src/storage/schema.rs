@@ -85,6 +85,9 @@ pub struct AppSettings {
     /// MCP Gateway 客户端访问密钥
     #[serde(default)]
     pub mcp_gateway_keys: Vec<McpGatewayKey>,
+    /// macOS：是否在 Dock 显示应用图标（false=纯菜单栏应用，true=Dock + 菜单栏）
+    #[serde(default)]
+    pub show_dock_icon: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
@@ -130,6 +133,7 @@ impl Default for AppSettings {
             mcp_gateway_host: default_mcp_gateway_host(),
             mcp_gateway_port: default_mcp_gateway_port(),
             mcp_gateway_keys: Vec::new(),
+            show_dock_icon: false,
         }
     }
 }

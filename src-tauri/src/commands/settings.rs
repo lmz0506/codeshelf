@@ -315,6 +315,7 @@ pub struct AppSettingsInput {
     pub mcp_gateway_host: Option<String>,
     pub mcp_gateway_port: Option<u16>,
     pub mcp_gateway_keys: Option<Vec<McpGatewayKey>>,
+    pub show_dock_icon: Option<bool>,
 }
 
 #[tauri::command]
@@ -386,6 +387,11 @@ pub async fn save_app_settings(
     }
     if let Some(v) = input.mcp_gateway_keys {
         settings.mcp_gateway_keys = v;
+    }
+    if let Some(v) = input.show_dock_icon {
+        settings.show_dock_icon = v;
+        #[cfg(target_os = "macos")]
+        crate::app_setup::apply_dock_visibility(&app, v);
     }
 
     let config = get_storage_config()?;

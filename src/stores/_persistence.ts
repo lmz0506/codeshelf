@@ -27,6 +27,7 @@ export const saveAppSettings = debounce(
     bridge_provider_id?: string;
     bridge_model_id?: string;
     bridge_client_id?: string;
+    show_dock_icon?: boolean;
   }) => {
     try {
       await invoke("save_app_settings", { input: settings });

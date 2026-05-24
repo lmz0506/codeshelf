@@ -6,9 +6,8 @@ import { useUiStore } from "@/stores/uiStore";
 import { getClipboardHistory, writeToClipboard, togglePinClipboardEntry } from "@/services/toolbox";
 import { showToast } from "@/components/ui/Toast";
 import { restoreWindowState } from "@/hooks/useAppShortcuts";
+import { IS_MAC } from "@/utils/platform";
 import type { ClipboardEntry } from "@/types/toolbox";
-
-const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now();

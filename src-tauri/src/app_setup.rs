@@ -27,11 +27,24 @@ pub fn run_setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-/// macOS: 隐藏 Dock 图标 + 让窗口背景透明以支持圆角。
+/// macOS: 根据设置决定是否隐藏 Dock 图标 + 让窗口背景透明以支持圆角。
 fn apply_macos_window_style(app: &mut tauri::App) {
     #[cfg(target_os = "macos")]
     {
-        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        // 默认 Accessory（仅菜单栏），若设置 show_dock_icon=true 则改为 Regular。
+        let show_dock = storage::get_storage_config()
+            .ok()
+            .and_then(|cfg| std::fs::read_to_string(cfg.app_settings_file()).ok())
+            .and_then(|s| serde_json::from_str::<storage::AppSettings>(&s).ok())
+            .map(|s| s.show_dock_icon)
+            .unwrap_or(false);
+
+        let policy = if show_dock {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
+        app.set_activation_policy(policy);
 
         if let Some(window) = app.get_webview_window("main") {
             use objc2_app_kit::{NSColor, NSWindow};
@@ -49,6 +62,19 @@ fn apply_macos_window_style(app: &mut tauri::App) {
     }
 
     let _ = app;
+}
+
+/// macOS: 运行时切换 Dock 图标显隐。供 save_app_settings 调用。
+#[cfg(target_os = "macos")]
+pub fn apply_dock_visibility(app: &AppHandle, show_dock: bool) {
+    let policy = if show_dock {
+        tauri::ActivationPolicy::Regular
+    } else {
+        tauri::ActivationPolicy::Accessory
+    };
+    if let Err(e) = app.set_activation_policy(policy) {
+        log::error!("切换 Dock 显示状态失败: {}", e);
+    }
 }
 
 /// 初始化存储系统 + SQLite。

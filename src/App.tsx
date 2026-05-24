@@ -112,6 +112,7 @@ async function initializeApp() {
       scanDepth: settings.scan_depth || 3,
       autoUpdate: settings.auto_update !== false,
       chatHistoryDir: settings.chat_history_dir,
+      showDockIcon: settings.show_dock_icon === true,
       appShortcuts: appShortcuts || [],
       sensitiveFilePatterns: sensitiveFilePatterns || [],
     });

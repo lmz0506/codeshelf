@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { RotateCcw, Keyboard, Pencil, X, Globe, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { IS_MAC, IS_WINDOWS } from "@/utils/platform";
 import {
   DEFAULT_APP_SHORTCUTS,
   displayKeys,
@@ -42,8 +43,6 @@ const GROUPS: { label: string; ids: string[] }[] = [
     ids: ["toggle_sidebar"],
   },
 ];
-
-const IS_WINDOWS = /Windows/.test(navigator.userAgent);
 
 function getConflictWarning(keys: string): string | null {
   if (!IS_WINDOWS) return null;
@@ -309,9 +308,7 @@ export function ShortcutSettings({ onClose }: ShortcutSettingsProps) {
       </div>
 
       <p className="text-xs text-gray-400 mt-4">
-        {/Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
-          ? "Ctrl 对应 Command 键。"
-          : ""}
+        {IS_MAC ? "Ctrl 对应 Command 键。" : ""}
         点击 <Globe size={11} className="inline -mt-0.5 text-green-500" /> 可将快捷键设为全局，最小化或托盘状态下也能触发。在输入框中不会触发快捷键。
       </p>
     </div>

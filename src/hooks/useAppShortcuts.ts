@@ -5,10 +5,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useUiStore } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { showToast } from "@/components/ui/Toast";
+import { IS_MAC } from "@/utils/platform";
 import type { AppShortcutBinding } from "@/types";
 import type { ToolType } from "@/types/toolbox";
-
-const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
 // ============== 默认快捷键配置 ==============
 

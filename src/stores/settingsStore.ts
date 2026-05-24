@@ -24,6 +24,9 @@ interface SettingsState {
   autoUpdate: boolean;
   setAutoUpdate: (autoUpdate: boolean) => void;
 
+  showDockIcon: boolean;
+  setShowDockIcon: (show: boolean) => void;
+
   appShortcuts: AppShortcutBinding[];
   setAppShortcuts: (shortcuts: AppShortcutBinding[]) => void;
 
@@ -66,6 +69,12 @@ export const useSettingsStore = create<SettingsState>()((set) => ({
   setAutoUpdate: (autoUpdate) => {
     set({ autoUpdate });
     saveAppSettings({ auto_update: autoUpdate });
+  },
+
+  showDockIcon: false,
+  setShowDockIcon: (showDockIcon) => {
+    set({ showDockIcon });
+    saveAppSettings({ show_dock_icon: showDockIcon });
   },
 
   appShortcuts: [],
