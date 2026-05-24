@@ -1,18 +1,21 @@
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { MainLayout } from "@/components/layout";
-import { ShelfPage } from "@/pages/Shelf";
-import { DashboardPage } from "@/pages/Dashboard";
-import { SettingsPage } from "@/pages/Settings";
-import { ToolboxPage } from "@/pages/Toolbox";
-import { AiProvidersPage } from "@/pages/AiProviders";
-import { ChatPage } from "@/pages/Chat";
-import { WorkflowsPage } from "@/pages/Workflows";
-import { ApiChatPage } from "@/pages/ApiChat";
 import { ToastContainer, UpdateNotification, ShortcutQuickLookup, ClipboardQuickAccess } from "@/components/ui";
 import { ConfirmHost } from "@/components/common/useConfirm";
+
+// 页面按需加载：各 page 拆成独立 chunk，避免初始 index.js 突破 1MB。
+// 各 page 模块都是 named export，所以用 .then 包一层成 default。
+const ShelfPage = lazy(() => import("@/pages/Shelf").then((m) => ({ default: m.ShelfPage })));
+const DashboardPage = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.DashboardPage })));
+const SettingsPage = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.SettingsPage })));
+const ToolboxPage = lazy(() => import("@/pages/Toolbox").then((m) => ({ default: m.ToolboxPage })));
+const AiProvidersPage = lazy(() => import("@/pages/AiProviders").then((m) => ({ default: m.AiProvidersPage })));
+const ChatPage = lazy(() => import("@/pages/Chat").then((m) => ({ default: m.ChatPage })));
+const WorkflowsPage = lazy(() => import("@/pages/Workflows").then((m) => ({ default: m.WorkflowsPage })));
+const ApiChatPage = lazy(() => import("@/pages/ApiChat").then((m) => ({ default: m.ApiChatPage })));
 import { useAiProvidersStore } from "@/stores/aiProvidersStore";
 import { useEditorsStore, type EditorConfig, type TerminalConfig } from "@/stores/editorsStore";
 import { useNotificationsStore } from "@/stores/notificationsStore";
@@ -32,6 +35,14 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center h-full min-h-[200px]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  );
+}
 
 // 后端返回的应用设置类型
 interface AppSettings {
@@ -172,28 +183,32 @@ function AppContent() {
     <>
       <div style={{ display: popupAutoHideWindow ? 'none' : undefined }}>
         <MainLayout>
-          {(currentPage) => {
-            switch (currentPage) {
-              case "shelf":
-                return <ShelfPage />;
-              case "dashboard":
-                return <DashboardPage />;
-              case "toolbox":
-                return <ToolboxPage />;
-              case "settings":
-                return <SettingsPage />;
-              case "aiProviders":
-                return <AiProvidersPage />;
-              case "chat":
-                return <ChatPage />;
-              case "workflows":
-                return <WorkflowsPage />;
-              case "apiChat":
-                return <ApiChatPage />;
-              default:
-                return <ShelfPage />;
-            }
-          }}
+          {(currentPage) => (
+            <Suspense fallback={<PageFallback />}>
+              {(() => {
+                switch (currentPage) {
+                  case "shelf":
+                    return <ShelfPage />;
+                  case "dashboard":
+                    return <DashboardPage />;
+                  case "toolbox":
+                    return <ToolboxPage />;
+                  case "settings":
+                    return <SettingsPage />;
+                  case "aiProviders":
+                    return <AiProvidersPage />;
+                  case "chat":
+                    return <ChatPage />;
+                  case "workflows":
+                    return <WorkflowsPage />;
+                  case "apiChat":
+                    return <ApiChatPage />;
+                  default:
+                    return <ShelfPage />;
+                }
+              })()}
+            </Suspense>
+          )}
         </MainLayout>
       </div>
       <ToastContainer />
