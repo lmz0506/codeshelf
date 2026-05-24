@@ -66,6 +66,14 @@ export default defineConfig({
     }),
     restrictToTauri(),
   ],
+  // 默认情况下 vite 的 dep scanner 会把项目里所有 .html 当作入口去扫，
+  // 这样会把 docs/example/*.html 和 src-tauri/target/.../tauri-codegen-assets/*.html
+  // （cargo 构建产物）一起拉进来，触发 vite-plugin-node-polyfills 的 inject 路径
+  // 冲突（_buffer.js / _virtual-process-polyfill_.js 报 cannot be marked as external）。
+  // 明确只扫真正的入口。
+  optimizeDeps: {
+    entries: ["index.html"],
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

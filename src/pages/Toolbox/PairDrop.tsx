@@ -10,6 +10,8 @@ import {
   Power,
   ChevronLeft,
   Save,
+  Copy,
+  FolderOpen,
 } from "lucide-react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { ToolPanelHeader } from "./index";
@@ -22,6 +24,7 @@ import {
   pairdropSaveFile,
   formatBytes,
 } from "@/services/toolbox";
+import { openInExplorer } from "@/services/db";
 import type { PairDropServiceStatus } from "@/types/toolbox";
 import { usePairDropClient, type Peer } from "./pairdrop/usePairDropClient";
 import { UrlsModal } from "./pairdrop/UrlsModal";
@@ -94,7 +97,7 @@ export function PairDrop({ onBack }: PairDropProps) {
   };
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
       <ToolPanelHeader
         title="跨设备传输"
         icon={Radio}
@@ -265,9 +268,26 @@ function ChatWorkspace({
     }
   };
 
+  const handleCopySavedPath = async (path: string) => {
+    try {
+      await navigator.clipboard.writeText(path);
+      showToast("success", "已复制存储地址");
+    } catch (e) {
+      showToast("error", "复制失败: " + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
+  const handleOpenSavedPath = async (path: string) => {
+    try {
+      await openInExplorer(path);
+    } catch (e) {
+      showToast("error", "打开失败: " + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
   return (
     <div
-      className="flex h-full relative"
+      className="flex h-full min-h-0 overflow-hidden relative"
       onDragOver={(e) => {
         if (isFileDrag(e)) e.preventDefault();
       }}
@@ -287,7 +307,7 @@ function ChatWorkspace({
       )}
       {/* Sidebar */}
       <aside
-        className={`w-64 min-w-[220px] bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col ${
+        className={`w-64 min-w-[220px] h-full flex-shrink-0 overflow-hidden bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col ${
           !showSidebarOnMobile ? "max-md:hidden" : ""
         }`}
       >
@@ -353,7 +373,7 @@ function ChatWorkspace({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-2">
+        <div className="flex-1 overflow-hidden py-2">
           {peers.length === 0 ? (
             <div className="p-8 text-center text-gray-400">
               <div className="text-3xl mb-2">👥</div>
@@ -392,13 +412,13 @@ function ChatWorkspace({
 
       {/* Main */}
       <main
-        className={`flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 min-w-0 ${
+        className={`flex-1 h-full min-h-0 overflow-hidden flex flex-col bg-gray-50 dark:bg-gray-900 min-w-0 ${
           showSidebarOnMobile ? "max-md:hidden" : ""
         }`}
       >
         {selectedPeer ? (
           <>
-            <header className="px-5 py-3 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center gap-3 min-h-[56px]">
+            <header className="px-5 py-3 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center gap-3 min-h-[56px] flex-shrink-0">
               <button
                 className="md:hidden p-1 text-gray-500 hover:text-gray-700"
                 onClick={() => setShowSidebarOnMobile(true)}
@@ -421,7 +441,7 @@ function ChatWorkspace({
               </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+            <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3">
               {messages.length === 0 ? (
                 <div className="text-center text-xs text-gray-400 py-12">
                   还没有聊天记录，发送一条消息开始吧
@@ -433,13 +453,15 @@ function ChatWorkspace({
                     message={m}
                     isSelf={m.from === client.selfId}
                     onSave={handleSaveFile}
+                    onCopyPath={handleCopySavedPath}
+                    onOpenPath={handleOpenSavedPath}
                   />
                 ))
               )}
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-3">
+            <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-3 flex-shrink-0">
               <div className="flex items-end gap-2">
                 <button
                   onClick={handleSelectFile}
@@ -481,7 +503,7 @@ function ChatWorkspace({
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-8 text-center">
+          <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-gray-400 p-8 text-center">
             <div className="text-5xl mb-4 opacity-60">💬</div>
             <h4 className="text-base font-medium text-gray-600 dark:text-gray-300 mb-2">
               {peers.length === 0
@@ -548,10 +570,14 @@ function MessageBubble({
   message,
   isSelf,
   onSave,
+  onCopyPath,
+  onOpenPath,
 }: {
   message: any;
   isSelf: boolean;
   onSave?: (token: string, suggestedName: string, messageId: string) => void;
+  onCopyPath?: (path: string) => void;
+  onOpenPath?: (path: string) => void;
 }) {
   const time = useMemo(() => {
     const d = new Date(message.ts);
@@ -645,8 +671,29 @@ function MessageBubble({
           ) : null}
           {!isSelf && message.token ? (
             message.savedPath ? (
-              <div className="mt-2 text-[10px] opacity-80 break-all">
-                已保存到 {message.savedPath}
+              <div className="mt-2 space-y-1.5">
+                <div
+                  className="text-[10px] opacity-80 break-all"
+                  title={message.savedPath}
+                >
+                  已保存到 {message.savedPath}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => onCopyPath?.(message.savedPath)}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-100 rounded transition-colors"
+                  >
+                    <Copy size={11} />
+                    复制路径
+                  </button>
+                  <button
+                    onClick={() => onOpenPath?.(message.savedPath)}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-100 rounded transition-colors"
+                  >
+                    <FolderOpen size={11} />
+                    打开位置
+                  </button>
+                </div>
               </div>
             ) : (
               <button
