@@ -208,6 +208,12 @@ pub fn make_builder() -> Builder<tauri::Wry> {
         toolbox::clipboard::save_clipboard_settings,
         toolbox::clipboard::write_to_clipboard,
         toolbox::clipboard::update_clipboard_note,
+        // Toolbox - PairDrop (跨设备传输)
+        toolbox::pairdrop::pairdrop_start,
+        toolbox::pairdrop::pairdrop_stop,
+        toolbox::pairdrop::pairdrop_status,
+        toolbox::pairdrop::pairdrop_peers,
+        toolbox::pairdrop::pairdrop_save_file,
         // Chat
         chat::get_chat_history_dir,
         chat::migrate_chat_history_dir,

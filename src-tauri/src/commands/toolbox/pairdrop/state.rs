@@ -1,0 +1,390 @@
+// 全局状态：peer 列表 + 文件中继缓存
+//
+// peer 列表只保留内存，不落盘——刷新页面就重新分配 peerId / 显示名。
+// 文件中继也只在内存里缓存原始 bytes，附带 5 分钟 TTL，配合 download_once 一次性消费。
+
+use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, Mutex};
+
+/// 端口默认值
+pub const DEFAULT_PORT: u16 = 0; // 0 表示由系统分配
+
+/// 文件中继缓存的 TTL（秒）
+pub const FILE_TTL_SECS: u64 = 300; // 5 分钟
+
+/// 单文件最大大小（字节）。默认 2GB，足以覆盖常见场景。
+pub const MAX_FILE_SIZE: usize = 2 * 1024 * 1024 * 1024;
+
+/// 单个 peer 的信息
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerInfo {
+    pub peer_id: String,
+    pub display_name: String,
+    pub device_type: String, // "desktop" | "mobile" | "browser"
+    pub user_agent: String,
+    /// 是否是当前桌面客户端自身
+    pub is_self: bool,
+}
+
+/// 服务运行状态
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceStatus {
+    pub running: bool,
+    pub port: u16,
+    pub urls: Vec<NetworkUrl>,
+    pub peer_count: usize,
+}
+
+/// 网卡 URL 信息（用于多网卡环境下生成多个 QR）
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkUrl {
+    pub interface: String,
+    pub ip: String,
+    pub url: String,
+}
+
+/// 客户端 → 服务器消息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum ClientMessage {
+    /// 自定义显示名
+    #[serde(rename_all = "camelCase")]
+    SetName { name: String },
+    /// 发送文本消息给目标 peer
+    #[serde(rename_all = "camelCase")]
+    SendText { to: String, text: String },
+    /// 通知目标 peer 有文件可下载
+    #[serde(rename_all = "camelCase")]
+    NotifyFile {
+        to: String,
+        token: String,
+        name: String,
+        size: u64,
+        mime: Option<String>,
+    },
+    /// 心跳
+    Ping,
+}
+
+/// 服务器 → 客户端消息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum ServerMessage {
+    /// 连接建立后下发的自身信息
+    #[serde(rename_all = "camelCase")]
+    Welcome {
+        peer_id: String,
+        display_name: String,
+    },
+    /// 完整 peer 列表
+    Peers { peers: Vec<PeerInfo> },
+    /// 收到一条文本消息
+    #[serde(rename_all = "camelCase")]
+    Text {
+        from: String,
+        from_name: String,
+        text: String,
+        ts: i64,
+    },
+    /// 收到一份文件通知（包含下载 token）
+    #[serde(rename_all = "camelCase")]
+    File {
+        from: String,
+        from_name: String,
+        token: String,
+        name: String,
+        size: u64,
+        mime: Option<String>,
+        ts: i64,
+    },
+    /// 心跳响应
+    Pong,
+    /// 错误
+    Error { message: String },
+}
+
+/// 单个连接的发送通道
+pub type PeerSender = mpsc::UnboundedSender<ServerMessage>;
+
+/// 服务器全局状态
+pub struct AppState {
+    /// 所有在线 peer
+    pub peers: Mutex<HashMap<String, PeerEntry>>,
+    /// 文件中继缓存
+    pub files: Mutex<HashMap<String, CachedFile>>,
+    /// 服务停止信号
+    pub stop_signal: Arc<tokio::sync::Notify>,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        Self {
+            peers: Mutex::new(HashMap::new()),
+            files: Mutex::new(HashMap::new()),
+            stop_signal: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+}
+
+/// peer 条目
+pub struct PeerEntry {
+    pub info: PeerInfo,
+    pub sender: PeerSender,
+}
+
+/// 文件缓存条目
+#[allow(dead_code)]
+pub struct CachedFile {
+    pub name: String,
+    pub mime: Option<String>,
+    pub bytes: Vec<u8>,
+    /// 接收方 peer id（用于校验，可选）
+    pub to: Option<String>,
+    /// 发送方 peer id
+    pub from: Option<String>,
+    /// 创建时间，用于 TTL 过期
+    pub created_at: Instant,
+}
+
+impl CachedFile {
+    pub fn is_expired(&self) -> bool {
+        self.created_at.elapsed() > Duration::from_secs(FILE_TTL_SECS)
+    }
+}
+
+/// 当前运行的服务实例（None 表示未启动）
+pub static SERVICE: Lazy<Arc<Mutex<Option<RunningService>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
+
+#[allow(dead_code)]
+pub struct RunningService {
+    pub port: u16,
+    pub state: Arc<AppState>,
+    /// 用于通知服务停止
+    pub stop_signal: Arc<tokio::sync::Notify>,
+    /// 服务监听任务的 handle
+    pub task: tokio::task::JoinHandle<()>,
+}
+
+/// 生成随机 peer ID
+pub fn generate_peer_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ns = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX epoch")
+        .as_nanos();
+    // 后缀随机化一下，避免同毫秒冲突
+    let suffix: u16 = (ns as u16) ^ ((ns >> 16) as u16);
+    format!("{:x}{:04x}", ns, suffix)
+}
+
+/// 生成一个友好的设备名（从 UA / OS / hostname 推断）
+pub fn guess_display_name(user_agent: &str) -> (String, String) {
+    let ua = user_agent.to_lowercase();
+    // 设备类型
+    let device_type = if ua.contains("mobile")
+        || ua.contains("android")
+        || ua.contains("iphone")
+        || ua.contains("ipad")
+    {
+        "mobile"
+    } else if ua.contains("codeshelf-tauri-webview") || ua.contains("tauri") {
+        "desktop"
+    } else {
+        "browser"
+    };
+
+    // 名称从 UA 中提取关键字
+    let name = if ua.contains("iphone") {
+        "iPhone"
+    } else if ua.contains("ipad") {
+        "iPad"
+    } else if ua.contains("android") {
+        if ua.contains("mobile") {
+            "Android Phone"
+        } else {
+            "Android"
+        }
+    } else if ua.contains("macintosh") || ua.contains("mac os") {
+        "Mac"
+    } else if ua.contains("windows") {
+        "Windows"
+    } else if ua.contains("linux") {
+        "Linux"
+    } else {
+        "Device"
+    };
+
+    // 加 4 位短 hash 区分多个同类设备
+    let hash = ((user_agent.len() as u32).wrapping_mul(2654435761)) % 0xFFFF;
+    (
+        format!("{} #{:04x}", name, hash),
+        device_type.to_string(),
+    )
+}
+
+/// 列出本机所有非回环 IPv4 地址
+pub fn list_local_ipv4() -> Vec<(String, String)> {
+    // 网卡列表不会频繁变化，缓存 30 秒避免反复调用 PowerShell（PS 启动 ~200ms）
+    use std::sync::Mutex;
+    static CACHE: Lazy<Mutex<Option<(Instant, Vec<(String, String)>)>>> =
+        Lazy::new(|| Mutex::new(None));
+
+    {
+        let guard = CACHE.lock().unwrap();
+        if let Some((ts, ref data)) = *guard {
+            if ts.elapsed() < Duration::from_secs(30) {
+                return data.clone();
+            }
+        }
+    }
+
+    let result = collect_local_ipv4();
+    let mut guard = CACHE.lock().unwrap();
+    *guard = Some((Instant::now(), result.clone()));
+    result
+}
+
+fn collect_local_ipv4() -> Vec<(String, String)> {
+    let mut result = Vec::new();
+    use std::process::Command;
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows ipconfig 输出是 OEM codepage（中文系统是 CP936/GBK），
+        // 直接 String::from_utf8_lossy 会把中文网卡名变成 ���。
+        // 用 PowerShell 拿结构化 UTF-8 JSON，避免编码问题。
+        let ps_script = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; \
+            try { \
+                $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | \
+                    Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | \
+                    Select-Object @{N='Interface';E={$_.InterfaceAlias}}, @{N='IP';E={$_.IPAddress}}; \
+                if ($ips -is [array]) { ConvertTo-Json -InputObject $ips -Compress } \
+                else { ConvertTo-Json -InputObject @($ips) -Compress } \
+            } catch { Write-Output '[]' }";
+
+        if let Ok(out) = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
+            .output()
+        {
+            if out.status.success() {
+                if let Ok(text) = std::str::from_utf8(&out.stdout) {
+                    let trimmed = text.trim();
+                    let entries: Vec<serde_json::Value> = if trimmed.starts_with('[') {
+                        serde_json::from_str(trimmed).unwrap_or_default()
+                    } else if trimmed.starts_with('{') {
+                        serde_json::from_str::<serde_json::Value>(trimmed)
+                            .map(|v| vec![v])
+                            .unwrap_or_default()
+                    } else {
+                        vec![]
+                    };
+                    for entry in entries {
+                        if let (Some(iface), Some(ip)) = (
+                            entry.get("Interface").and_then(|v| v.as_str()),
+                            entry.get("IP").and_then(|v| v.as_str()),
+                        ) {
+                            result.push((iface.to_string(), ip.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+
+        // PowerShell 失败时退化到 ipconfig（接受可能的乱码）
+        if result.is_empty() {
+            if let Ok(out) = Command::new("ipconfig").output() {
+                let text = String::from_utf8_lossy(&out.stdout);
+                let mut current_adapter = String::from("default");
+                for line in text.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.ends_with(':')
+                        && !trimmed.contains("IPv")
+                        && !trimmed.starts_with('.')
+                    {
+                        current_adapter = trimmed.trim_end_matches(':').to_string();
+                    }
+                    if let Some(rest) = trimmed.strip_prefix("IPv4") {
+                        if let Some(eq) = rest.find(':') {
+                            let ip = rest[eq + 1..].trim().trim_end_matches('.').to_string();
+                            if !ip.is_empty() && !ip.starts_with("127.") {
+                                result.push((current_adapter.clone(), ip));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let try_cmd = |program: &str, args: &[&str]| -> Option<String> {
+            Command::new(program)
+                .args(args)
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        };
+
+        if let Some(text) = try_cmd("ip", &["-4", "addr"]) {
+            let mut current_adapter = String::from("default");
+            for line in text.lines() {
+                let line = line.trim();
+                if let Some(colon) = line.find(':') {
+                    if line
+                        .chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false)
+                    {
+                        let rest = &line[colon + 1..];
+                        if let Some(next) = rest.trim().split(':').next() {
+                            current_adapter = next.trim().to_string();
+                        }
+                    }
+                }
+                if let Some(rest) = line.strip_prefix("inet ") {
+                    if let Some(ip_part) = rest.split_whitespace().next() {
+                        let ip = ip_part.split('/').next().unwrap_or("").to_string();
+                        if !ip.is_empty() && !ip.starts_with("127.") {
+                            result.push((current_adapter.clone(), ip));
+                        }
+                    }
+                }
+            }
+        } else if let Some(text) = try_cmd("ifconfig", &[]) {
+            let mut current_adapter = String::from("default");
+            for line in text.lines() {
+                if !line.starts_with(char::is_whitespace) {
+                    if let Some(name) = line.split(':').next() {
+                        current_adapter = name.trim().to_string();
+                    }
+                }
+                let line = line.trim();
+                if let Some(rest) = line.strip_prefix("inet ") {
+                    if let Some(ip_part) = rest.split_whitespace().next() {
+                        let ip = ip_part.trim_start_matches("addr:").to_string();
+                        if !ip.is_empty() && !ip.starts_with("127.") {
+                            result.push((current_adapter.clone(), ip));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if result.is_empty() {
+        result.push(("loopback".to_string(), "127.0.0.1".to_string()));
+    }
+
+    result
+}

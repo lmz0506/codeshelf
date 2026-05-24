@@ -49,7 +49,7 @@ futures = "0.3"
 reqwest = { version = "0.12", features = ["stream", "json", "cookies"] }
 url = "2.5"
 urlencoding = "2.1"
-axum = "0.7"
+axum = { version = "0.7", features = ["ws", "multipart"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "compression-gzip", "fs", "trace"] }
 sysinfo = "0.30"

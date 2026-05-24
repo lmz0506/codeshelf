@@ -1,0 +1,553 @@
+// axum HTTP + WebSocket 服务运行时
+//
+// 路由：
+// - GET  /               浏览器 SPA
+// - GET  /api/info       返回服务信息 + 所有可达 URL
+// - GET  /ws             WebSocket 信令通道
+// - POST /api/upload     上传文件（multipart），返回 token
+// - GET  /api/file/:tok  下载文件（一次性消耗）
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Instant;
+
+use axum::{
+    body::Body,
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        ConnectInfo, DefaultBodyLimit, Multipart, Path, Query, State,
+    },
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::{Html, IntoResponse, Response},
+    routing::{any, get, post},
+    Json, Router,
+};
+use futures::{sink::SinkExt, stream::StreamExt};
+use serde::Deserialize;
+use serde_json::json;
+use socket2::{Domain, Socket, Type};
+use tokio::sync::mpsc;
+
+use super::assets::INDEX_HTML;
+use super::state::*;
+use crate::error::AppResult;
+
+#[derive(Clone)]
+struct ServerHandle {
+    state: Arc<AppState>,
+    port: u16,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConnectQuery {
+    /// 客户端通过查询参数指定设备类型（如 desktop / mobile），可选
+    #[serde(default)]
+    role: Option<String>,
+    /// 客户端可建议的初始名称
+    #[serde(default)]
+    name: Option<String>,
+}
+
+/// 启动服务（绑定到 0.0.0.0:port，0 表示由系统分配）
+///
+/// 返回实际监听的端口。
+pub async fn start_server(port: u16) -> AppResult<(u16, Arc<AppState>, Arc<tokio::sync::Notify>, tokio::task::JoinHandle<()>)> {
+    let state = Arc::new(AppState::new());
+    let stop_signal = state.stop_signal.clone();
+
+    let handle = ServerHandle {
+        state: state.clone(),
+        port: 0, // 占位，建立后会更新
+    };
+
+    let app = Router::new()
+        .route("/", get(serve_index))
+        .route("/api/info", get(api_info))
+        .route(
+            "/api/upload",
+            // axum 默认 2MB body 限制对图片/视频很容易就超了 → 连接被中止 → 浏览器收到 xhr.onerror（「网络错误」)
+            // 这里按 MAX_FILE_SIZE + 1MB 的 multipart 头尾留余量，超过仍然返回 413,而不是闷掉连接
+            post(api_upload).layer(DefaultBodyLimit::max(MAX_FILE_SIZE + 1024 * 1024)),
+        )
+        .route("/api/file/:token", get(api_file))
+        .route("/ws", any(ws_handler))
+        .with_state(handle.clone());
+
+    // 绑定 socket
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
+        .map_err(|e| crate::error::AppError::from(format!("创建 socket 失败: {}", e)))?;
+    socket
+        .set_reuse_address(true)
+        .map_err(|e| crate::error::AppError::from(format!("设置 SO_REUSEADDR 失败: {}", e)))?;
+    socket
+        .set_nonblocking(true)
+        .map_err(|e| crate::error::AppError::from(format!("设置非阻塞失败: {}", e)))?;
+    socket
+        .bind(&addr.into())
+        .map_err(|e| crate::error::AppError::from(format!("绑定端口失败: {}", e)))?;
+    socket
+        .listen(1024)
+        .map_err(|e| crate::error::AppError::from(format!("监听失败: {}", e)))?;
+    let std_listener: std::net::TcpListener = socket.into();
+    let actual_port = std_listener
+        .local_addr()
+        .map_err(|e| crate::error::AppError::from(format!("获取本地地址失败: {}", e)))?
+        .port();
+    let listener = tokio::net::TcpListener::from_std(std_listener)
+        .map_err(|e| crate::error::AppError::from(format!("转换 listener 失败: {}", e)))?;
+
+    log::info!("跨设备传输服务启动，端口: {}", actual_port);
+
+    // 更新 handle 里的 port
+    let mut handle_updated = handle.clone();
+    handle_updated.port = actual_port;
+    let app = app.with_state(handle_updated);
+
+    let signal_clone = stop_signal.clone();
+    let state_clone = state.clone();
+    let task = tokio::spawn(async move {
+        // 周期清理过期文件
+        let cleanup_state = state_clone.clone();
+        let cleanup_signal = signal_clone.clone();
+        let cleanup_task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cleanup_signal.notified() => break,
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
+                        let mut files = cleanup_state.files.lock().await;
+                        let before = files.len();
+                        files.retain(|_, f| !f.is_expired());
+                        let after = files.len();
+                        if before != after {
+                            log::info!("跨设备传输：清理过期文件 {} -> {}", before, after);
+                        }
+                    }
+                }
+            }
+        });
+
+        let serve = axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            signal_clone.notified().await;
+        });
+        if let Err(e) = serve.await {
+            log::error!("跨设备传输服务错误: {}", e);
+        }
+        cleanup_task.abort();
+        log::info!("跨设备传输服务已停止");
+    });
+
+    Ok((actual_port, state, stop_signal, task))
+}
+
+async fn serve_index() -> Html<&'static str> {
+    Html(INDEX_HTML)
+}
+
+async fn api_info(State(handle): State<ServerHandle>) -> Json<serde_json::Value> {
+    let urls = build_urls(handle.port);
+    let peers = handle.state.peers.lock().await;
+    Json(json!({
+        "port": handle.port,
+        "urls": urls,
+        "peerCount": peers.len(),
+    }))
+}
+
+fn build_urls(port: u16) -> Vec<NetworkUrl> {
+    list_local_ipv4()
+        .into_iter()
+        .map(|(iface, ip)| NetworkUrl {
+            url: format!("http://{}:{}/", ip, port),
+            interface: iface,
+            ip,
+        })
+        .collect()
+}
+
+// ============== File relay ==============
+
+async fn api_upload(
+    State(handle): State<ServerHandle>,
+    headers: HeaderMap,
+    mut multipart: Multipart,
+) -> Response {
+    let from = headers
+        .get("x-peer-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let mut to: Option<String> = None;
+    let mut name: Option<String> = None;
+    let mut mime: Option<String> = None;
+    let mut bytes: Option<Vec<u8>> = None;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let field_name = field.name().unwrap_or("").to_string();
+        if field_name == "to" {
+            if let Ok(text) = field.text().await {
+                to = Some(text);
+            }
+        } else if field_name == "file" {
+            name = field.file_name().map(|s| s.to_string());
+            mime = field.content_type().map(|s| s.to_string());
+            match field.bytes().await {
+                Ok(b) => {
+                    if b.len() > MAX_FILE_SIZE {
+                        return (
+                            StatusCode::PAYLOAD_TOO_LARGE,
+                            Json(json!({ "error": "文件超出大小上限" })),
+                        )
+                            .into_response();
+                    }
+                    bytes = Some(b.to_vec());
+                }
+                Err(e) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({ "error": format!("读取文件失败: {}", e) })),
+                    )
+                        .into_response();
+                }
+            }
+        }
+    }
+
+    let bytes = match bytes {
+        Some(b) => b,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "缺少 file 字段" })),
+            )
+                .into_response()
+        }
+    };
+
+    let token = format!("f-{}-{:x}", generate_peer_id(), bytes.len() as u32);
+    let size = bytes.len() as u64;
+
+    {
+        let mut files = handle.state.files.lock().await;
+        files.insert(
+            token.clone(),
+            CachedFile {
+                name: name.clone().unwrap_or_else(|| "file".to_string()),
+                mime: mime.clone(),
+                bytes,
+                to: to.clone(),
+                from: from.clone(),
+                created_at: Instant::now(),
+            },
+        );
+    }
+
+    Json(json!({
+        "token": token,
+        "name": name,
+        "size": size,
+    }))
+    .into_response()
+}
+
+async fn api_file(
+    State(handle): State<ServerHandle>,
+    Path(token): Path<String>,
+) -> Response {
+    let cached = {
+        let mut files = handle.state.files.lock().await;
+        // 一次性消费：取出后从缓存中删除
+        files.remove(&token)
+    };
+
+    match cached {
+        Some(file) => {
+            if file.is_expired() {
+                return (StatusCode::GONE, "文件已过期").into_response();
+            }
+            let mut headers = HeaderMap::new();
+            let mime = file
+                .mime
+                .clone()
+                .unwrap_or_else(|| "application/octet-stream".to_string());
+            if let Ok(v) = HeaderValue::from_str(&mime) {
+                headers.insert(header::CONTENT_TYPE, v);
+            }
+            // RFC 5987 编码文件名，避免非 ASCII 字符问题
+            let safe_name = encode_filename(&file.name);
+            let disposition = format!(
+                "attachment; filename=\"{}\"; filename*=UTF-8''{}",
+                file.name
+                    .chars()
+                    .map(|c| if c.is_ascii() && c != '"' { c } else { '_' })
+                    .collect::<String>(),
+                safe_name
+            );
+            if let Ok(v) = HeaderValue::from_str(&disposition) {
+                headers.insert(header::CONTENT_DISPOSITION, v);
+            }
+            headers.insert(
+                header::CONTENT_LENGTH,
+                HeaderValue::from(file.bytes.len() as u64),
+            );
+            (StatusCode::OK, headers, Body::from(file.bytes)).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, "文件不存在或已被领取").into_response(),
+    }
+}
+
+fn encode_filename(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
+}
+
+// ============== WebSocket ==============
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    Query(qs): Query<ConnectQuery>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(handle): State<ServerHandle>,
+) -> Response {
+    let ua = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let role = qs.role;
+    let suggested_name = qs.name;
+    ws.on_upgrade(move |socket| handle_socket(socket, addr, ua, role, suggested_name, handle))
+}
+
+async fn handle_socket(
+    socket: WebSocket,
+    addr: SocketAddr,
+    user_agent: String,
+    role: Option<String>,
+    suggested_name: Option<String>,
+    handle: ServerHandle,
+) {
+    let peer_id = generate_peer_id();
+    let (default_name, default_type) = guess_display_name(&user_agent);
+    let device_type = role.unwrap_or(default_type);
+    let display_name = suggested_name.unwrap_or(default_name);
+
+    log::info!(
+        "跨设备传输：新连接 peer={} addr={} type={} name={}",
+        peer_id,
+        addr,
+        device_type,
+        display_name
+    );
+
+    let (tx, mut rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let peer_info = PeerInfo {
+        peer_id: peer_id.clone(),
+        display_name: display_name.clone(),
+        device_type: device_type.clone(),
+        user_agent: user_agent.clone(),
+        is_self: false,
+    };
+
+    // 注册 peer
+    {
+        let mut peers = handle.state.peers.lock().await;
+        peers.insert(
+            peer_id.clone(),
+            PeerEntry {
+                info: peer_info.clone(),
+                sender: tx.clone(),
+            },
+        );
+    }
+
+    // 发送 welcome
+    let _ = tx.send(ServerMessage::Welcome {
+        peer_id: peer_id.clone(),
+        display_name: display_name.clone(),
+    });
+
+    // 广播 peer 列表
+    broadcast_peers(&handle.state).await;
+
+    let (mut sink, mut stream) = socket.split();
+
+    // 发送循环
+    let send_task = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            let text = match serde_json::to_string(&msg) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("序列化失败: {}", e);
+                    continue;
+                }
+            };
+            if sink.send(Message::Text(text)).await.is_err() {
+                break;
+            }
+        }
+        // 客户端断开时主动关闭，确保 graceful shutdown
+        let _ = sink.send(Message::Close(None)).await;
+    });
+
+    // 接收循环
+    while let Some(msg) = stream.next().await {
+        let msg = match msg {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!("WebSocket 接收错误 ({}): {}", peer_id, e);
+                break;
+            }
+        };
+        match msg {
+            Message::Text(text) => {
+                match serde_json::from_str::<ClientMessage>(&text) {
+                    Ok(cmsg) => handle_client_message(&handle.state, &peer_id, cmsg).await,
+                    Err(e) => log::warn!("无法解析消息 ({}): {} text={}", peer_id, e, text),
+                }
+            }
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+
+    // 清理：移除 peer
+    {
+        let mut peers = handle.state.peers.lock().await;
+        peers.remove(&peer_id);
+    }
+    log::info!("跨设备传输：断开 peer={}", peer_id);
+    send_task.abort();
+    broadcast_peers(&handle.state).await;
+}
+
+async fn handle_client_message(state: &AppState, sender_id: &str, msg: ClientMessage) {
+    match msg {
+        ClientMessage::SetName { name } => {
+            let trimmed = name.trim().to_string();
+            if trimmed.is_empty() {
+                return;
+            }
+            let mut peers = state.peers.lock().await;
+            if let Some(entry) = peers.get_mut(sender_id) {
+                entry.info.display_name = trimmed.clone();
+            }
+            drop(peers);
+            broadcast_peers(state).await;
+        }
+        ClientMessage::SendText { to, text } => {
+            let trimmed = text.trim().to_string();
+            if trimmed.is_empty() || trimmed.len() > 8192 {
+                return;
+            }
+            relay_text(state, sender_id, &to, &trimmed).await;
+        }
+        ClientMessage::NotifyFile {
+            to,
+            token,
+            name,
+            size,
+            mime,
+        } => {
+            relay_file_notice(state, sender_id, &to, &token, &name, size, mime).await;
+        }
+        ClientMessage::Ping => {
+            let peers = state.peers.lock().await;
+            if let Some(entry) = peers.get(sender_id) {
+                let _ = entry.sender.send(ServerMessage::Pong);
+            }
+        }
+    }
+}
+
+async fn broadcast_peers(state: &AppState) {
+    let peers = state.peers.lock().await;
+    let infos: Vec<PeerInfo> = peers.values().map(|e| e.info.clone()).collect();
+
+    for (peer_id, entry) in peers.iter() {
+        // 给每个客户端发的列表里把它自己标为 isSelf=true
+        let view: Vec<PeerInfo> = infos
+            .iter()
+            .map(|p| {
+                let mut v = p.clone();
+                v.is_self = &v.peer_id == peer_id;
+                v
+            })
+            .collect();
+        let _ = entry.sender.send(ServerMessage::Peers { peers: view });
+    }
+}
+
+async fn relay_text(state: &AppState, from: &str, to: &str, text: &str) {
+    let peers = state.peers.lock().await;
+    let from_name = peers
+        .get(from)
+        .map(|e| e.info.display_name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
+    if let Some(target) = peers.get(to) {
+        let _ = target.sender.send(ServerMessage::Text {
+            from: from.to_string(),
+            from_name,
+            text: text.to_string(),
+            ts: now_ms(),
+        });
+    } else {
+        // 通知发送方目标已下线
+        if let Some(sender) = peers.get(from) {
+            let _ = sender.sender.send(ServerMessage::Error {
+                message: "对方已离线".to_string(),
+            });
+        }
+    }
+}
+
+async fn relay_file_notice(
+    state: &AppState,
+    from: &str,
+    to: &str,
+    token: &str,
+    name: &str,
+    size: u64,
+    mime: Option<String>,
+) {
+    let peers = state.peers.lock().await;
+    let from_name = peers
+        .get(from)
+        .map(|e| e.info.display_name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
+    if let Some(target) = peers.get(to) {
+        let _ = target.sender.send(ServerMessage::File {
+            from: from.to_string(),
+            from_name,
+            token: token.to_string(),
+            name: name.to_string(),
+            size,
+            mime,
+            ts: now_ms(),
+        });
+    } else if let Some(sender) = peers.get(from) {
+        let _ = sender.sender.send(ServerMessage::Error {
+            message: "对方已离线，文件无人领取".to_string(),
+        });
+    }
+}
+
+fn now_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}

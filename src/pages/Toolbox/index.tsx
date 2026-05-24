@@ -12,6 +12,7 @@ import {
   Box,
   Network,
   FileText,
+  Send,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -29,6 +30,7 @@ import { ClipboardManager } from "./ClipboardManager";
 import { DockerImageTool } from "./DockerImageTool";
 import { SshTunnel } from "./SshTunnel";
 import { ResumeGenerator } from "./ResumeGenerator";
+import { PairDrop } from "./PairDrop";
 
 const tools = [
   {
@@ -104,6 +106,14 @@ const tools = [
     color: "bg-emerald-500",
     beta: true,
   },
+  {
+    id: "pairdrop" as ToolType,
+    name: "跨设备传输",
+    description: "局域网内一对一收发文字和文件，浏览器扫码即用，所有数据内存中转",
+    icon: Send,
+    color: "bg-pink-500",
+    beta: true,
+  },
 ];
 
 export function ToolboxPage() {
@@ -163,6 +173,8 @@ export function ToolboxPage() {
         return <ResumeGenerator onBack={() => setActiveTool(null)} />;
       case "sshTunnel":
         return <SshTunnel onBack={() => setActiveTool(null)} />;
+      case "pairdrop":
+        return <PairDrop onBack={() => setActiveTool(null)} />;
       default:
         return null;
     }

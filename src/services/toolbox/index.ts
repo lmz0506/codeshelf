@@ -710,6 +710,34 @@ export async function updateClipboardNote(id: string, note: string): Promise<Cli
   return invoke("update_clipboard_note", { id, note });
 }
 
+// ============== 跨设备传输（PairDrop） ==============
+
+import type {
+  PairDropServiceStatus,
+  PairDropPeerInfo,
+} from "@/types/toolbox";
+
+export async function pairdropStart(port?: number): Promise<PairDropServiceStatus> {
+  return invoke("pairdrop_start", { port });
+}
+
+export async function pairdropStop(): Promise<void> {
+  return invoke("pairdrop_stop");
+}
+
+export async function pairdropStatus(): Promise<PairDropServiceStatus> {
+  return invoke("pairdrop_status");
+}
+
+export async function pairdropPeers(): Promise<PairDropPeerInfo[]> {
+  return invoke("pairdrop_peers");
+}
+
+/** 把缓存中的接收文件直接写到本地，token 一次性消费。返回写入字节数。 */
+export async function pairdropSaveFile(token: string, savePath: string): Promise<number> {
+  return invoke("pairdrop_save_file", { token, savePath });
+}
+
 // ============== 工具函数 ==============
 
 export function formatBytes(bytes: number): string {

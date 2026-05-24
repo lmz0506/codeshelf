@@ -338,7 +338,7 @@ export interface ConfigProfile {
 
 // ============== 工具箱页面状态 ==============
 
-export type ToolType = "monitor" | "downloader" | "server" | "docker" | "claude" | "netcat" | "shortcuts" | "clipboard" | "resume" | "sshTunnel";
+export type ToolType = "monitor" | "downloader" | "server" | "docker" | "claude" | "netcat" | "shortcuts" | "clipboard" | "resume" | "sshTunnel" | "pairdrop";
 
 export interface ToolInfo {
   id: ToolType;
@@ -495,3 +495,28 @@ export interface NginxConfigOptions {
   accessLog?: boolean;
   errorLog?: boolean;
 }
+
+// ============== 跨设备传输（PairDrop） ==============
+
+export interface PairDropNetworkUrl {
+  interface: string;
+  ip: string;
+  url: string;
+}
+
+export interface PairDropServiceStatus {
+  running: boolean;
+  port: number;
+  urls: PairDropNetworkUrl[];
+  peerCount: number;
+}
+
+export interface PairDropPeerInfo {
+  peerId: string;
+  displayName: string;
+  /** "desktop" | "mobile" | "browser" */
+  deviceType: string;
+  userAgent: string;
+  isSelf: boolean;
+}
+
