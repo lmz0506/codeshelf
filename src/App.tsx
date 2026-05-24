@@ -41,6 +41,7 @@ interface AppSettings {
   scan_depth: number;
   auto_update: boolean;
   chat_history_dir?: string;
+  show_dock_icon?: boolean;
 }
 
 // 后端返回的 UI 状态类型
