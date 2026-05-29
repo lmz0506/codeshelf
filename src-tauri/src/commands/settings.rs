@@ -724,4 +724,102 @@ pub async fn reset_recommended_template() -> AppResult<()> {
     Ok(())
 }
 
+// ============== Claude 配置模板目录（远程拉取 + 本地缓存回退） ==============
+
+/// 远程模板目录文件（GitHub raw，main 分支）
+const CLAUDE_CONFIG_TEMPLATES_URL: &str =
+    "https://raw.githubusercontent.com/en-o/codeshelf/main/public/claude-config-templates.json";
+
+/// 内置兜底目录：与 public/claude-config-templates.json 保持一致，离线首启时使用
+const BUILTIN_CLAUDE_CONFIG_TEMPLATES: &str = r#"{
+  "codex": {
+    "alwaysThinkingEnabled": true,
+    "enabledPlugins": {
+      "claude-mem@thedotmack": true,
+      "planning-with-files@planning-with-files": true
+    },
+    "env": {
+      "ANTHROPIC_AUTH_TOKEN": "sk-",
+      "ANTHROPIC_BASE_URL": "https://a-ocnfniawgw.cn-shanghai.fcapp.run/v1",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-5.5",
+      "ANTHROPIC_DEFAULT_OPUS_MODEL": "gpt-5.5",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-5.5",
+      "ANTHROPIC_MODEL": "gpt-5.5",
+      "ANTHROPIC_REASONING_MODEL": "gpt-5.5",
+      "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
+      "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+    },
+    "model": "opus[1m]"
+  },
+  "claude": {
+    "effortLevel": "medium",
+    "env": {
+      "ANTHROPIC_AUTH_TOKEN": "sk-",
+      "ANTHROPIC_BASE_URL": "https://a-ocnfniawgw.cn-shanghai.fcapp.run",
+      "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
+      "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+      "DISABLE_AUTOUPDATER": "1",
+      "DISABLE_ERROR_REPORTING": "1",
+      "DISABLE_TELEMETRY": "1"
+    },
+    "model": "opus[1m]",
+    "permissions": {
+      "defaultMode": "bypassPermissions"
+    }
+  }
+}"#;
+
+/// 拉取远程模板目录。任何网络/HTTP 错误都返回 Err，由调用方静默回退。
+async fn fetch_remote_claude_config_templates() -> Result<String, reqwest::Error> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent("codeshelf")
+        .build()?;
+    client
+        .get(CLAUDE_CONFIG_TEMPLATES_URL)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await
+}
+
+/// 获取 Claude 配置模板目录。
+///
+/// 顺序：远程 GitHub → 本地缓存（上次成功拉取的"本地历史"）→ 内置默认。
+/// 任何错误（网络异常、文件不存在、解析失败）都静默回退，**永远返回 Ok**，保证调用方每次都能拿到内容。
+/// 远程拉取成功时会同步刷新本地缓存。
+#[tauri::command]
+#[specta::specta]
+pub async fn get_claude_config_templates() -> AppResult<String> {
+    // 1) 远程：拉到且能解析成 JSON 对象 → 更新本地缓存并返回
+    if let Ok(body) = fetch_remote_claude_config_templates().await {
+        if serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&body).is_ok() {
+            if let Ok(config) = get_storage_config() {
+                let _ = config.ensure_dirs();
+                // 写缓存失败不影响返回
+                let _ = fs::write(config.claude_config_templates_file(), &body);
+            }
+            return Ok(body);
+        }
+    }
+
+    // 2) 本地缓存
+    if let Ok(config) = get_storage_config() {
+        let path = config.claude_config_templates_file();
+        if path.exists() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if serde_json::from_str::<serde_json::Value>(&content).is_ok() {
+                    return Ok(content);
+                }
+            }
+        }
+    }
+
+    // 3) 内置默认
+    Ok(BUILTIN_CLAUDE_CONFIG_TEMPLATES.to_string())
+}
+
 // ============== 简历数据持久化已迁移到 commands::resume 模块 ==============

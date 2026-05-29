@@ -305,6 +305,7 @@ pub fn make_builder() -> Builder<tauri::Wry> {
         settings::get_recommended_template,
         settings::save_recommended_template,
         settings::reset_recommended_template,
+        settings::get_claude_config_templates,
         settings::get_ai_providers,
         settings::save_ai_providers,
         settings::get_sensitive_file_patterns,
