@@ -121,6 +121,12 @@ CodeShelf-Portable-vX.X.X-x64.zip
 > ```
 > 这条命令会串联跑 `npm ci` → `npm run build`（tsc + vite）→ `cargo check --release --lib --bins`，严格对齐 `.github/workflows/release.yml` 里 `tauri-action` 实际跑的编译环节（不包 bundle，~30s）。clippy 不强制，想另外跑：`(cd src-tauri && cargo clippy --release)`。
 >
+> **可选：Windows 交叉编译检查（第 3 步）**。`verify:release` 的最后一步会用 Docker 跑 `cargo check --target x86_64-pc-windows-gnu`，专门抓 `#[cfg(target_os = "windows")]` 下的编译错误 —— 在 macOS/Linux 上原生 `cargo check` 会把 Windows-only 代码预处理掉，永远看不到这类错。首次需要构建一次镜像（之后一直复用）：
+> ```bash
+> docker build -t codeshelf-win-check -f scripts/Dockerfile.win-check .
+> ```
+> 结尾的 `.` 是构建上下文，**不能省** —— `-f` 只负责指定 Dockerfile，省掉上下文 buildx 会报 `requires 1 argument`。镜像就绪后，`verify:release` 会自动 `docker run` 跑这一步；没装 Docker 或镜像不存在时会自动跳过、不阻塞流程。
+>
 > 要真·复现 CI 的 macOS ARM 产物：
 > ```bash
 > npm run tauri build -- --target aarch64-apple-darwin --config src-tauri/tauri.release.conf.json
