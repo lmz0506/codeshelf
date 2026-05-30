@@ -1,0 +1,235 @@
+# CodeShelf 开发与构建
+
+> 本文档面向参与开发与发布的同学，内容整理自原 README（未改动）。项目介绍请见 [README](README.md)。
+
+## 🛠 技术栈
+
+### 前端
+- **框架**: React 19 + TypeScript
+- **构建**: Vite
+- **样式**: TailwindCSS v4
+- **状态**: Zustand + TanStack Query
+- **图标**: Lucide React
+
+### 后端
+- **框架**: Tauri 2.x
+- **语言**: Rust
+- **数据库**: SQLite (tauri-plugin-sql)
+
+## 📋 环境要求
+
+### 必需环境
+
+| 环境 | 版本要求    | 安装方式 |
+|------|---------|---------|
+| Node.js | >= 20.x | [nodejs.org](https://nodejs.org/) |
+| Rust | >= 1.77 | [rustup.rs](https://rustup.rs/) |
+| Tauri CLI | >= 2.x  | `cargo install tauri-cli` |
+
+### 系统依赖
+
+#### Windows
+无需额外安装，确保已安装 [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Windows 10/11 通常已预装）。
+
+#### macOS
+```bash
+xcode-select --install
+```
+
+#### Linux (Ubuntu/Debian)
+```bash
+sudo apt update
+sudo apt install -y \
+  pkg-config \
+  libgtk-3-dev \
+  libwebkit2gtk-4.1-dev \
+  libjavascriptcoregtk-4.1-dev \
+  libsoup-3.0-dev \
+  libappindicator3-dev \
+  librsvg2-dev
+```
+
+## 🚀 快速开始
+### 0. 分支说明
+main 发版分支
+dev 开发分支
+v开头的是版本分支（不允许改变）
+其他分支用于指定功能开发
+
+
+### 1. 克隆项目
+```bash
+git clone https://github.com/en-o/codeshelf.git
+cd codeshelf
+```
+
+### 2. 安装依赖
+```bash
+# 安装前端依赖
+npm install
+
+# 安装 Tauri CLI（如果尚未安装）
+cargo install tauri-cli
+```
+
+### 3. 开发模式运行
+```bash
+# 启动 Tauri 开发服务器
+npm run tauri dev
+```
+
+开发服务器启动后：
+- 前端服务：http://localhost:1420
+- Tauri 应用会自动打开桌面窗口
+
+## 📦 构建与打包
+
+### 构建安装版
+```bash
+npm run tauri build
+```
+
+构建产物位置：
+- **Windows**: `src-tauri/target/release/bundle/msi/` 和 `nsis/`
+- **macOS**: `src-tauri/target/release/bundle/dmg/` 和 `macos/`
+- **Linux**: `src-tauri/target/release/bundle/deb/` 和 `appimage/`
+
+### 构建便携版（绿色版，仅 Windows）
+
+便携版无需安装，解压即用，不支持自动更新。
+
+```bash
+# 方式 1：运行脚本
+scripts\build-portable.bat
+
+# 方式 2：npm 命令
+npm run build:portable
+```
+
+构建完成后在项目根目录生成：
+```
+CodeShelf-Portable-vX.X.X-x64.zip
+├── CodeShelf.exe    # 主程序
+└── .portable        # 便携版标记（禁用自动更新）
+```
+
+### 发版流程
+
+> **推送前校验**：在推到 `release/**` 分支之前，本地先跑一遍
+> ```bash
+> npm run verify:release
+> ```
+> 这条命令会串联跑 `npm ci` → `npm run build`（tsc + vite）→ `cargo check --release --lib --bins`，严格对齐 `.github/workflows/release.yml` 里 `tauri-action` 实际跑的编译环节（不包 bundle，~30s）。clippy 不强制，想另外跑：`(cd src-tauri && cargo clippy --release)`。
+>
+> 要真·复现 CI 的 macOS ARM 产物：
+> ```bash
+> npm run tauri build -- --target aarch64-apple-darwin --config src-tauri/tauri.release.conf.json
+> ```
+
+使用发版脚本自动更新版本号并触发 GitHub Actions 构建：
+
+```bash
+# Windows
+scripts\release.bat 0.2.0
+
+# Linux/macOS
+./scripts/release.sh 0.2.0
+```
+
+发版脚本会：
+1. 更新 `package.json`、`tauri.conf.json`、`Cargo.toml` 中的版本号
+2. 创建 `release/x.x.x` 分支并推送
+3. 触发 GitHub Actions 自动构建并发布
+
+发布产物包括：
+- 安装版（`.msi`、`.exe`、`.dmg`、`.deb`、`.AppImage`）
+- 便携版（`CodeShelf-Portable-vX.X.X-x64.zip`）
+- 自动更新文件（`latest.json`）
+
+## 📁 项目结构
+
+```
+codeshelf/
+├── src/                          # 前端源代码
+│   ├── components/               # React 组件
+│   │   ├── layout/              # 布局组件（MainLayout, Sidebar）
+│   │   ├── project/             # 项目组件（卡片、详情、扫描）
+│   │   └── ui/                  # 基础 UI 组件（Button, Input, Heatmap）
+│   ├── pages/                   # 页面组件
+│   │   ├── Shelf/               # 项目书架页
+│   │   ├── Dashboard/           # 数据统计页
+│   │   └── Settings/            # 设置页
+│   ├── services/                # API 服务层
+│   │   ├── db/                  # 数据库操作
+│   │   └── git/                 # Git 操作
+│   ├── stores/                  # Zustand 状态管理
+│   ├── types/                   # TypeScript 类型定义
+│   └── styles/                  # 全局样式
+├── src-tauri/                   # Tauri/Rust 后端
+│   ├── src/                     # Rust 源代码
+│   │   ├── commands/            # Tauri Commands
+│   │   ├── db/                  # 数据库模块
+│   │   └── git/                 # Git 操作模块
+│   ├── capabilities/            # 权限配置
+│   ├── Cargo.toml               # Rust 依赖
+│   └── tauri.conf.json          # Tauri 配置
+├── DEVELOPMENT.md               # 开发文档
+├── API.md                       # API 文档
+└── README.md                    # 项目说明
+```
+
+## 📚 文档
+
+### 核心文档
+- [开发文档](docs/DEVELOPMENT.md) - 详细的开发指南和项目结构说明
+- [API 文档](docs/API.md) - 完整的 API 接口文档
+- [Tauri 命令开发指南](docs/TAURI-COMMANDS.md) - 前后端通信开发指南
+- [MCP Gateway](docs/MCP-GATEWAY.md) - 将接口库暴露给 Claude Code、Kimi、Codex、Copilot 等 MCP 客户端
+
+### 专题文档
+- [图标管理](ICONS.md) - 图标文件说明和更新指南
+- [图标配置](ICONS-SETUP.md) - 图标配置完整指南
+- [自定义标题栏](docs/TITLEBAR.md) - 标题栏实现和扩展指南
+
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+1. Fork 本项目
+2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 创建 Pull Request
+
+## 📝 常用命令
+
+| 命令 | 说明 |
+|------|------|
+| `npm run dev` | 启动前端开发服务器 |
+| `npm run build` | 构建前端生产版本 |
+| `npm run verify:release` | 推送前本地校验：tsc + vite + cargo check（对齐 release.yml 的编译环节） |
+| `npm run tauri dev` | 启动 Tauri 开发模式 |
+| `npm run tauri build` | 构建桌面应用（安装版） |
+| `npm run build:portable` | 构建便携版（绿色版） |
+| `npm run tauri build -- --debug` | 构建调试版本 |
+
+## 🐛 故障排除
+
+### Tauri 构建失败
+1. 确保系统依赖已安装
+2. 清理缓存后重新构建：
+   ```bash
+   rm -rf node_modules src-tauri/target
+   npm install
+   npm run tauri build
+   ```
+
+### 前端热更新不工作
+确保 Vite 开发服务器在 1420 端口运行，检查 `vite.config.ts` 配置。
+
+### WebView 相关错误 (Linux)
+确保安装了正确版本的 WebKitGTK：
+```bash
+pkg-config --modversion webkit2gtk-4.1
+```
