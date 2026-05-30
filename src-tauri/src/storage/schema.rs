@@ -268,6 +268,12 @@ pub struct ChatMessage {
     pub tool_body_bytes: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_truncated: Option<bool>,
+    /// 接口对话内联可重试错误气泡标记（assistant 角色 + error=true）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<bool>,
+    /// 工具调用进行中占位（"调用中…"）；执行完成后清除并回填结果
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_pending: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachments: Option<serde_json::Value>,
 }
@@ -496,6 +502,9 @@ pub struct ApiEndpoint {
     /// 响应截断字节数（默认 8192）
     #[serde(default)]
     pub response_trim_bytes: Option<u32>,
+    /// 单接口请求超时（毫秒），缺省 30000
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u32>,
     pub created_at: String,
     pub updated_at: String,
 }

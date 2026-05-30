@@ -232,6 +232,12 @@ pub struct SshTunnel {
     pub bytes_out: u64,
     #[serde(default)]
     pub last_error: Option<String>,
+    /// 断线后自动重连（网络切换/休眠恢复）；缺省开启
+    #[serde(default = "default_true")]
+    pub auto_reconnect: bool,
+    /// 累计自动重连成功次数（运行期统计，加载时重置）
+    #[serde(default)]
+    pub reconnects: u32,
     pub created_at: String,
 }
 
@@ -247,6 +253,9 @@ pub struct SshTunnelInput {
     pub ssh_port: Option<u16>,
     pub ssh_user: Option<String>,
     pub auth: SshAuthMethod,
+    /// 断线后自动重连；缺省开启
+    #[serde(default)]
+    pub auto_reconnect: Option<bool>,
 }
 
 /// SSH 隧道统计
@@ -273,6 +282,10 @@ pub struct TestPortResult {
 
 fn default_ssh_port() -> u16 {
     22
+}
+
+fn default_true() -> bool {
+    true
 }
 
 // ============== 静态服务相关结构 ==============

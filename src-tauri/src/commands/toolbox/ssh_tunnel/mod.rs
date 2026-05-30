@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 mod auth;
 mod commands;
@@ -44,6 +44,10 @@ pub(super) struct SshTunnelController {
     connections: AtomicU32,
     bytes_in: AtomicU64,
     bytes_out: AtomicU64,
+    /// 累计自动重连成功次数
+    reconnects: AtomicU32,
+    /// 反应式重连触发：连接打通失败 / 手动停止时唤醒监督任务
+    reconnect_notify: Notify,
 }
 
 impl SshTunnelController {
@@ -53,6 +57,8 @@ impl SshTunnelController {
             connections: AtomicU32::new(0),
             bytes_in: AtomicU64::new(0),
             bytes_out: AtomicU64::new(0),
+            reconnects: AtomicU32::new(0),
+            reconnect_notify: Notify::new(),
         }
     }
 
@@ -62,6 +68,24 @@ impl SshTunnelController {
 
     pub(super) fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
+    }
+
+    /// 请求监督任务立即重连（或在停止时立即醒来退出）
+    pub(super) fn request_reconnect(&self) {
+        self.reconnect_notify.notify_one();
+    }
+
+    /// 监督任务等待下一次重连触发
+    pub(super) async fn wait_reconnect_signal(&self) {
+        self.reconnect_notify.notified().await;
+    }
+
+    pub(super) fn inc_reconnects(&self) {
+        self.reconnects.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub(super) fn get_reconnects(&self) -> u32 {
+        self.reconnects.load(Ordering::SeqCst)
     }
 
     pub(super) fn inc_connections(&self) {
@@ -102,6 +126,11 @@ impl client::Handler for SshClient {
         Ok(true)
     }
 }
+
+/// 监听器与重连监督器共享的"当前 SSH 句柄"槽。
+/// 重连时整体替换 `Some(...)`；内层 Mutex 仅用于瞬时读取/替换 Arc，绝不跨越 await 持有，
+/// 因此并发连接打开 direct-tcpip（`&self`）不会被串行化。
+pub(super) type SharedHandle = Arc<Mutex<Option<Arc<client::Handle<SshClient>>>>>;
 
 // ============== 持久化 ==============
 
@@ -153,6 +182,7 @@ fn load_tunnels_from_file() -> AppResult<HashMap<String, SshTunnel>> {
         t.bytes_in = 0;
         t.bytes_out = 0;
         t.last_error = None;
+        t.reconnects = 0;
         log::info!(
             "加载 SSH 隧道: {} (:{}→{}@{}:{}→{}:{})",
             t.name,

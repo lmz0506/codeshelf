@@ -163,6 +163,10 @@ export interface ChatMessage {
   toolElapsedMs?: number;
   toolBodyBytes?: number;
   toolTruncated?: boolean;
+  /** 内联可重试错误气泡标记（assistant 角色 + error=true） */
+  error?: boolean;
+  /** 工具调用进行中占位（"调用中…"），执行完成后清除 */
+  toolPending?: boolean;
 }
 
 export interface ChatSession {
@@ -253,6 +257,8 @@ export interface ApiEndpoint {
   authOverride?: ApiAuthConfig;
   paramsSchema: Record<string, unknown>;
   responseTrimBytes?: number;
+  /** 单接口请求超时（毫秒），缺省 30000 */
+  timeoutMs?: number;
   createdAt: string;
   updatedAt: string;
 }

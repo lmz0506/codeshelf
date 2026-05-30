@@ -1,8 +1,26 @@
 import type { ChatStreamMessage, ChatStreamRequest } from "@/services/chat";
-import type { ToolCallAccumulated, StreamCallbacks } from "@/pages/Chat/hooks/useChatStream";
+import type { ToolCallAccumulated, StreamCallbacks, TokenUsage } from "@/pages/Chat/hooks/useChatStream";
+import { buildApiTools, executeApiEndpoint, type ApiExecutionResult } from "@/services/api_chat";
 import { mcpClient, type McpCallResult } from "./client";
 
 export const MAX_TOOL_ROUNDS = 10;
+export const MAX_STREAM_RETRIES = 2;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 是否为可重试的瞬时流式错误。
+ * - 明确不重试：达到上限 / 4xx / 鉴权失败（重试也没用）
+ * - 重试：网络/超时/5xx/读流失败等
+ */
+function isTransientStreamError(msg: string): boolean {
+  if (/已达最大|401|403|无效\s*API|API\s*Key|HTTP\s*4\d\d/i.test(msg)) return false;
+  return /请求失败|读取流失败|读取响应失败|timeout|超时|HTTP\s*5\d\d|network|ECONN|reset|EOF|fetch/i.test(
+    msg,
+  );
+}
 
 export interface ToolLoopProvider {
   providerId: string;
@@ -63,6 +81,7 @@ export interface ToolLoopOptions {
     thinking: string;
     toolCalls: ToolCallSummary[];
     finishReason?: string;
+    usage?: TokenUsage;
   }) => Promise<void> | void;
   /** 一个 tool_call 执行完成 */
   onToolExecuted?: (turn: {
@@ -70,21 +89,33 @@ export interface ToolLoopOptions {
     result: ToolDispatchResult;
   }) => Promise<void> | void;
   onError?: (msg: string) => void;
+  /** 单个 tool_call 即将派发（UI 据此显示"调用中…"占位气泡） */
+  onToolStart?: (info: { call: ToolCallSummary }) => void;
+  /** 流式请求瞬时失败、即将重试时回调 */
+  onRetry?: (info: { round: number; attempt: number; error: string }) => void;
   maxRounds?: number;
+  /** 单轮流式请求最大重试次数（仅瞬时错误），默认 MAX_STREAM_RETRIES */
+  maxStreamRetries?: number;
 }
 
 function streamOnce(
   startStream: StartStreamFn,
   request: Omit<ChatStreamRequest, "requestId">,
   onDelta?: (full: string, thinking: string) => void,
-): Promise<{ content: string; thinking: string; toolCalls: ToolCallAccumulated[]; finishReason?: string }> {
+): Promise<{
+  content: string;
+  thinking: string;
+  toolCalls: ToolCallAccumulated[];
+  finishReason?: string;
+  usage?: TokenUsage;
+}> {
   return new Promise((resolve, reject) => {
     startStream(request, {
       onDelta: (full, thinking) => onDelta?.(full, thinking),
       onThinking: () => {},
       onToolCallDelta: () => {},
-      onDone: (content, thinking, toolCalls, finishReason) =>
-        resolve({ content, thinking, toolCalls, finishReason }),
+      onDone: (content, thinking, toolCalls, finishReason, usage) =>
+        resolve({ content, thinking, toolCalls, finishReason, usage }),
       onError: (msg) => reject(new Error(msg)),
     }).catch((err) => {
       reject(err instanceof Error ? err : new Error(String(err)));
@@ -105,29 +136,44 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<void> {
   for (let round = 0; round < maxRounds; round++) {
     const tools = await opts.toolsBuilder();
     let turn;
-    try {
-      turn = await streamOnce(
-        opts.startStream,
-        {
-          providerId: opts.provider.providerId,
-          model: opts.provider.model,
-          baseUrl: opts.provider.baseUrl,
-          apiKey: opts.provider.apiKey,
-          thinking: opts.provider.thinking,
-          stream: true,
-          temperature: opts.generation?.temperature,
-          maxTokens: opts.generation?.maxTokens,
-          topP: opts.generation?.topP,
-          frequencyPenalty: opts.generation?.frequencyPenalty,
-          presencePenalty: opts.generation?.presencePenalty,
-          messages,
-          tools: tools.length > 0 ? tools : undefined,
-        },
-        opts.onAssistantDelta,
-      );
-    } catch (err) {
-      opts.onError?.(err instanceof Error ? err.message : String(err));
-      return;
+    {
+      const maxStreamRetries = opts.maxStreamRetries ?? MAX_STREAM_RETRIES;
+      let attempt = 0;
+      for (;;) {
+        try {
+          turn = await streamOnce(
+            opts.startStream,
+            {
+              providerId: opts.provider.providerId,
+              model: opts.provider.model,
+              baseUrl: opts.provider.baseUrl,
+              apiKey: opts.provider.apiKey,
+              thinking: opts.provider.thinking,
+              stream: true,
+              temperature: opts.generation?.temperature,
+              maxTokens: opts.generation?.maxTokens,
+              topP: opts.generation?.topP,
+              frequencyPenalty: opts.generation?.frequencyPenalty,
+              presencePenalty: opts.generation?.presencePenalty,
+              messages,
+              tools: tools.length > 0 ? tools : undefined,
+            },
+            opts.onAssistantDelta,
+          );
+          break;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (attempt < maxStreamRetries && isTransientStreamError(msg)) {
+            attempt++;
+            opts.onRetry?.({ round, attempt, error: msg });
+            // streamOnce 失败时 onAssistantDelta 尚未产出有效内容，重试会从空缓冲重放，安全
+            await sleep(500 * 2 ** (attempt - 1));
+            continue;
+          }
+          opts.onError?.(msg);
+          return;
+        }
+      }
     }
 
     const callSummaries: ToolCallSummary[] = turn.toolCalls
@@ -139,6 +185,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<void> {
       thinking: turn.thinking,
       toolCalls: callSummaries,
       finishReason: turn.finishReason,
+      usage: turn.usage,
     });
 
     messages = [
@@ -161,14 +208,21 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<void> {
       return;
     }
 
-    for (const call of callSummaries) {
-      let result: ToolDispatchResult;
-      try {
-        result = await opts.dispatch(call);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        result = { content: `执行失败: ${msg}`, isError: true, errorMessage: msg };
-      }
+    // 并行派发本轮所有 tool_call；结果按原索引装配，保证与 tool_calls 顺序对齐
+    const results = await Promise.all(
+      callSummaries.map(async (call): Promise<ToolDispatchResult> => {
+        opts.onToolStart?.({ call });
+        try {
+          return await opts.dispatch(call);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { content: `执行失败: ${msg}`, isError: true, errorMessage: msg };
+        }
+      }),
+    );
+    for (let i = 0; i < callSummaries.length; i++) {
+      const call = callSummaries[i];
+      const result = results[i];
       messages = [
         ...messages,
         {
@@ -250,4 +304,40 @@ export async function dispatchViaMcp(call: ToolCallSummary): Promise<ToolDispatc
     structuredContent: res.structuredContent,
     isError: res.isError === true,
   };
+}
+
+/* ============ 直连后端派发（MCP gateway 不可用时的兜底） ============ */
+
+/**
+ * 直连后端构建工具 + 派发器。工具名为 `ep_<id>`（与 useMcpEndpointLookup 的回退解析一致），
+ * 派发结果的 structuredContent 即 ApiExecutionResult —— extractApiToolMetadata 能原样解析，
+ * 因此 UI 渲染与走 MCP gateway 完全一致。
+ */
+export async function buildDirectTools(endpointIds: string[]): Promise<{
+  tools: FunctionTool[];
+  dispatch: (call: ToolCallSummary) => Promise<ToolDispatchResult>;
+}> {
+  const bundle = await buildApiTools(endpointIds);
+  const tools = bundle.tools as FunctionTool[];
+  const nameMap = bundle.toolNameMap;
+  const dispatch = async (call: ToolCallSummary): Promise<ToolDispatchResult> => {
+    const endpointId = nameMap[call.name];
+    if (!endpointId) {
+      const msg = `未找到工具对应的接口: ${call.name}`;
+      return { content: `执行失败: ${msg}`, isError: true, errorMessage: msg };
+    }
+    let r: ApiExecutionResult;
+    try {
+      r = await executeApiEndpoint(endpointId, call.arguments || "{}");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { content: `执行失败: ${msg}`, isError: true, errorMessage: msg };
+    }
+    return {
+      content: r.body ? `HTTP ${r.status}\n\n${r.body}` : `HTTP ${r.status}`,
+      structuredContent: r,
+      isError: r.status >= 400,
+    };
+  };
+  return { tools, dispatch };
 }

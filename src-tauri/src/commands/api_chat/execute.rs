@@ -42,6 +42,29 @@ fn build_session_base_client() -> AppResult<reqwest::Client> {
         .map_err(|e| crate::error::AppError::from(format!("构建 client 失败: {}", e)))
 }
 
+/// 发送请求；遇到瞬时网络错误（超时/连接失败）时自动重试一次。
+/// 仅当请求体可克隆（JSON 等非流式）时才重试，避免重复消费 body。
+async fn send_with_transient_retry(
+    builder: reqwest::RequestBuilder,
+) -> AppResult<reqwest::Response> {
+    let retry = builder.try_clone();
+    match builder.send().await {
+        Ok(r) => Ok(r),
+        Err(e) if e.is_timeout() || e.is_connect() => {
+            if let Some(b) = retry {
+                log::warn!("接口请求瞬时失败({})，400ms 后重试一次", e);
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                b.send()
+                    .await
+                    .map_err(|e| crate::error::AppError::from(format!("请求失败: {}", e)))
+            } else {
+                Err(crate::error::AppError::from(format!("请求失败: {}", e)))
+            }
+        }
+        Err(e) => Err(crate::error::AppError::from(format!("请求失败: {}", e))),
+    }
+}
+
 fn join_url(base: &str, path: &str) -> String {
     if path.starts_with("http://") || path.starts_with("https://") {
         return path.to_string();
@@ -435,9 +458,13 @@ pub async fn execute_api_endpoint(
     let method = reqwest::Method::from_bytes(endpoint.method.to_uppercase().as_bytes())
         .map_err(|e| crate::error::AppError::from(format!("非法 method: {}", e)))?;
 
-    // 普通 client（非 Session 鉴权用）
+    // 普通 client（非 Session 鉴权用）；超时按接口配置，缺省 30s
+    let req_timeout = endpoint
+        .timeout_ms
+        .map(|m| Duration::from_millis(m as u64))
+        .unwrap_or_else(|| Duration::from_secs(30));
     let default_client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
+        .timeout(req_timeout)
         .build()
         .map_err(|e| crate::error::AppError::from(format!("构建 client 失败: {}", e)))?;
 
@@ -533,12 +560,9 @@ pub async fn execute_api_endpoint(
         builder
     };
 
-    // 6. 首次发送 + Session 401/403 重登一次
+    // 6. 首次发送（瞬时网络错误自动重试一次）+ Session 401/403 重登一次
     let started = Instant::now();
-    let resp = builder
-        .send()
-        .await
-        .map_err(|e| crate::error::AppError::from(format!("请求失败: {}", e)))?;
+    let resp = send_with_transient_retry(builder).await?;
 
     let resp = if matches!(auth, ApiAuthConfig::Session { .. })
         && (resp.status() == reqwest::StatusCode::UNAUTHORIZED
