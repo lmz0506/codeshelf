@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { showToast } from "@/components/ui";
+import { CronBuilder } from "@/components/cron";
 import { useAiProvidersStore } from "@/stores/aiProvidersStore";
 import { saveWorkflow, type Workflow, type WorkflowNode } from "@/services/workflows";
 
@@ -23,7 +24,7 @@ function blankNode(type: string): WorkflowNode {
   const base: WorkflowNode = { id: uid(), nodeType: type, config: {}, dependsOn: [] };
   if (type === "web_fetch") base.config = { url: "", maxBytes: 400000 };
   if (type === "llm") base.config = { providerId: "", modelId: "", prompt: "" };
-  if (type === "webhook") base.config = { kind: "feishu", token: "", bodyTemplate: "" };
+  if (type === "webhook") base.config = { kind: "feishu", region: "feishu", token: "", bodyTemplate: "" };
   return base;
 }
 
@@ -111,10 +112,10 @@ export function WorkflowEditor({ open, workflow, onClose, onSaved }: Props) {
             名称
             <input className="mt-1 w-full border border-gray-200 rounded px-2 py-1 text-sm" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
-          <label className="text-xs text-gray-700">
-            Cron（5 段：分 时 日 月 周；留空仅手动）
-            <input className="mt-1 w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono" placeholder="0 9 * * *" value={cron} onChange={(e) => setCron(e.target.value)} />
-          </label>
+          <div className="text-xs text-gray-700">
+            触发时间
+            <CronBuilder value={cron} onChange={setCron} className="mt-1" />
+          </div>
         </div>
         <label className="flex items-center gap-2 text-xs text-gray-700">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
@@ -171,12 +172,50 @@ export function WorkflowEditor({ open, workflow, onClose, onSaved }: Props) {
                   />
                   <div className="flex gap-2">
                     <input
+                      className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 font-mono"
+                      placeholder="CSS 选择器（可选，如 article.markdown-body）"
+                      value={n.config.selector ?? ""}
+                      onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, selector: e.target.value } })}
+                    />
+                    <select
+                      className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                      value={n.config.extractMode ?? "text"}
+                      onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, extractMode: e.target.value } })}
+                    >
+                      <option value="text">取文本</option>
+                      <option value="html">取 HTML</option>
+                    </select>
+                  </div>
+                  <input
+                    className="w-full text-xs border border-gray-200 rounded px-2 py-1 font-mono"
+                    placeholder="正则（可选，取捕获组1或整段匹配，多个按行拼接）"
+                    value={n.config.regex ?? ""}
+                    onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, regex: e.target.value } })}
+                  />
+                  <div className="flex gap-2">
+                    <input
                       className="flex-1 text-xs border border-gray-200 rounded px-2 py-1"
                       placeholder="maxBytes (默认 400000)"
                       type="number"
                       value={n.config.maxBytes ?? 400000}
                       onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, maxBytes: Number(e.target.value) } })}
                     />
+                    <input
+                      className="flex-1 text-xs border border-gray-200 rounded px-2 py-1"
+                      placeholder="超时 ms (默认 30000)"
+                      type="number"
+                      value={n.config.timeoutMs ?? 30000}
+                      onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, timeoutMs: Number(e.target.value) } })}
+                    />
+                  </div>
+                  <input
+                    className="w-full text-xs border border-gray-200 rounded px-2 py-1 font-mono"
+                    placeholder="代理（可选，如 http://127.0.0.1:7890；连不上的站点用）"
+                    value={n.config.proxy ?? ""}
+                    onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, proxy: e.target.value } })}
+                  />
+                  <div className="text-[11px] text-gray-400 leading-relaxed">
+                    规则提取（通用，适用任意网站）：先按 CSS 选择器命中元素，再按正则二次提取；两者都留空则返回正文（HTML 自动转纯文本）。
                   </div>
                 </div>
               )}
@@ -212,6 +251,21 @@ export function WorkflowEditor({ open, workflow, onClose, onSaved }: Props) {
                     value={n.config.prompt ?? ""}
                     onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, prompt: e.target.value } })}
                   />
+                  {n.dependsOn.length > 0 && (
+                    <div className="flex items-center gap-1 flex-wrap text-[11px] text-gray-500">
+                      插入上游输出：
+                      {n.dependsOn.map((oid) => (
+                        <button
+                          key={oid}
+                          type="button"
+                          className="font-mono px-1.5 py-0.5 border border-gray-200 rounded hover:bg-gray-100"
+                          onClick={() => updateNode(idx, { ...n, config: { ...n.config, prompt: `${n.config.prompt ?? ""}{{${oid}}}` } })}
+                        >
+                          {`{{${oid}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -222,16 +276,26 @@ export function WorkflowEditor({ open, workflow, onClose, onSaved }: Props) {
                     value={n.config.kind ?? "feishu"}
                     onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, kind: e.target.value } })}
                   >
-                    <option value="feishu">飞书机器人</option>
+                    <option value="feishu">飞书 / Lark 机器人</option>
                     <option value="wecom">企业微信机器人</option>
                     <option value="http">通用 HTTP POST</option>
                   </select>
                   {n.config.kind === "feishu" && (
-                    <input className="w-full text-xs border border-gray-200 rounded px-2 py-1" placeholder="飞书机器人 token（链接中 /hook/ 后的那段）"
-                      value={n.config.token ?? ""} onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, token: e.target.value } })} />
+                    <>
+                      <select
+                        className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                        value={n.config.region ?? "feishu"}
+                        onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, region: e.target.value } })}
+                      >
+                        <option value="feishu">飞书（feishu.cn，国内）</option>
+                        <option value="lark">Lark（larksuite.com，国际）</option>
+                      </select>
+                      <input className="w-full text-xs border border-gray-200 rounded px-2 py-1 font-mono" placeholder="token 或整条 hook 链接（粘整条链接时自动识别区域）"
+                        value={n.config.token ?? ""} onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, token: e.target.value } })} />
+                    </>
                   )}
                   {n.config.kind === "wecom" && (
-                    <input className="w-full text-xs border border-gray-200 rounded px-2 py-1" placeholder="企业微信 webhook key（链接中 ?key= 后的那段）"
+                    <input className="w-full text-xs border border-gray-200 rounded px-2 py-1 font-mono" placeholder="企业微信 webhook key 或整条链接"
                       value={n.config.key ?? ""} onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, key: e.target.value } })} />
                   )}
                   {n.config.kind === "http" && (
@@ -248,10 +312,25 @@ export function WorkflowEditor({ open, workflow, onClose, onSaved }: Props) {
                       </div>
                     </>
                   )}
+                  {n.dependsOn.length > 0 && (
+                    <div className="flex items-center gap-1 flex-wrap text-[11px] text-gray-500">
+                      插入上游输出：
+                      {n.dependsOn.map((oid) => (
+                        <button
+                          key={oid}
+                          type="button"
+                          className="font-mono px-1.5 py-0.5 border border-gray-200 rounded hover:bg-gray-100"
+                          onClick={() => updateNode(idx, { ...n, config: { ...n.config, bodyTemplate: `${n.config.bodyTemplate ?? ""}{{${oid}}}` } })}
+                        >
+                          {`{{${oid}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <textarea
                     className="w-full text-xs border border-gray-200 rounded px-2 py-1 font-mono"
                     rows={4}
-                    placeholder={"body 模板（支持 {{上游id}}）。飞书/企微直接填入要发的文本；HTTP 填 JSON/任意 body。"}
+                    placeholder={"body 模板（支持 {{上游id}}，点上方按钮插入）。飞书/企微填要发的文本；HTTP 填 JSON/任意 body。"}
                     value={n.config.bodyTemplate ?? ""}
                     onChange={(e) => updateNode(idx, { ...n, config: { ...n.config, bodyTemplate: e.target.value } })}
                   />

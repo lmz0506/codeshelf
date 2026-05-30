@@ -226,12 +226,29 @@ async fn run_node_web_fetch(cfg: &Value) -> AppResult<String> {
         .and_then(|v| v.as_str())
         .ok_or("web_fetch 缺少 url")?
         .to_string();
-    let mut args = json!({"url": url});
+    // 工作流内输出纯内容（不加 [WebFetch] 头），便于下游 LLM/webhook 直接使用
+    let mut args = json!({"url": url, "meta": false});
     if let Some(mb) = cfg.get("maxBytes").or_else(|| cfg.get("max_bytes")) {
         args["max_bytes"] = mb.clone();
     }
     if let Some(h) = cfg.get("headers") {
         args["headers"] = h.clone();
+    }
+    if let Some(t) = cfg.get("timeoutMs").or_else(|| cfg.get("timeout_ms")) {
+        args["timeout_ms"] = t.clone();
+    }
+    // 规则提取 / 代理 等通用透传（缺省即不启用）
+    for (src, dst) in [
+        ("selector", "selector"),
+        ("regex", "regex"),
+        ("extractMode", "extract_mode"),
+        ("proxy", "proxy"),
+    ] {
+        if let Some(v) = cfg.get(src) {
+            if !v.is_null() {
+                args[dst] = v.clone();
+            }
+        }
     }
     super::tools::run_web_fetch_for_workflow(&args).await
 }
@@ -305,6 +322,28 @@ async fn run_node_llm(cfg: &Value, outputs: &HashMap<String, String>) -> AppResu
     Ok(content)
 }
 
+/// 截取响应正文用于回显/报错
+fn snippet(s: &str) -> String {
+    s.chars().take(500).collect::<String>()
+}
+
+/// 飞书/Lark/企微：HTTP 2xx 且业务码为 0 才算成功
+fn platform_ok(status: reqwest::StatusCode, body: &str, code_field: &str) -> bool {
+    if !status.is_success() {
+        return false;
+    }
+    let v: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+    // 飞书新版用 "code"，旧版用 "StatusCode"；企微用 "errcode"
+    let code = v
+        .get(code_field)
+        .and_then(|x| x.as_i64())
+        .or_else(|| v.get("StatusCode").and_then(|x| x.as_i64()));
+    match code {
+        Some(c) => c == 0, // 有业务码：必须为 0
+        None => true,      // 无业务码字段：以 HTTP 2xx 为准
+    }
+}
+
 async fn run_node_webhook(cfg: &Value, outputs: &HashMap<String, String>) -> AppResult<String> {
     let kind = cfg
         .get("kind")
@@ -322,46 +361,87 @@ async fn run_node_webhook(cfg: &Value, outputs: &HashMap<String, String>) -> App
         .map_err(|e| crate::error::AppError::from(e.to_string()))?;
 
     match kind {
-        "feishu" => {
+        // 飞书(feishu.cn) 与 Lark(larksuite.com) 是两套部署：token 不通用。
+        // token 字段允许直接粘整条 hook 链接（原样用）；只填 token 时按 region 拼域名。
+        "feishu" | "lark" => {
+            if text.trim().is_empty() {
+                return Err("推送内容为空：请在 body 模板里填写文本，并用 {{上游节点id}} 引用抓取/LLM 结果".into());
+            }
             let token = cfg
                 .get("token")
                 .and_then(|v| v.as_str())
-                .ok_or("feishu 缺少 token")?;
-            let url = format!("https://open.feishu.cn/open-apis/bot/v2/hook/{}", token);
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .ok_or("飞书/Lark 缺少 token 或 hook 链接")?;
+            let url = if token.starts_with("http://") || token.starts_with("https://") {
+                token.to_string()
+            } else {
+                let region = cfg
+                    .get("region")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("feishu");
+                let host = if region.eq_ignore_ascii_case("lark") || kind == "lark" {
+                    "open.larksuite.com"
+                } else {
+                    "open.feishu.cn"
+                };
+                format!("https://{}/open-apis/bot/v2/hook/{}", host, token)
+            };
             let payload = json!({"msg_type": "text", "content": {"text": text}});
             let resp = client
                 .post(&url)
                 .json(&payload)
                 .send()
                 .await
-                .map_err(|e| crate::error::AppError::from(e.to_string()))?;
+                .map_err(|e| crate::error::AppError::from(format!("发送失败: {}", e)))?;
+            let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            Ok(format!(
-                "feishu sent: {}",
-                body.chars().take(500).collect::<String>()
-            ))
+            if platform_ok(status, &body, "code") {
+                Ok(format!("飞书/Lark 推送成功: {}", snippet(&body)))
+            } else {
+                Err(crate::error::AppError::from(format!(
+                    "飞书/Lark 推送失败 (HTTP {}): {}",
+                    status.as_u16(),
+                    snippet(&body)
+                )))
+            }
         }
         "wecom" => {
+            if text.trim().is_empty() {
+                return Err("推送内容为空：请在 body 模板里填写文本，并用 {{上游节点id}} 引用抓取/LLM 结果".into());
+            }
             let key = cfg
                 .get("key")
                 .and_then(|v| v.as_str())
-                .ok_or("wecom 缺少 key")?;
-            let url = format!(
-                "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={}",
-                key
-            );
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .ok_or("wecom 缺少 key 或 webhook 链接")?;
+            let url = if key.starts_with("http://") || key.starts_with("https://") {
+                key.to_string()
+            } else {
+                format!(
+                    "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={}",
+                    key
+                )
+            };
             let payload = json!({"msgtype": "text", "text": {"content": text}});
             let resp = client
                 .post(&url)
                 .json(&payload)
                 .send()
                 .await
-                .map_err(|e| crate::error::AppError::from(e.to_string()))?;
+                .map_err(|e| crate::error::AppError::from(format!("发送失败: {}", e)))?;
+            let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            Ok(format!(
-                "wecom sent: {}",
-                body.chars().take(500).collect::<String>()
-            ))
+            if platform_ok(status, &body, "errcode") {
+                Ok(format!("企业微信推送成功: {}", snippet(&body)))
+            } else {
+                Err(crate::error::AppError::from(format!(
+                    "企业微信推送失败 (HTTP {}): {}",
+                    status.as_u16(),
+                    snippet(&body)
+                )))
+            }
         }
         "http" => {
             let url = cfg
@@ -404,14 +484,18 @@ async fn run_node_webhook(cfg: &Value, outputs: &HashMap<String, String>) -> App
             let resp = req
                 .send()
                 .await
-                .map_err(|e| crate::error::AppError::from(e.to_string()))?;
-            let status = resp.status().as_u16();
+                .map_err(|e| crate::error::AppError::from(format!("发送失败: {}", e)))?;
+            let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            Ok(format!(
-                "http {} sent: {}",
-                status,
-                body.chars().take(500).collect::<String>()
-            ))
+            if status.is_success() {
+                Ok(format!("http {} sent: {}", status.as_u16(), snippet(&body)))
+            } else {
+                Err(crate::error::AppError::from(format!(
+                    "HTTP 推送失败 ({}): {}",
+                    status.as_u16(),
+                    snippet(&body)
+                )))
+            }
         }
         other => Err(crate::error::AppError::from(format!(
             "未知 webhook kind: {}",
