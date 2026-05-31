@@ -4,6 +4,13 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
+// Windows: 隐藏控制台窗口，避免打包（windows_subsystem="windows"）后 docker 命令闪黑窗。
+// 开发模式下进程自带控制台、子进程复用它所以不闪；release 去掉控制台后每个子进程会新建一个。
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 fn docker_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if let Ok(path) = std::env::var("CODESHELF_DOCKER_BIN") {
@@ -72,6 +79,8 @@ pub(super) fn run_docker(args: &[&str], cwd: Option<&Path>) -> DockerCommandResu
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
     let command_text = format!(
         "{} {}",
         quote_arg(&program.to_string_lossy()),

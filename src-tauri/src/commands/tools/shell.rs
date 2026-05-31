@@ -31,8 +31,12 @@ pub(super) async fn tool_bash(ctx: &ToolCtx, args: &Value) -> AppResult<String> 
     };
     #[cfg(target_family = "windows")]
     let mut cmd = {
+        // CREATE_NO_WINDOW (0x08000000)：release 下进程无控制台父级，cmd /C 会闪黑窗，必须隐藏。
+        // tokio 的 Command 在 Windows 下有内建 creation_flags，无需引入 std 的 CommandExt。
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut c = Command::new("cmd");
         c.arg("/C").arg(command);
+        c.creation_flags(CREATE_NO_WINDOW);
         c
     };
     cmd.current_dir(&base_canon);

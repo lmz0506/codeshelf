@@ -261,6 +261,10 @@ fn collect_local_ipv4() -> Vec<(String, String)> {
 
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        // 隐藏控制台窗口，避免打包后扫描本机 IP（PowerShell / ipconfig）时闪黑窗
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
         // Windows ipconfig 输出是 OEM codepage（中文系统是 CP936/GBK），
         // 直接 String::from_utf8_lossy 会把中文网卡名变成 ���。
         // 用 PowerShell 拿结构化 UTF-8 JSON，避免编码问题。
@@ -275,6 +279,7 @@ fn collect_local_ipv4() -> Vec<(String, String)> {
 
         if let Ok(out) = Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
         {
             if out.status.success() {
@@ -303,7 +308,10 @@ fn collect_local_ipv4() -> Vec<(String, String)> {
 
         // PowerShell 失败时退化到 ipconfig（接受可能的乱码）
         if result.is_empty() {
-            if let Ok(out) = Command::new("ipconfig").output() {
+            if let Ok(out) = Command::new("ipconfig")
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+            {
                 let text = String::from_utf8_lossy(&out.stdout);
                 let mut current_adapter = String::from("default");
                 for line in text.lines() {

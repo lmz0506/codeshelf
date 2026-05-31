@@ -19,6 +19,10 @@ use super::{ensure_tunnels_loaded, SSH_TUNNELS};
 const TEST_HOST: &str = "127.0.0.1";
 const TEST_TIMEOUT_SECS: u64 = 3;
 
+// Windows: 隐藏控制台窗口，避免打包后端口测试调用 PowerShell(Test-NetConnection) 时闪黑窗
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[tauri::command]
 #[specta::specta]
 pub async fn test_ssh_tunnel(tunnel_id: String) -> AppResult<TestPortResult> {
@@ -173,6 +177,7 @@ async fn test_via_test_net_connection(host: &str, port: u16) -> Option<TestPortR
         Duration::from_secs(TEST_TIMEOUT_SECS + 5),
         Command::new(shell)
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output(),
