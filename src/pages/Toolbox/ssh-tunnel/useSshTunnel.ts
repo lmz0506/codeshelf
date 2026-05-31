@@ -38,6 +38,7 @@ export function useSshTunnel() {
   const [formPassphrase, setFormPassphrase] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [formHostAlias, setFormHostAlias] = useState("");
+  const [formAutoReconnect, setFormAutoReconnect] = useState(true);
 
   useEffect(() => {
     loadAll();
@@ -72,6 +73,7 @@ export function useSshTunnel() {
     setFormPassphrase("");
     setFormPassword("");
     setFormHostAlias("");
+    setFormAutoReconnect(true);
     setEditing(null);
   }
 
@@ -103,6 +105,7 @@ export function useSshTunnel() {
     } else if (t.auth.type === "sshConfig") {
       setFormHostAlias(t.auth.hostAlias);
     }
+    setFormAutoReconnect(t.autoReconnect ?? true);
     setShowAddDialog(true);
   }
 
@@ -176,6 +179,7 @@ export function useSshTunnel() {
       sshPort: Number.isNaN(sshPort) ? 22 : sshPort,
       sshUser: formSshUser.trim() || undefined,
       auth,
+      autoReconnect: formAutoReconnect,
     };
 
     try {
@@ -293,6 +297,7 @@ export function useSshTunnel() {
       formPassphrase,
       formPassword,
       formHostAlias,
+      formAutoReconnect,
       sshConfigHosts,
       onFormNameChange: setFormName,
       onFormLocalPortChange: setFormLocalPort,
@@ -306,6 +311,7 @@ export function useSshTunnel() {
       onFormPassphraseChange: setFormPassphrase,
       onFormPasswordChange: setFormPassword,
       onFormHostAliasChange: setFormHostAlias,
+      onFormAutoReconnectChange: setFormAutoReconnect,
       onSelectKey: handleSelectKey,
       onCancel: closeFormDialog,
       onSubmit: handleSubmit,

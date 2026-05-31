@@ -63,6 +63,14 @@ pub struct ToolCallDelta {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatStreamEvent {
     pub request_id: String,
     pub delta: Option<String>,
@@ -74,6 +82,9 @@ pub struct ChatStreamEvent {
     /// 某一轮完成时携带的 finish_reason（"stop" / "tool_calls" 等）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
+    /// 本轮 token 用量（若供应商返回 usage）；通常随 done 事件带出
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
 }
 
 impl ChatStreamEvent {
@@ -86,12 +97,23 @@ impl ChatStreamEvent {
             thinking_delta: None,
             tool_call_delta: None,
             finish_reason: None,
+            usage: None,
         }
     }
 }
 
 static CHAT_ABORTS: Lazy<Arc<RwLock<HashMap<String, tokio::task::AbortHandle>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+
+/// 复用的 HTTP 客户端：设连接超时 + TCP keepalive；
+/// 流式请求不设整体超时（长连接），仅靠 connect_timeout 守护拨号阶段。
+static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+});
 
 // ============== 物理目录（仅 tasks.json 还在用） ==============
 //
@@ -258,6 +280,9 @@ fn message_from_row(row: MessageDbRow) -> ChatMessage {
         tool_elapsed_ms: row.tool_elapsed_ms.map(|x| x as u64),
         tool_body_bytes: row.tool_body_bytes.map(|x| x as usize),
         tool_truncated: row.tool_truncated.map(|x| x != 0),
+        // error / tool_pending 仅用于接口对话（ApiChat，JSON 持久化），SQLite 会话不落这两列
+        error: None,
+        tool_pending: None,
         attachments: parse_json_value(&row.attachments_json),
     }
 }
@@ -835,6 +860,28 @@ pub async fn chat_cancel(request_id: String) -> AppResult<()> {
     Ok(())
 }
 
+/// 从一帧/一次响应里解析 OpenAI 兼容的 usage（缺失或 null 返回 None）。
+fn parse_usage(parsed: &serde_json::Value) -> Option<TokenUsage> {
+    let u = parsed.get("usage")?;
+    if u.is_null() {
+        return None;
+    }
+    Some(TokenUsage {
+        prompt_tokens: u
+            .get("prompt_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+        completion_tokens: u
+            .get("completion_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+        total_tokens: u
+            .get("total_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+    })
+}
+
 fn build_chat_payload(
     request: &ChatStreamRequest,
     use_stream: bool,
@@ -879,6 +926,11 @@ fn build_chat_payload(
         "stream": use_stream,
     });
 
+    if use_stream {
+        // 让供应商在流式末帧带出 token 用量
+        payload["stream_options"] = serde_json::json!({ "include_usage": true });
+    }
+
     if let Some(temperature) = request.temperature {
         payload["temperature"] = serde_json::json!(temperature);
     }
@@ -916,7 +968,7 @@ fn build_chat_payload(
 #[specta::specta]
 pub async fn chat_complete(request: ChatStreamRequest) -> AppResult<String> {
     let (url, headers, body) = build_chat_payload(&request, false)?;
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .headers(headers)
@@ -954,7 +1006,7 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResul
     let use_stream = request.stream.unwrap_or(true);
     let (url, headers, body) = build_chat_payload(&request, use_stream)?;
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
 
     let app_handle = app.clone();
     let handle = tokio::spawn(async move {
@@ -1053,6 +1105,7 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResul
             let mut ev = ChatStreamEvent::new(&request_id);
             ev.done = true;
             ev.finish_reason = finish_reason;
+            ev.usage = parse_usage(&parsed);
             let _ = app_handle.emit("chat-stream", ev);
             return;
         }
@@ -1061,6 +1114,7 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResul
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut last_finish: Option<String> = None;
+        let mut last_usage: Option<TokenUsage> = None;
 
         while let Some(chunk) = stream.next().await {
             match chunk {
@@ -1078,6 +1132,7 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResul
                             let mut ev = ChatStreamEvent::new(&request_id);
                             ev.done = true;
                             ev.finish_reason = last_finish.clone();
+                            ev.usage = last_usage.clone();
                             let _ = app_handle.emit("chat-stream", ev);
                             return;
                         }
@@ -1085,6 +1140,9 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResul
                             Ok(v) => v,
                             Err(_) => continue,
                         };
+                        if let Some(u) = parse_usage(&parsed) {
+                            last_usage = Some(u);
+                        }
                         let choice0 = parsed.get("choices").and_then(|v| v.get(0));
                         let delta = choice0.and_then(|v| v.get("delta"));
 
@@ -1155,6 +1213,13 @@ pub async fn chat_stream(app: AppHandle, request: ChatStreamRequest) -> AppResul
                 }
             }
         }
+
+        // 流自然结束（未见 [DONE]）：补发 done，带出 finish_reason 与 usage
+        let mut ev = ChatStreamEvent::new(&request_id);
+        ev.done = true;
+        ev.finish_reason = last_finish.clone();
+        ev.usage = last_usage.clone();
+        let _ = app_handle.emit("chat-stream", ev);
     });
 
     let abort = handle.abort_handle();

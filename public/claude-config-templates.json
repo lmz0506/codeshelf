@@ -1,0 +1,39 @@
+{
+  "codex": {
+    "alwaysThinkingEnabled": true,
+    "enabledPlugins": {
+      "claude-mem@thedotmack": true,
+      "planning-with-files@planning-with-files": true
+    },
+    "env": {
+      "ANTHROPIC_AUTH_TOKEN": "sk-",
+      "ANTHROPIC_BASE_URL": "https://a-ocnfniawgw.cn-shanghai.fcapp.run/v1",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-5.5",
+      "ANTHROPIC_DEFAULT_OPUS_MODEL": "gpt-5.5",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-5.5",
+      "ANTHROPIC_MODEL": "gpt-5.5",
+      "ANTHROPIC_REASONING_MODEL": "gpt-5.5",
+      "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
+      "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+    },
+    "model": "opus[1m]"
+  },
+  "claude": {
+    "effortLevel": "medium",
+    "env": {
+      "ANTHROPIC_AUTH_TOKEN": "sk-",
+      "ANTHROPIC_BASE_URL": "https://a-ocnfniawgw.cn-shanghai.fcapp.run",
+      "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
+      "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+      "DISABLE_AUTOUPDATER": "1",
+      "DISABLE_ERROR_REPORTING": "1",
+      "DISABLE_TELEMETRY": "1"
+    },
+    "model": "opus[1m]",
+    "permissions": {
+      "defaultMode": "bypassPermissions"
+    }
+  }
+}

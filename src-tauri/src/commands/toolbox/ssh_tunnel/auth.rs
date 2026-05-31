@@ -68,7 +68,9 @@ pub(super) async fn connect_and_authenticate(
         // None = 不做 inactivity 检测；保活由 keepalive_interval 负责。
         // 之前误用 Some(Duration::from_secs(0)) 反而会"0 秒后超时"，立刻断开。
         inactivity_timeout: None,
-        keepalive_interval: Some(Duration::from_secs(30)),
+        // 10s 间隔 × 3 次未响应 ≈ 30s 内判定死连接，作为自动重连的兜底信号
+        // （监督任务还会用 is_closed()/通道探测更快发现断线）。
+        keepalive_interval: Some(Duration::from_secs(10)),
         keepalive_max: 3,
         ..<_>::default()
     });

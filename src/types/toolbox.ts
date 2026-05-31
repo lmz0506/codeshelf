@@ -145,11 +145,15 @@ export interface SshTunnel {
   sshPort: number;
   sshUser: string;
   auth: SshAuthMethod;
-  status: "running" | "stopped";
+  status: "running" | "stopped" | "reconnecting";
   connections: number;
   bytesIn: number;
   bytesOut: number;
   lastError?: string | null;
+  /** 断线后自动重连（网络切换/休眠恢复） */
+  autoReconnect: boolean;
+  /** 累计自动重连成功次数 */
+  reconnects: number;
   createdAt: string;
 }
 
@@ -162,6 +166,7 @@ export interface SshTunnelInput {
   sshPort?: number;
   sshUser?: string;
   auth: SshAuthMethod;
+  autoReconnect?: boolean;
 }
 
 export interface SshTunnelStats {

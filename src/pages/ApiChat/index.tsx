@@ -117,7 +117,7 @@ export function ApiChatPage() {
 
   const endpointLookup = useMcpEndpointLookup(endpoints);
 
-  const { streaming, thinkingBuffer, send, regenerate, retryUser, stop } = useApiChatOrchestration();
+  const { streaming, thinkingBuffer, send, regenerate, retryUser, retryFromError, stop } = useApiChatOrchestration();
 
   const normalized = useMemo(() => ensureAiDefaultProvider(aiProviders), [aiProviders, ensureAiDefaultProvider]);
   const modelOptions = useMemo(() => buildModelOptions(normalized), [normalized]);
@@ -452,22 +452,24 @@ export function ApiChatPage() {
                 }}
                 onRegenerateAssistant={async (m) => {
                   if (!selected) return;
-                  await regenerate(
-                    {
-                      session: activeSession,
-                      llm: {
-                        providerId: selected.providerId,
-                        model: selected.model.model,
-                        baseUrl: selected.baseUrl,
-                        apiKey: selected.apiKey,
-                        thinking: selected.model.thinking,
-                        stream: selected.model.stream !== false,
-                      },
-                      onSession: handleSession,
-                      onError: (msg) => showToast("error", msg),
+                  const args = {
+                    session: activeSession,
+                    llm: {
+                      providerId: selected.providerId,
+                      model: selected.model.model,
+                      baseUrl: selected.baseUrl,
+                      apiKey: selected.apiKey,
+                      thinking: selected.model.thinking,
+                      stream: selected.model.stream !== false,
                     },
-                    m.id,
-                  );
+                    onSession: handleSession,
+                    onError: (msg: string) => showToast("error", msg),
+                  };
+                  if (m.error) {
+                    await retryFromError(args);
+                  } else {
+                    await regenerate(args, m.id);
+                  }
                 }}
                 onRetryUser={async (m) => {
                   if (!selected) return;

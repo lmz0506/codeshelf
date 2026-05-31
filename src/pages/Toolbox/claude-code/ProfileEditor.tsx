@@ -16,6 +16,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { getClaudeConfigTemplates } from "@/services/toolbox";
 import type { ConfigProfile } from "@/types/toolbox";
 import {
   type QuickConfigOption,
@@ -25,28 +26,8 @@ import {
   deleteNestedKey,
 } from "./constants";
 
-// 推荐模板数据
-const RECOMMENDED_TEMPLATE: Record<string, unknown> = {
-  env: {
-    ANTHROPIC_AUTH_TOKEN: "sa-token",
-    ANTHROPIC_BASE_URL: "你的地址",
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-opus-4-6[1m]",
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-6[1m]",
-    ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-opus-4-6[1m]",
-    ANTHROPIC_MODEL: "claude-opus-4-6[1m]",
-    CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
-    CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-    DISABLE_AUTOUPDATER: "1",
-    DISABLE_ERROR_REPORTING: "1",
-    DISABLE_TELEMETRY: "1"
-  },
-  permissions: {
-    defaultMode: "bypassPermissions"
-  },
-  model: "opus[1m]",
-  effortLevel: "medium",
-};
+// 自定义模板在选择列表中的特殊 key
+const CUSTOM_TEMPLATE_KEY = "__custom__";
 
 interface ProfileEditorBaseProps {
   quickConfigs: QuickConfigOption[];
@@ -87,46 +68,6 @@ function getInitialContent(
   return "{}";
 }
 
-function getContentForSource(
-  source: InitialSource,
-  currentSettings: string,
-  quickConfigs: QuickConfigOption[],
-  recommendedTemplate?: string,
-): string {
-  switch (source) {
-    case "empty":
-      return "{}";
-    case "current": {
-      try {
-        const parsed = JSON.parse(currentSettings);
-        return JSON.stringify(parsed, null, 2);
-      } catch {
-        return "{}";
-      }
-    }
-    case "quick": {
-      const settings: Record<string, unknown> = {};
-      quickConfigs.forEach(opt => {
-        if (opt.defaultValue !== "" && opt.defaultValue !== null && opt.defaultValue !== undefined) {
-          settings[opt.configKey] = opt.defaultValue;
-        }
-      });
-      return JSON.stringify(settings, null, 2);
-    }
-    case "recommended": {
-      if (recommendedTemplate) {
-        try {
-          const parsed = JSON.parse(recommendedTemplate);
-          return JSON.stringify(parsed, null, 2);
-        } catch {
-          // fallback to built-in
-        }
-      }
-      return JSON.stringify(RECOMMENDED_TEMPLATE, null, 2);
-    }
-  }
-}
-
 export function ProfileEditor(props: ProfileEditorProps) {
   const { mode, quickConfigs, onClose } = props;
 
@@ -134,6 +75,13 @@ export function ProfileEditor(props: ProfileEditorProps) {
   const [profileName, setProfileName] = useState("");
   const [profileNameError, setProfileNameError] = useState<string | null>(null);
   const [initialSource, setInitialSource] = useState<InitialSource>("empty");
+
+  // 新建模式专用：用户保存过的单一自定义模板 + 远程模板目录
+  const createProps = mode === "create" ? (props as ProfileEditorCreateProps) : null;
+  const recommendedTemplate = createProps?.recommendedTemplate ?? null;
+  const [templates, setTemplates] = useState<Record<string, unknown>>({});
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>("claude");
 
   // 描述 - 新建和编辑都支持
   const [description, setDescription] = useState(
@@ -174,13 +122,81 @@ export function ProfileEditor(props: ProfileEditorProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // 初始配置源切换时更新 JSON 内容（新建模式）
-  useEffect(() => {
-    if (mode === "create") {
-      const p = props as ProfileEditorCreateProps;
-      setEditingContent(getContentForSource(initialSource, p.currentSettings, quickConfigs, p.recommendedTemplate));
+  // 计算"推荐模板"源下、某个模板 key 对应的编辑器内容（自定义 → 远程/缓存目录里的值）
+  function getRecommendedContent(templateKey: string): string {
+    if (templateKey === CUSTOM_TEMPLATE_KEY && recommendedTemplate) {
+      try {
+        return JSON.stringify(JSON.parse(recommendedTemplate), null, 2);
+      } catch {
+        return recommendedTemplate;
+      }
     }
+    const value = templates[templateKey];
+    if (value !== undefined) return JSON.stringify(value, null, 2);
+    // 兜底：目录里的第一个，再不行空对象
+    const firstKey = Object.keys(templates)[0];
+    if (firstKey) return JSON.stringify(templates[firstKey], null, 2);
+    return "{}";
+  }
+
+  // 计算某个初始配置源对应的编辑器内容
+  function computeContent(source: InitialSource, templateKey: string): string {
+    switch (source) {
+      case "empty":
+        return "{}";
+      case "current": {
+        try {
+          return JSON.stringify(JSON.parse(createProps?.currentSettings ?? "{}"), null, 2);
+        } catch {
+          return "{}";
+        }
+      }
+      case "quick": {
+        const settings: Record<string, unknown> = {};
+        quickConfigs.forEach(opt => {
+          if (opt.defaultValue !== "" && opt.defaultValue !== null && opt.defaultValue !== undefined) {
+            settings[opt.configKey] = opt.defaultValue;
+          }
+        });
+        return JSON.stringify(settings, null, 2);
+      }
+      case "recommended":
+        return getRecommendedContent(templateKey);
+    }
+  }
+
+  // 新建模式：打开弹窗即拉取远程模板目录（远程 → 本地缓存 → 内置默认，由后端静默兜底）
+  useEffect(() => {
+    if (mode !== "create") return;
+    getClaudeConfigTemplates().then(t => {
+      setTemplates(t);
+      const keys = Object.keys(t);
+      // 默认选中：claude > 自定义 > 第一个
+      const def = keys.includes("claude")
+        ? "claude"
+        : recommendedTemplate
+          ? CUSTOM_TEMPLATE_KEY
+          : keys[0] ?? "";
+      setSelectedTemplateKey(def);
+      setTemplatesLoaded(true);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 切换初始配置源时整体替换编辑器内容（新建模式）
+  useEffect(() => {
+    if (mode !== "create") return;
+    setEditingContent(computeContent(initialSource, selectedTemplateKey));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSource]);
+
+  // 处于"推荐模板"源时：目录加载完成 / 切换所选模板 key → 刷新内容
+  // （仅在推荐模板源下生效，避免覆盖其它配置源已编辑的内容）
+  useEffect(() => {
+    if (mode !== "create" || initialSource !== "recommended") return;
+    setEditingContent(computeContent("recommended", selectedTemplateKey));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTemplateKey, templatesLoaded]);
 
   // 解析当前配置值
   const editingValues = useMemo(() => {
@@ -396,6 +412,12 @@ export function ProfileEditor(props: ProfileEditorProps) {
   const isCreateMode = mode === "create";
   const canSave = isCreateMode ? !!profileName.trim() && !jsonError : !jsonError;
 
+  // 推荐模板可选列表：自定义模板（若有，置顶）+ 远程目录里的所有 key
+  const templateEntries: { key: string; label: string }[] = [
+    ...(recommendedTemplate ? [{ key: CUSTOM_TEMPLATE_KEY, label: "我的自定义模板" }] : []),
+    ...Object.keys(templates).map(k => ({ key: k, label: k })),
+  ];
+
   return (
     <div className="fixed inset-0 top-8 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl mx-4 max-h-[85vh] flex flex-col">
@@ -504,39 +526,51 @@ export function ProfileEditor(props: ProfileEditorProps) {
                       </div>
                     </label>
                   </div>
-                  {/* 推荐模板操作区 */}
+                  {/* 推荐模板：选择 key（选中后用对应 value 填入右侧 JSON）+ 自定义模板操作 */}
                   {initialSource === "recommended" && (
                     <div className="mt-2 p-2.5 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800 rounded-lg space-y-2">
-                      <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                        <span>当前模板:</span>
-                        {(props as ProfileEditorCreateProps).recommendedTemplate ? (
-                          <span className="text-yellow-600 dark:text-yellow-400 font-medium">(自定义)</span>
-                        ) : (
-                          <span className="text-blue-600 dark:text-blue-400 font-medium">(默认)</span>
-                        )}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                          选择模板
+                        </label>
+                        <select
+                          value={selectedTemplateKey}
+                          onChange={(e) => setSelectedTemplateKey(e.target.value)}
+                          className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        >
+                          {templateEntries.length === 0 && <option value="">加载中...</option>}
+                          {templateEntries.map((entry) => (
+                            <option key={entry.key} value={entry.key}>
+                              {entry.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <button
                           onClick={() => {
                             if (!jsonError) {
-                              (props as ProfileEditorCreateProps).onSaveRecommendedTemplate?.(editingContent);
+                              createProps?.onSaveRecommendedTemplate?.(editingContent);
                             }
                           }}
                           disabled={!!jsonError}
                           className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-800/30 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="将当前 JSON 编辑区内容保存为自定义推荐模板"
+                          title="将当前 JSON 编辑区内容保存为自定义模板（会出现在上方列表）"
                         >
                           <Save size={12} />
                           <span>保存为自定义模板</span>
                         </button>
                         <button
                           onClick={() => {
-                            (props as ProfileEditorCreateProps).onResetRecommendedTemplate?.();
-                            setEditingContent(getContentForSource("recommended", (props as ProfileEditorCreateProps).currentSettings, quickConfigs, undefined));
+                            createProps?.onResetRecommendedTemplate?.();
+                            const keys = Object.keys(templates);
+                            const fallbackKey = keys.includes("claude") ? "claude" : keys[0] ?? "";
+                            setSelectedTemplateKey(fallbackKey);
+                            setEditingContent(getRecommendedContent(fallbackKey));
                           }}
-                          disabled={!(props as ProfileEditorCreateProps).recommendedTemplate}
+                          disabled={!recommendedTemplate}
                           className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="恢复为内置默认推荐模板"
+                          title="清除已保存的自定义模板"
                         >
                           <RotateCcw size={12} />
                           <span>恢复默认</span>

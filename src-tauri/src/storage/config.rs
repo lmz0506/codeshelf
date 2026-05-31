@@ -127,6 +127,11 @@ impl StorageConfig {
         self.data_dir.join("recommended_template.json")
     }
 
+    /// 远程 Claude 配置模板目录的本地缓存（"本地历史"）
+    pub fn claude_config_templates_file(&self) -> PathBuf {
+        self.data_dir.join("claude_config_templates.json")
+    }
+
     pub fn ai_providers_file(&self) -> PathBuf {
         self.data_dir.join("ai_providers.json")
     }

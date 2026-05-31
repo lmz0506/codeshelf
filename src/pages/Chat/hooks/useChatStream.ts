@@ -8,13 +8,25 @@ export interface ToolCallAccumulated {
   arguments: string;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface StreamCallbacks {
   onDelta: (delta: string, thinkingSoFar: string) => void;
   onThinking: (delta: string) => void;
   /** 每次收到一个 tool_call_delta 就回调，附带当前累积的全部 tool_calls 快照 */
   onToolCallDelta?: (calls: ToolCallAccumulated[]) => void;
   /** 流结束；若因 tool_calls 结束则 finishReason="tool_calls" 且 toolCalls 非空 */
-  onDone: (finalContent: string, finalThinking: string, toolCalls: ToolCallAccumulated[], finishReason?: string) => void;
+  onDone: (
+    finalContent: string,
+    finalThinking: string,
+    toolCalls: ToolCallAccumulated[],
+    finishReason?: string,
+    usage?: TokenUsage,
+  ) => void;
   onError: (message: string) => void;
 }
 
@@ -33,6 +45,7 @@ interface StreamEvent {
   thinkingDelta?: string;
   toolCallDelta?: ToolCallDelta;
   finishReason?: string;
+  usage?: TokenUsage;
 }
 
 export function useChatStream() {
@@ -86,11 +99,12 @@ export function useChatStream() {
         const finalContent = streamBufferRef.current;
         const finalThinking = thinkingBufferRef.current;
         const finalCalls = toolCallsRef.current.filter((c) => c.id || c.name);
+        const usage = payload.usage;
         setStreaming(false);
         streamingRef.current = false;
         setRequestId(null);
         requestIdRef.current = null;
-        cbs?.onDone(finalContent, finalThinking, finalCalls, payload.finishReason);
+        cbs?.onDone(finalContent, finalThinking, finalCalls, payload.finishReason, usage);
       }
     }).then((fn) => {
       if (cancelled) fn();

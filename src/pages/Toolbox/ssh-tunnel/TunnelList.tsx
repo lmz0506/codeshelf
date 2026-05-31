@@ -8,6 +8,7 @@ import {
   Network,
   Play,
   PlugZap,
+  RefreshCw,
   Settings2,
   Square,
   Trash2,
@@ -53,7 +54,10 @@ export function TunnelList({ tunnels, copiedId, callbacks }: TunnelListProps) {
   }
   return (
     <div className="space-y-4">
-      {tunnels.map((t) => (
+      {tunnels.map((t) => {
+        const isActive = t.status === "running" || t.status === "reconnecting";
+        const reconnecting = t.status === "reconnecting";
+        return (
         <div key={t.id} className="re-card p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4 min-w-0">
@@ -61,7 +65,11 @@ export function TunnelList({ tunnels, copiedId, callbacks }: TunnelListProps) {
                 <Network size={18} className="text-emerald-500" />
                 <div
                   className={`w-2.5 h-2.5 rounded-full ${
-                    t.status === "running" ? "bg-green-500 animate-pulse" : "bg-gray-300"
+                    t.status === "running"
+                      ? "bg-green-500 animate-pulse"
+                      : reconnecting
+                        ? "bg-amber-500 animate-pulse"
+                        : "bg-gray-300"
                   }`}
                 />
               </div>
@@ -75,7 +83,11 @@ export function TunnelList({ tunnels, copiedId, callbacks }: TunnelListProps) {
                 <div className="flex items-center gap-2 mt-1">
                   <span
                     className={`text-sm font-mono ${
-                      t.status === "running" ? "text-emerald-500" : "text-gray-400"
+                      t.status === "running"
+                        ? "text-emerald-500"
+                        : reconnecting
+                          ? "text-amber-500"
+                          : "text-gray-400"
                     }`}
                   >
                     127.0.0.1:{t.localPort}
@@ -103,6 +115,21 @@ export function TunnelList({ tunnels, copiedId, callbacks }: TunnelListProps) {
                     {t.remoteHost}:{t.remotePort}
                   </span>
                   {authBadge(t)}
+                  {reconnecting && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                      <RefreshCw size={11} className="animate-spin" />
+                      重连中…
+                    </span>
+                  )}
+                  {t.autoReconnect && (
+                    <span
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+                      title="断线后自动重连"
+                    >
+                      <RefreshCw size={11} />
+                      自动重连{t.reconnects > 0 ? ` ·${t.reconnects}` : ""}
+                    </span>
+                  )}
                 </div>
 
                 {t.lastError && (
@@ -128,8 +155,12 @@ export function TunnelList({ tunnels, copiedId, callbacks }: TunnelListProps) {
                 </div>
               )}
 
+              {reconnecting && (
+                <div className="text-sm text-amber-500">重连中…</div>
+              )}
+
               <div className="flex items-center gap-1">
-                {t.status === "running" ? (
+                {isActive ? (
                   <>
                     <button
                       onClick={() => callbacks.onTest(t)}
@@ -175,7 +206,8 @@ export function TunnelList({ tunnels, copiedId, callbacks }: TunnelListProps) {
             </div>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

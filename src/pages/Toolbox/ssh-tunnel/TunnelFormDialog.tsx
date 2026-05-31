@@ -17,6 +17,7 @@ interface TunnelFormDialogProps {
   formPassphrase: string;
   formPassword: string;
   formHostAlias: string;
+  formAutoReconnect: boolean;
   sshConfigHosts: string[];
   onFormNameChange: (v: string) => void;
   onFormLocalPortChange: (v: string) => void;
@@ -30,6 +31,7 @@ interface TunnelFormDialogProps {
   onFormPassphraseChange: (v: string) => void;
   onFormPasswordChange: (v: string) => void;
   onFormHostAliasChange: (v: string) => void;
+  onFormAutoReconnectChange: (v: boolean) => void;
   onSelectKey: () => void;
   onCancel: () => void;
   onSubmit: () => void;
@@ -60,6 +62,7 @@ export function TunnelFormDialog(props: TunnelFormDialogProps) {
     formPassphrase,
     formPassword,
     formHostAlias,
+    formAutoReconnect,
     sshConfigHosts,
     onFormNameChange,
     onFormLocalPortChange,
@@ -73,6 +76,7 @@ export function TunnelFormDialog(props: TunnelFormDialogProps) {
     onFormPassphraseChange,
     onFormPasswordChange,
     onFormHostAliasChange,
+    onFormAutoReconnectChange,
     onSelectKey,
     onCancel,
     onSubmit,
@@ -261,6 +265,21 @@ export function TunnelFormDialog(props: TunnelFormDialogProps) {
             <p className="text-xs text-amber-500 dark:text-amber-400 mt-3">
               ⚠ 私钥 passphrase、密码本地明文存储；首版未做 known_hosts 校验
             </p>
+          </div>
+
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={formAutoReconnect}
+                onChange={(e) => onFormAutoReconnectChange(e.target.checked)}
+                className="w-4 h-4 accent-emerald-500"
+              />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                断线自动重连
+              </span>
+              <span className="text-xs text-gray-400">网络切换 / 休眠恢复后自动重建隧道</span>
+            </label>
           </div>
         </div>
 

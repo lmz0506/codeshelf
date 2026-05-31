@@ -48,6 +48,10 @@ tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 futures = "0.3"
 reqwest = { version = "0.12", features = ["stream", "json", "cookies"] }
 url = "2.5"
+# 网页抓取的「规则提取」：regex 已在依赖树（1.12）；kuchikiki 提供 CSS 选择器，
+# 它本就被 wry/tauri-utils 引入并编译，这里精确复用同一版本，避免再编一份 html5ever。
+regex = "1"
+kuchikiki = "=0.8.8-speedreader"
 urlencoding = "2.1"
 axum = { version = "0.7", features = ["ws", "multipart"] }
 tower = "0.4"

@@ -559,6 +559,64 @@ export async function resetRecommendedTemplate(): Promise<void> {
   return invoke("reset_recommended_template");
 }
 
+// Claude 配置模板目录（远程拉取 + 本地缓存回退，由后端完成）
+// 内置兜底：即使后端 invoke 抛错，前端也永远拿到一份非空目录
+const BUILTIN_CLAUDE_TEMPLATES: Record<string, unknown> = {
+  codex: {
+    alwaysThinkingEnabled: true,
+    enabledPlugins: {
+      "claude-mem@thedotmack": true,
+      "planning-with-files@planning-with-files": true,
+    },
+    env: {
+      ANTHROPIC_AUTH_TOKEN: "sk-",
+      ANTHROPIC_BASE_URL: "https://a-ocnfniawgw.cn-shanghai.fcapp.run/v1",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "gpt-5.5",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "gpt-5.5",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "gpt-5.5",
+      ANTHROPIC_MODEL: "gpt-5.5",
+      ANTHROPIC_REASONING_MODEL: "gpt-5.5",
+      CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    },
+    model: "opus[1m]",
+  },
+  claude: {
+    effortLevel: "medium",
+    env: {
+      ANTHROPIC_AUTH_TOKEN: "sk-",
+      ANTHROPIC_BASE_URL: "https://a-ocnfniawgw.cn-shanghai.fcapp.run",
+      CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      DISABLE_AUTOUPDATER: "1",
+      DISABLE_ERROR_REPORTING: "1",
+      DISABLE_TELEMETRY: "1",
+    },
+    model: "opus[1m]",
+    permissions: { defaultMode: "bypassPermissions" },
+  },
+};
+
+/**
+ * 获取 Claude 配置模板目录（形如 { codex: {...}, claude: {...}, ... }）。
+ * 后端已负责"远程 → 本地缓存 → 内置默认"的回退，永不报错；
+ * 这里再兜一层：万一 invoke 本身异常，也返回前端内置默认，保证 UI 永远有内容。
+ */
+export async function getClaudeConfigTemplates(): Promise<Record<string, unknown>> {
+  try {
+    const raw = await invoke<string>("get_claude_config_templates");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch (e) {
+    console.error("读取 Claude 配置模板目录失败:", e);
+  }
+  return { ...BUILTIN_CLAUDE_TEMPLATES };
+}
+
 // ============== Netcat 协议测试服务 ==============
 
 import type {

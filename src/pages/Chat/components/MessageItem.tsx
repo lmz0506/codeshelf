@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/project/MarkdownRenderer";
 import type { ChatMessage } from "@/types";
 import { MessageActions } from "./MessageActions";
@@ -147,8 +148,32 @@ export function MessageItem({
 
   // 工具结果消息单独样式
   if (message.role === "tool") {
+    // METHOD/URL：优先消息自带字段，缺省时回退 endpointLookup(toolName)
+    const looked =
+      !message.toolMethod && !message.toolUrl && message.toolName
+        ? endpointLookup?.(message.toolName) ?? null
+        : null;
+    const method = message.toolMethod ?? looked?.method;
+    const url = message.toolUrl ?? looked?.url;
+
+    // "调用中…"占位（并行工具调用进行中）
+    if (message.toolPending) {
+      return (
+        <div className="group flex items-start gap-2 justify-start">
+          <div className="max-w-[75%] min-w-0 rounded-2xl px-3 py-2 border text-xs bg-slate-50 border-slate-200 text-slate-600">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Loader2 size={12} className="animate-spin shrink-0 text-slate-400" />
+              {method && <span className="font-semibold uppercase shrink-0">{method}</span>}
+              {url && <span className="font-mono truncate min-w-0">{url}</span>}
+              <span className="animate-pulse">调用中…</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const tone = statusTone(message.toolStatus);
-    const hasMeta = Boolean(message.toolMethod || message.toolUrl || message.toolStatus);
+    const hasMeta = Boolean(method || message.toolStatus);
     return (
       <div className="group flex items-start gap-2 justify-start">
         <div className={`max-w-[75%] min-w-0 rounded-2xl px-3 py-2 border text-xs ${tone.bg} ${tone.border} ${tone.text}`}>
@@ -157,11 +182,11 @@ export function MessageItem({
               <span className="font-semibold shrink-0">↳</span>
               {hasMeta ? (
                 <>
-                  {message.toolMethod && (
-                    <span className="font-semibold uppercase shrink-0">{message.toolMethod}</span>
+                  {method && (
+                    <span className="font-semibold uppercase shrink-0">{method}</span>
                   )}
-                  {message.toolUrl && (
-                    <span className="font-mono truncate min-w-0">{message.toolUrl}</span>
+                  {url && (
+                    <span className="font-mono truncate min-w-0">{url}</span>
                   )}
                   {typeof message.toolStatus === "number" && (
                     <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] shrink-0 ${tone.badge}`}>
@@ -189,6 +214,33 @@ export function MessageItem({
               {prettyBody(message.content)}
             </pre>
           </details>
+        </div>
+        <div className="opacity-60 group-hover:opacity-100 transition-opacity mt-2">
+          <MessageActions role="assistant" canRegenerate={false} streaming={streaming} onCopy={onCopy} onDelete={onDelete} />
+        </div>
+      </div>
+    );
+  }
+
+  // 内联可重试错误气泡（接口对话：流式/接口执行失败）
+  if (message.error) {
+    return (
+      <div className="group flex items-start gap-2 justify-start">
+        <div className="max-w-[75%] min-w-0 rounded-2xl px-4 py-3 border bg-rose-50 border-rose-200 text-rose-800">
+          <div className="text-[11px] mb-1 flex items-center gap-2 text-rose-500">
+            <span className="font-semibold">⚠ 出错了</span>
+            <span title={formatAbsoluteTime(message.createdAt)}>{formatRelativeTime(message.createdAt)}</span>
+          </div>
+          <div className="text-sm whitespace-pre-wrap break-words">{message.content}</div>
+          {onRegenerate && (
+            <button
+              className="mt-2 px-2.5 py-1 text-xs rounded-lg bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-60"
+              onClick={onRegenerate}
+              disabled={streaming}
+            >
+              重试
+            </button>
+          )}
         </div>
         <div className="opacity-60 group-hover:opacity-100 transition-opacity mt-2">
           <MessageActions role="assistant" canRegenerate={false} streaming={streaming} onCopy={onCopy} onDelete={onDelete} />
@@ -225,7 +277,11 @@ export function MessageItem({
           <span>·</span>
           <span>{formatRelativeTime(message.createdAt)}</span>
           <span>·</span>
-          <span title="估算 tokens">~{messageTokens(message)} tok</span>
+          {typeof message.tokens === "number" ? (
+            <span title="本轮 token 用量">{message.tokens} tok</span>
+          ) : (
+            <span title="估算 tokens">~{messageTokens(message)} tok</span>
+          )}
           {message.edited && <span className="italic">(已编辑)</span>}
           {streamingThisMessage && <span className="italic animate-pulse">正在生成…</span>}
         </div>

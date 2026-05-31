@@ -3,12 +3,17 @@ import { useChatStream } from "@/pages/Chat/hooks/useChatStream";
 import type { ChatStreamMessage } from "@/services/chat";
 import { saveApiChatSession } from "@/services/api_chat";
 import {
+  buildDirectTools,
   buildMcpFunctionTools,
   dispatchViaMcp,
   extractApiToolMetadata,
   runToolLoop,
+  type FunctionTool,
+  type ToolCallSummary,
+  type ToolDispatchResult,
 } from "@/services/mcp/toolLoop";
 import { mcpClient } from "@/services/mcp/client";
+import { showToast } from "@/components/ui";
 import type { ApiChatSession, ChatMessage } from "@/types";
 
 interface LlmContext {
@@ -89,10 +94,24 @@ export function useApiChatOrchestration() {
   }
 
   async function runLoop(session: ApiChatSession, llm: LlmContext): Promise<void> {
-    if (session.selectedEndpointIds.length > 0 && !(await mcpClient.isAvailable())) {
-      onErrorRef.current?.("MCP Gateway 未启动，请先在设置中开启后再调用接口工具");
-      return;
+    const hasEndpoints = session.selectedEndpointIds.length > 0;
+    const gatewayUp = hasEndpoints ? await mcpClient.isAvailable() : false;
+    const useDirect = hasEndpoints && !gatewayUp;
+
+    // 网关不可用时构建直连工具 + 派发器（兜底，不再硬性失败整轮）
+    let direct: {
+      tools: FunctionTool[];
+      dispatch: (call: ToolCallSummary) => Promise<ToolDispatchResult>;
+    } | null = null;
+    if (useDirect) {
+      try {
+        direct = await buildDirectTools(session.selectedEndpointIds);
+        showToast("info", "MCP Gateway 未启动，已切换为直连后端执行接口");
+      } catch (err) {
+        onErrorRef.current?.(err instanceof Error ? err.message : String(err));
+      }
     }
+
     try {
       await runToolLoop({
         startStream: start,
@@ -111,17 +130,18 @@ export function useApiChatOrchestration() {
           presencePenalty: session.presencePenalty,
         },
         initialMessages: toStreamMessages(session),
-        toolsBuilder: () =>
-          session.selectedEndpointIds.length > 0
-            ? buildMcpFunctionTools({ endpointIds: session.selectedEndpointIds })
-            : Promise.resolve([]),
-        dispatch: dispatchViaMcp,
+        toolsBuilder: () => {
+          if (!hasEndpoints) return Promise.resolve([]);
+          if (useDirect) return Promise.resolve(direct?.tools ?? []);
+          return buildMcpFunctionTools({ endpointIds: session.selectedEndpointIds });
+        },
+        dispatch: useDirect && direct ? direct.dispatch : dispatchViaMcp,
         onAssistantDelta: (full, thinking) => {
           const cur = currentSessionRef.current;
           if (!cur) return;
           const messages = [...cur.messages];
           const last = messages[messages.length - 1];
-          if (last?.role === "assistant" && !last.toolCalls) {
+          if (last?.role === "assistant" && !last.toolCalls && !last.error) {
             messages[messages.length - 1] = {
               ...last,
               content: full,
@@ -134,11 +154,12 @@ export function useApiChatOrchestration() {
           currentSessionRef.current = next;
           onSessionRef.current?.(next);
         },
-        onAssistantFinal: async ({ content, thinking, toolCalls }) => {
+        onAssistantFinal: async ({ content, thinking, toolCalls, usage }) => {
           const cur = currentSessionRef.current;
           if (!cur) return;
           const assistantMsg = makeMessage("assistant", content, {
             thinkingContent: thinking || undefined,
+            tokens: usage?.completionTokens,
             toolCalls:
               toolCalls.length > 0
                 ? toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments }))
@@ -147,7 +168,7 @@ export function useApiChatOrchestration() {
           const lastIdx = cur.messages.length - 1;
           const last = cur.messages[lastIdx];
           let nextMessages: ChatMessage[];
-          if (last?.role === "assistant" && !last.toolCalls) {
+          if (last?.role === "assistant" && !last.toolCalls && !last.error) {
             nextMessages = [...cur.messages];
             nextMessages[lastIdx] = { ...last, ...assistantMsg, id: last.id, createdAt: last.createdAt };
           } else {
@@ -160,12 +181,25 @@ export function useApiChatOrchestration() {
             /* ignore */
           }
         },
+        onToolStart: ({ call }) => {
+          const cur = currentSessionRef.current;
+          if (!cur) return;
+          const pending = makeMessage("tool", "调用中…", {
+            toolPending: true,
+            toolCallId: call.id,
+            toolName: call.name,
+          });
+          const next = { ...cur, messages: [...cur.messages, pending] };
+          currentSessionRef.current = next;
+          onSessionRef.current?.(next);
+        },
         onToolExecuted: async ({ call, result }) => {
           const cur = currentSessionRef.current;
           if (!cur) return;
           const extra: Partial<ChatMessage> = {
             toolCallId: call.id,
             toolName: call.name,
+            toolPending: false,
           };
           const meta = extractApiToolMetadata(result.structuredContent);
           if (meta) {
@@ -179,15 +213,39 @@ export function useApiChatOrchestration() {
           const content = meta?.body
             ? `HTTP ${meta.status ?? "-"}\n\n${meta.body}`
             : result.content;
-          const toolMessage = makeMessage("tool", content, extra);
-          const updated: ApiChatSession = { ...cur, messages: [...cur.messages, toolMessage] };
+          // 更新对应的"调用中"占位消息；找不到则追加（容错）
+          const idx = cur.messages.findIndex(
+            (m) => m.role === "tool" && m.toolCallId === call.id && m.toolPending,
+          );
+          let nextMessages: ChatMessage[];
+          if (idx >= 0) {
+            nextMessages = [...cur.messages];
+            nextMessages[idx] = { ...nextMessages[idx], ...extra, content };
+          } else {
+            nextMessages = [...cur.messages, makeMessage("tool", content, extra)];
+          }
+          const updated: ApiChatSession = { ...cur, messages: nextMessages };
           try {
             await persist(updated);
           } catch {
             /* ignore */
           }
         },
-        onError: (msg) => onErrorRef.current?.(msg),
+        onRetry: ({ attempt }) =>
+          showToast("info", `请求失败，正在重试（第 ${attempt} 次）`),
+        onError: (msg) => {
+          onErrorRef.current?.(msg);
+          // 追加一条内联可重试错误气泡（assistant + error），供 UI 一键重试
+          const cur = currentSessionRef.current;
+          if (!cur) return;
+          const last = cur.messages[cur.messages.length - 1];
+          if (last?.role === "assistant" && last.error) return;
+          const errMsg = makeMessage("assistant", msg, { error: true });
+          const next = { ...cur, messages: [...cur.messages, errMsg] };
+          currentSessionRef.current = next;
+          onSessionRef.current?.(next);
+          persist(next).catch(() => {});
+        },
       });
     } catch (err) {
       onErrorRef.current?.(err instanceof Error ? err.message : String(err));
@@ -231,9 +289,33 @@ export function useApiChatOrchestration() {
     await send(args, target.content);
   }
 
+  /** 错误气泡"重试"：丢弃最后一条 user 之后的所有消息（错误气泡 / 半截 assistant / tool），从该 user 重跑（不重复追加 user） */
+  async function retryFromError(args: RunArgs): Promise<void> {
+    const { session, llm, onSession, onError } = args;
+    currentSessionRef.current = session;
+    onSessionRef.current = onSession;
+    onErrorRef.current = onError;
+    let lastUserIdx = -1;
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      if (session.messages[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx < 0) return;
+    const trimmed = session.messages.slice(0, lastUserIdx + 1);
+    setLoading(true);
+    try {
+      const saved = await persist({ ...session, messages: trimmed });
+      await runLoop(saved, llm);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function stopAll() {
     await stop();
   }
 
-  return { streaming, thinkingBuffer, loading, send, regenerate, retryUser, stop: stopAll };
+  return { streaming, thinkingBuffer, loading, send, regenerate, retryUser, retryFromError, stop: stopAll };
 }
