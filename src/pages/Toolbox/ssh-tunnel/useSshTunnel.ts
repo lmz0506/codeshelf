@@ -29,6 +29,7 @@ export function useSshTunnel() {
   const [sshConfigHosts, setSshConfigHosts] = useState<string[]>([]);
   const [localIps, setLocalIps] = useState<string[]>([]);
   const [testState, setTestState] = useState<TestState | null>(null);
+  const [showExportDialog, setShowExportDialog] = useState(false);
 
   // 表单状态
   const [formName, setFormName] = useState("");
@@ -314,27 +315,45 @@ export function useSshTunnel() {
     return auth;
   }
 
-  async function handleExport() {
+  function buildExportItem(t: SshTunnel) {
+    return {
+      name: t.name,
+      localPort: t.localPort,
+      remoteHost: t.remoteHost,
+      remotePort: t.remotePort,
+      sshHost: t.sshHost,
+      sshPort: t.sshPort,
+      sshUser: t.sshUser,
+      auth: stripForExport(t.auth),
+      autoReconnect: t.autoReconnect,
+      group: t.group || DEFAULT_SSH_GROUP,
+    };
+  }
+
+  function openExportDialog() {
     if (tunnels.length === 0) {
       alert("暂无可导出的隧道");
+      return;
+    }
+    setShowExportDialog(true);
+  }
+
+  function closeExportDialog() {
+    setShowExportDialog(false);
+  }
+
+  // 选择性导出：只导出勾选的隧道
+  async function confirmExport(selectedIds: string[]) {
+    const list = tunnels.filter((t) => selectedIds.includes(t.id));
+    if (list.length === 0) {
+      setShowExportDialog(false);
       return;
     }
     try {
       const payload = {
         type: "codeshelf-ssh-tunnels",
         version: 1,
-        tunnels: tunnels.map((t) => ({
-          name: t.name,
-          localPort: t.localPort,
-          remoteHost: t.remoteHost,
-          remotePort: t.remotePort,
-          sshHost: t.sshHost,
-          sshPort: t.sshPort,
-          sshUser: t.sshUser,
-          auth: stripForExport(t.auth),
-          autoReconnect: t.autoReconnect,
-          group: t.group || DEFAULT_SSH_GROUP,
-        })),
+        tunnels: list.map(buildExportItem),
       };
       const filePath = await save({
         title: "导出 SSH 隧道配置",
@@ -343,6 +362,7 @@ export function useSshTunnel() {
       });
       if (filePath) {
         await writeTextFile(filePath, JSON.stringify(payload, null, 2));
+        setShowExportDialog(false);
       }
     } catch (err) {
       console.error("导出失败:", err);
@@ -444,7 +464,7 @@ export function useSshTunnel() {
     dismissTest,
     loadAll,
     openCreateDialog,
-    handleExport,
+    openExportDialog,
     handleImport,
     listCallbacks: {
       onStart: handleStart,
@@ -498,6 +518,13 @@ export function useSshTunnel() {
           confirm: deleteConfirm,
           onCancel: () => setDeleteConfirm(null),
           onConfirm: confirmRemove,
+        }
+      : null,
+    exportDialogProps: showExportDialog
+      ? {
+          tunnels,
+          onCancel: closeExportDialog,
+          onConfirm: confirmExport,
         }
       : null,
   };

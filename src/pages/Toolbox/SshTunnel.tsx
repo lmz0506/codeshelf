@@ -3,6 +3,7 @@ import { Button } from "@/components/ui";
 import { LoadingSpinner } from "@/components/common";
 import { ToolPanelHeader } from "./index";
 import { DeleteConfirmDialog } from "./ssh-tunnel/DeleteConfirmDialog";
+import { ExportDialog } from "./ssh-tunnel/ExportDialog";
 import { TestResultDialog } from "./ssh-tunnel/TestResultDialog";
 import { TunnelFormDialog } from "./ssh-tunnel/TunnelFormDialog";
 import { TunnelList } from "./ssh-tunnel/TunnelList";
@@ -27,7 +28,7 @@ export function SshTunnel({ onBack }: SshTunnelProps) {
               <FileUp size={16} className="mr-2" />
               导入
             </Button>
-            <Button onClick={tunnel.handleExport} variant="secondary" size="sm">
+            <Button onClick={tunnel.openExportDialog} variant="secondary" size="sm">
               <FileDown size={16} className="mr-2" />
               导出
             </Button>
@@ -72,6 +73,7 @@ export function SshTunnel({ onBack }: SshTunnelProps) {
 
       {tunnel.showAddDialog && <TunnelFormDialog {...tunnel.formProps} />}
       {tunnel.deleteDialogProps && <DeleteConfirmDialog {...tunnel.deleteDialogProps} />}
+      {tunnel.exportDialogProps && <ExportDialog {...tunnel.exportDialogProps} />}
       {tunnel.testState && (
         <TestResultDialog state={tunnel.testState} onDismiss={tunnel.dismissTest} />
       )}
