@@ -18,7 +18,10 @@ interface TunnelFormDialogProps {
   formPassword: string;
   formHostAlias: string;
   formAutoReconnect: boolean;
+  formGroup: string;
   sshConfigHosts: string[];
+  localIps: string[];
+  groups: string[];
   onFormNameChange: (v: string) => void;
   onFormLocalPortChange: (v: string) => void;
   onFormRemoteHostChange: (v: string) => void;
@@ -32,6 +35,7 @@ interface TunnelFormDialogProps {
   onFormPasswordChange: (v: string) => void;
   onFormHostAliasChange: (v: string) => void;
   onFormAutoReconnectChange: (v: boolean) => void;
+  onFormGroupChange: (v: string) => void;
   onSelectKey: () => void;
   onCancel: () => void;
   onSubmit: () => void;
@@ -63,7 +67,10 @@ export function TunnelFormDialog(props: TunnelFormDialogProps) {
     formPassword,
     formHostAlias,
     formAutoReconnect,
+    formGroup,
     sshConfigHosts,
+    localIps,
+    groups,
     onFormNameChange,
     onFormLocalPortChange,
     onFormRemoteHostChange,
@@ -77,6 +84,7 @@ export function TunnelFormDialog(props: TunnelFormDialogProps) {
     onFormPasswordChange,
     onFormHostAliasChange,
     onFormAutoReconnectChange,
+    onFormGroupChange,
     onSelectKey,
     onCancel,
     onSubmit,
@@ -103,6 +111,44 @@ export function TunnelFormDialog(props: TunnelFormDialogProps) {
               onChange={(e) => onFormNameChange(e.target.value)}
               placeholder="如: 远程 Redis"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-500 mb-2">
+              分组 <span className="text-gray-400 font-normal">(可输入新建，或点选已有)</span>
+            </label>
+            <Input
+              value={formGroup}
+              onChange={(e) => onFormGroupChange(e.target.value)}
+              placeholder="默认分组"
+              list="ssh-tunnel-groups-datalist"
+            />
+            <datalist id="ssh-tunnel-groups-datalist">
+              {groups.map((g) => (
+                <option key={g} value={g} />
+              ))}
+            </datalist>
+            {groups.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {groups.map((g) => {
+                  const active = formGroup.trim() === g;
+                  return (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => onFormGroupChange(g)}
+                      className={`px-2.5 py-0.5 rounded-full text-xs border transition-colors ${
+                        active
+                          ? "bg-emerald-500 border-emerald-500 text-white"
+                          : "bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-emerald-400 dark:hover:border-emerald-500"
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -134,7 +180,14 @@ export function TunnelFormDialog(props: TunnelFormDialogProps) {
               value={formRemoteHost}
               onChange={(e) => onFormRemoteHostChange(e.target.value)}
               placeholder="默认 127.0.0.1"
+              list="ssh-tunnel-remote-host-datalist"
             />
+            <datalist id="ssh-tunnel-remote-host-datalist">
+              {["127.0.0.1", "localhost", ...localIps].map((ip) => (
+                <option key={ip} value={ip} />
+              ))}
+            </datalist>
+            <p className="text-xs text-gray-400 mt-1">可选下拉，也可手动输入；本机 IP 已自动列出</p>
           </div>
 
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4">

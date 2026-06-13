@@ -7,7 +7,8 @@ use tokio::sync::Mutex;
 use tokio::time::Duration;
 
 use super::super::{
-    current_time, generate_id, SshAuthMethod, SshTunnel, SshTunnelInput, SshTunnelStats,
+    current_time, default_group, generate_id, SshAuthMethod, SshTunnel, SshTunnelInput,
+    SshTunnelStats,
 };
 use super::auth::{connect_and_authenticate, list_host_aliases_from_config};
 use super::runtime::{run_reconnect_supervisor, run_tunnel_server, update_tunnel_stats};
@@ -68,6 +69,10 @@ pub async fn add_ssh_tunnel(input: SshTunnelInput) -> AppResult<SshTunnel> {
         last_error: None,
         auto_reconnect: input.auto_reconnect.unwrap_or(true),
         reconnects: 0,
+        group: input
+            .group
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(default_group),
         created_at: current_time(),
     };
 
@@ -117,6 +122,10 @@ pub async fn update_ssh_tunnel(tunnel_id: String, input: SshTunnelInput) -> AppR
             t.ssh_user = input.ssh_user.unwrap_or_default();
             t.auth = input.auth;
             t.auto_reconnect = input.auto_reconnect.unwrap_or(true);
+            t.group = input
+                .group
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(default_group);
             t.last_error = None;
         }
     }
@@ -347,4 +356,63 @@ pub async fn get_ssh_tunnel_stats(tunnel_id: String) -> AppResult<SshTunnelStats
 #[specta::specta]
 pub async fn list_ssh_config_hosts() -> AppResult<Vec<String>> {
     Ok(list_host_aliases_from_config())
+}
+
+/// 列出本机所有有效 IP（去重保序），供「远程主机」下拉选择。
+/// 复用 pairdrop 已有的跨平台网卡枚举实现，避免新增依赖。
+#[tauri::command]
+#[specta::specta]
+pub async fn list_local_ips() -> AppResult<Vec<String>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut ips = Vec::new();
+    for (_iface, ip) in crate::commands::toolbox::pairdrop::state::list_local_ipv4() {
+        if seen.insert(ip.clone()) {
+            ips.push(ip);
+        }
+    }
+    Ok(ips)
+}
+
+/// 仅迁移分组：只改 group 字段并持久化，不停止运行中的隧道
+/// （与 update_ssh_tunnel 不同，后者会先 stop 运行中的隧道）。
+#[tauri::command]
+#[specta::specta]
+pub async fn set_ssh_tunnel_group(tunnel_id: String, group: String) -> AppResult<SshTunnel> {
+    ensure_tunnels_loaded().await;
+
+    let old = {
+        let tunnels = SSH_TUNNELS.lock().await;
+        tunnels.get(&tunnel_id).cloned()
+    };
+    let old =
+        old.ok_or_else(|| crate::error::AppError::from(format!("隧道不存在: {}", tunnel_id)))?;
+
+    let group = if group.trim().is_empty() {
+        default_group()
+    } else {
+        group.trim().to_string()
+    };
+
+    {
+        let mut tunnels = SSH_TUNNELS.lock().await;
+        if let Some(t) = tunnels.get_mut(&tunnel_id) {
+            t.group = group;
+        }
+    }
+
+    if let Err(e) = save_tunnels_to_file().await {
+        log::error!("保存 SSH 隧道失败: {}", e);
+        let mut tunnels = SSH_TUNNELS.lock().await;
+        tunnels.insert(tunnel_id.clone(), old);
+        return Err(crate::error::AppError::from(format!(
+            "保存 SSH 隧道失败: {}",
+            e
+        )));
+    }
+
+    let tunnels = SSH_TUNNELS.lock().await;
+    tunnels
+        .get(&tunnel_id)
+        .cloned()
+        .ok_or_else(|| crate::error::AppError::from("隧道不存在".to_string()))
 }

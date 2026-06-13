@@ -208,6 +208,17 @@ export async function listSshConfigHosts(): Promise<string[]> {
   return invoke("list_ssh_config_hosts");
 }
 
+export async function listLocalIps(): Promise<string[]> {
+  return invoke("list_local_ips");
+}
+
+export async function setSshTunnelGroup(
+  tunnelId: string,
+  group: string
+): Promise<SshTunnel> {
+  return invoke("set_ssh_tunnel_group", { tunnelId, group });
+}
+
 export async function testSshTunnel(tunnelId: string): Promise<TestPortResult> {
   return invoke("test_ssh_tunnel", { tunnelId });
 }

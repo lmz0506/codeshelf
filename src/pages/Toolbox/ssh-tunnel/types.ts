@@ -20,4 +20,6 @@ export interface TunnelListCallbacks {
   onRemove: (tunnel: SshTunnel) => void;
   onCopyLocal: (tunnel: SshTunnel) => void;
   onTest: (tunnel: SshTunnel) => void;
+  onDuplicate: (tunnel: SshTunnel) => void;
+  onMoveToGroup: (tunnel: SshTunnel, group: string) => void;
 }

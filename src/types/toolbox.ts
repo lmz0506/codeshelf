@@ -130,6 +130,9 @@ export interface ForwardStats {
 
 // ============== SSH 隧道 ==============
 
+/** SSH 隧道默认分组名（旧数据兼容） */
+export const DEFAULT_SSH_GROUP = "默认分组";
+
 export type SshAuthMethod =
   | { type: "key"; keyPath: string; passphrase?: string }
   | { type: "password"; password: string }
@@ -154,6 +157,8 @@ export interface SshTunnel {
   autoReconnect: boolean;
   /** 累计自动重连成功次数 */
   reconnects: number;
+  /** 所属分组；旧数据无此字段时为「默认分组」 */
+  group: string;
   createdAt: string;
 }
 
@@ -167,6 +172,8 @@ export interface SshTunnelInput {
   sshUser?: string;
   auth: SshAuthMethod;
   autoReconnect?: boolean;
+  /** 所属分组；为空时落入「默认分组」 */
+  group?: string;
 }
 
 export interface SshTunnelStats {

@@ -123,6 +123,8 @@ pub fn make_builder() -> Builder<tauri::Wry> {
         toolbox::ssh_tunnel::get_ssh_tunnel,
         toolbox::ssh_tunnel::get_ssh_tunnel_stats,
         toolbox::ssh_tunnel::list_ssh_config_hosts,
+        toolbox::ssh_tunnel::list_local_ips,
+        toolbox::ssh_tunnel::set_ssh_tunnel_group,
         toolbox::ssh_tunnel::test_ssh_tunnel,
         toolbox::ssh_tunnel::test_local_port,
         // Toolbox - Server

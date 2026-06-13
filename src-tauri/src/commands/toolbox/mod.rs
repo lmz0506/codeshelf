@@ -238,6 +238,9 @@ pub struct SshTunnel {
     /// 累计自动重连成功次数（运行期统计，加载时重置）
     #[serde(default)]
     pub reconnects: u32,
+    /// 所属分组；旧数据无此字段时落入「默认分组」
+    #[serde(default = "default_group")]
+    pub group: String,
     pub created_at: String,
 }
 
@@ -256,6 +259,9 @@ pub struct SshTunnelInput {
     /// 断线后自动重连；缺省开启
     #[serde(default)]
     pub auto_reconnect: Option<bool>,
+    /// 所属分组；为空时落入「默认分组」
+    #[serde(default)]
+    pub group: Option<String>,
 }
 
 /// SSH 隧道统计
@@ -286,6 +292,11 @@ fn default_ssh_port() -> u16 {
 
 fn default_true() -> bool {
     true
+}
+
+/// SSH 隧道默认分组名（旧数据兼容）
+fn default_group() -> String {
+    "默认分组".to_string()
 }
 
 // ============== 静态服务相关结构 ==============

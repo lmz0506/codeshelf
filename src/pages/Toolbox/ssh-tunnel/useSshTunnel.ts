@@ -1,15 +1,19 @@
-import { useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { useEffect, useMemo, useState } from "react";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import {
   addSshTunnel,
   getSshTunnels,
+  listLocalIps,
   listSshConfigHosts,
   removeSshTunnel,
+  setSshTunnelGroup,
   startSshTunnel,
   stopSshTunnel,
   testSshTunnel,
   updateSshTunnel,
 } from "@/services/toolbox";
+import { DEFAULT_SSH_GROUP } from "@/types/toolbox";
 import type { SshAuthMethod, SshTunnel, SshTunnelInput } from "@/types/toolbox";
 import type { AuthType, DeleteConfirmState, TestState } from "./types";
 
@@ -23,6 +27,7 @@ export function useSshTunnel() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
   const [sshConfigHosts, setSshConfigHosts] = useState<string[]>([]);
+  const [localIps, setLocalIps] = useState<string[]>([]);
   const [testState, setTestState] = useState<TestState | null>(null);
 
   // 表单状态
@@ -39,15 +44,28 @@ export function useSshTunnel() {
   const [formPassword, setFormPassword] = useState("");
   const [formHostAlias, setFormHostAlias] = useState("");
   const [formAutoReconnect, setFormAutoReconnect] = useState(true);
+  const [formGroup, setFormGroup] = useState(DEFAULT_SSH_GROUP);
 
   useEffect(() => {
     loadAll();
     listSshConfigHosts()
       .then(setSshConfigHosts)
       .catch((err) => console.warn("读取 ~/.ssh/config 失败:", err));
+    listLocalIps()
+      .then(setLocalIps)
+      .catch((err) => console.warn("读取本机 IP 失败:", err));
     const interval = setInterval(loadAll, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  // 已有分组（去重，默认分组置顶），供表单下拉与迁移菜单使用
+  const groups = useMemo(() => {
+    const set = new Set<string>([DEFAULT_SSH_GROUP]);
+    for (const t of tunnels) {
+      set.add(t.group || DEFAULT_SSH_GROUP);
+    }
+    return Array.from(set);
+  }, [tunnels]);
 
   async function loadAll() {
     try {
@@ -74,6 +92,7 @@ export function useSshTunnel() {
     setFormPassword("");
     setFormHostAlias("");
     setFormAutoReconnect(true);
+    setFormGroup(DEFAULT_SSH_GROUP);
     setEditing(null);
   }
 
@@ -87,8 +106,8 @@ export function useSshTunnel() {
     resetForm();
   }
 
-  function openEditDialog(t: SshTunnel) {
-    setEditing(t);
+  // 用某条隧道填充表单（编辑与「复制创建」共用）
+  function fillFormFromTunnel(t: SshTunnel) {
     setFormName(t.name);
     setFormLocalPort(String(t.localPort));
     setFormRemoteHost(t.remoteHost);
@@ -97,15 +116,25 @@ export function useSshTunnel() {
     setFormSshPort(String(t.sshPort));
     setFormSshUser(t.sshUser);
     setFormAuthType(t.auth.type);
-    if (t.auth.type === "key") {
-      setFormKeyPath(t.auth.keyPath);
-      setFormPassphrase(t.auth.passphrase || "");
-    } else if (t.auth.type === "password") {
-      setFormPassword(t.auth.password);
-    } else if (t.auth.type === "sshConfig") {
-      setFormHostAlias(t.auth.hostAlias);
-    }
+    setFormKeyPath(t.auth.type === "key" ? t.auth.keyPath : "");
+    setFormPassphrase(t.auth.type === "key" ? t.auth.passphrase || "" : "");
+    setFormPassword(t.auth.type === "password" ? t.auth.password : "");
+    setFormHostAlias(t.auth.type === "sshConfig" ? t.auth.hostAlias : "");
     setFormAutoReconnect(t.autoReconnect ?? true);
+    setFormGroup(t.group || DEFAULT_SSH_GROUP);
+  }
+
+  function openEditDialog(t: SshTunnel) {
+    setEditing(t);
+    fillFormFromTunnel(t);
+    setShowAddDialog(true);
+  }
+
+  // 快捷复制创建：用现有隧道预填，但作为「新建」提交（不设 editing）
+  function openDuplicateDialog(t: SshTunnel) {
+    setEditing(null);
+    fillFormFromTunnel(t);
+    setFormName(`${t.name} 副本`);
     setShowAddDialog(true);
   }
 
@@ -180,6 +209,7 @@ export function useSshTunnel() {
       sshUser: formSshUser.trim() || undefined,
       auth,
       autoReconnect: formAutoReconnect,
+      group: formGroup.trim() || DEFAULT_SSH_GROUP,
     };
 
     try {
@@ -264,6 +294,143 @@ export function useSshTunnel() {
     setTestState(null);
   }
 
+  // 迁移分组：仅改分组、不停止运行中的隧道
+  async function moveToGroup(t: SshTunnel, group: string) {
+    if ((t.group || DEFAULT_SSH_GROUP) === group) return;
+    try {
+      await setSshTunnelGroup(t.id, group);
+      loadAll();
+    } catch (err) {
+      console.error("迁移分组失败:", err);
+      alert(`迁移分组失败: ${err}`);
+    }
+  }
+
+  // 导出：去掉私钥文件路径（本机路径换机无效），密码 / passphrase 保留
+  function stripForExport(auth: SshAuthMethod): SshAuthMethod {
+    if (auth.type === "key") {
+      return { type: "key", keyPath: "", passphrase: auth.passphrase };
+    }
+    return auth;
+  }
+
+  async function handleExport() {
+    if (tunnels.length === 0) {
+      alert("暂无可导出的隧道");
+      return;
+    }
+    try {
+      const payload = {
+        type: "codeshelf-ssh-tunnels",
+        version: 1,
+        tunnels: tunnels.map((t) => ({
+          name: t.name,
+          localPort: t.localPort,
+          remoteHost: t.remoteHost,
+          remotePort: t.remotePort,
+          sshHost: t.sshHost,
+          sshPort: t.sshPort,
+          sshUser: t.sshUser,
+          auth: stripForExport(t.auth),
+          autoReconnect: t.autoReconnect,
+          group: t.group || DEFAULT_SSH_GROUP,
+        })),
+      };
+      const filePath = await save({
+        title: "导出 SSH 隧道配置",
+        defaultPath: "ssh-tunnels.json",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (filePath) {
+        await writeTextFile(filePath, JSON.stringify(payload, null, 2));
+      }
+    } catch (err) {
+      console.error("导出失败:", err);
+      alert(`导出失败: ${err}`);
+    }
+  }
+
+  // 把导入文件中的一条记录映射为创建输入（容错：缺字段抛错由上层逐条捕获）
+  function toImportInput(item: any): SshTunnelInput {
+    const localPort = Number(item?.localPort);
+    const remotePort = Number(item?.remotePort);
+    if (!item?.name || Number.isNaN(localPort) || Number.isNaN(remotePort)) {
+      throw new Error("字段缺失（名称 / 本地端口 / 远程端口）");
+    }
+    const auth = item?.auth as SshAuthMethod | undefined;
+    if (!auth || !auth.type) {
+      throw new Error("缺少认证信息");
+    }
+    return {
+      name: String(item.name),
+      localPort,
+      remoteHost:
+        typeof item.remoteHost === "string" && item.remoteHost ? item.remoteHost : "127.0.0.1",
+      remotePort,
+      sshHost: typeof item.sshHost === "string" ? item.sshHost : "",
+      sshPort: item.sshPort != null ? Number(item.sshPort) : undefined,
+      sshUser: typeof item.sshUser === "string" && item.sshUser ? item.sshUser : undefined,
+      auth,
+      autoReconnect: typeof item.autoReconnect === "boolean" ? item.autoReconnect : undefined,
+      group: typeof item.group === "string" && item.group ? item.group : DEFAULT_SSH_GROUP,
+    };
+  }
+
+  async function handleImport() {
+    try {
+      const filePath = await open({
+        title: "导入 SSH 隧道配置",
+        multiple: false,
+        directory: false,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!filePath) return;
+
+      const content = await readTextFile(filePath as string);
+      const parsed = JSON.parse(content);
+      const list: any[] = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.tunnels)
+          ? parsed.tunnels
+          : [];
+      if (list.length === 0) {
+        alert("导入文件中没有可用的隧道配置");
+        return;
+      }
+
+      let success = 0;
+      const failed: string[] = [];
+      const needKey: string[] = [];
+      for (const item of list) {
+        const name = typeof item?.name === "string" ? item.name : "(未命名)";
+        try {
+          const input = toImportInput(item);
+          await addSshTunnel(input);
+          success += 1;
+          if (input.auth.type === "key" && !input.auth.keyPath) {
+            needKey.push(input.name);
+          }
+        } catch (err) {
+          console.error("导入隧道失败:", name, err);
+          failed.push(`${name}: ${err}`);
+        }
+      }
+      loadAll();
+
+      let msg = `导入完成：成功 ${success} 个`;
+      if (failed.length > 0) {
+        msg += `，失败 ${failed.length} 个\n${failed.join("\n")}`;
+      }
+      if (needKey.length > 0) {
+        msg += `\n\n以下隧道使用私钥认证，请编辑后重新设置「私钥路径」：\n${needKey.join("、")}`;
+      }
+      alert(msg);
+    } catch (err) {
+      console.error("导入失败:", err);
+      alert(`导入失败: ${err}`);
+    }
+  }
+
   return {
     tunnels,
     loading,
@@ -271,10 +438,14 @@ export function useSshTunnel() {
     deleteConfirm,
     copiedId,
     sshConfigHosts,
+    localIps,
+    groups,
     testState,
     dismissTest,
     loadAll,
     openCreateDialog,
+    handleExport,
+    handleImport,
     listCallbacks: {
       onStart: handleStart,
       onStop: handleStop,
@@ -282,6 +453,8 @@ export function useSshTunnel() {
       onRemove: handleRemove,
       onCopyLocal: handleCopyLocal,
       onTest: handleTest,
+      onDuplicate: openDuplicateDialog,
+      onMoveToGroup: moveToGroup,
     },
     formProps: {
       editing,
@@ -298,7 +471,10 @@ export function useSshTunnel() {
       formPassword,
       formHostAlias,
       formAutoReconnect,
+      formGroup,
       sshConfigHosts,
+      localIps,
+      groups,
       onFormNameChange: setFormName,
       onFormLocalPortChange: setFormLocalPort,
       onFormRemoteHostChange: setFormRemoteHost,
@@ -312,6 +488,7 @@ export function useSshTunnel() {
       onFormPasswordChange: setFormPassword,
       onFormHostAliasChange: setFormHostAlias,
       onFormAutoReconnectChange: setFormAutoReconnect,
+      onFormGroupChange: setFormGroup,
       onSelectKey: handleSelectKey,
       onCancel: closeFormDialog,
       onSubmit: handleSubmit,

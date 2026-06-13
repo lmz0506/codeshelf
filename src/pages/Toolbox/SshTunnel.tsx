@@ -1,4 +1,4 @@
-import { Network, Plus, RefreshCw } from "lucide-react";
+import { FileDown, FileUp, Network, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui";
 import { LoadingSpinner } from "@/components/common";
 import { ToolPanelHeader } from "./index";
@@ -23,6 +23,14 @@ export function SshTunnel({ onBack }: SshTunnelProps) {
         onBack={onBack}
         actions={
           <div className="flex items-center gap-2">
+            <Button onClick={tunnel.handleImport} variant="secondary" size="sm">
+              <FileUp size={16} className="mr-2" />
+              导入
+            </Button>
+            <Button onClick={tunnel.handleExport} variant="secondary" size="sm">
+              <FileDown size={16} className="mr-2" />
+              导出
+            </Button>
             <Button onClick={tunnel.loadAll} disabled={tunnel.loading} variant="secondary" size="sm">
               <RefreshCw size={16} className={tunnel.loading ? "animate-spin mr-2" : "mr-2"} />
               刷新
@@ -55,6 +63,7 @@ export function SshTunnel({ onBack }: SshTunnelProps) {
             <TunnelList
               tunnels={tunnel.tunnels}
               copiedId={tunnel.copiedId}
+              groups={tunnel.groups}
               callbacks={tunnel.listCallbacks}
             />
           )}
