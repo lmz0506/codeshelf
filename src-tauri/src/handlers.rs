@@ -3,7 +3,7 @@
 // 通过 tauri-specta 注册：调试构建时会把命令签名导出为 src/bindings.ts，供前端类型安全调用。
 
 use crate::commands::{
-    api_chat, chat, chat_bridge, extras, git, project, resume, resume_agent, resume_docx,
+    api_chat, chat, chat_bridge, extras, git, project, resume, resume_node_agent, resume_docx,
     settings, stats, storage_admin, system, toolbox, tools, workflows,
 };
 use crate::{keyboard_hook, mcp_gateway};
@@ -314,23 +314,21 @@ pub fn make_builder() -> Builder<tauri::Wry> {
         resume::get_resumes,
         resume::save_resumes,
         resume_docx::export_resume_docx,
-        resume::save_resume_knowledge,
-        resume::load_resume_knowledge,
-        resume::list_resume_knowledge,
-        resume::list_resume_knowledge_history,
-        resume::read_resume_knowledge_history,
-        resume::delete_resume_knowledge,
-        resume::record_knowledge_failure,
         resume::llm_proxy_request,
-        resume::resume_project_index,
-        resume::resume_project_list_dir,
-        resume::resume_project_read_file,
-        resume::resume_project_grep,
-        // Resume Agent (Rust 侧 langchain/deepagents 替代)
-        resume_agent::run_resume_agent,
-        resume_agent::cancel_resume_agent,
-        resume_agent::run_knowledge_agent,
-        resume_agent::cancel_knowledge_agent,
+        // Resume Agent V3 (Node sidecar + TS Deep Agents)
+        resume_node_agent::run_resume_deep_agent,
+        resume_node_agent::generate_resume_from_knowledge,
+        resume_node_agent::generate_resume_fragment,
+        resume_node_agent::cancel_resume_deep_agent,
+        resume_node_agent::get_resume_agent_runs,
+        resume_node_agent::read_resume_agent_artifact,
+        resume_node_agent::get_resume_agent_prompt_config,
+        resume_node_agent::save_resume_agent_prompt_config,
+        resume_node_agent::reset_resume_agent_prompt_config,
+        resume_node_agent::load_resume_agent_background,
+        resume_node_agent::save_resume_agent_background,
+        resume_node_agent::list_resume_agent_background,
+        resume_node_agent::delete_resume_agent_background,
         // Keyboard hook
         keyboard_hook::register_global_shortcuts,
         keyboard_hook::unregister_all_global_shortcuts,

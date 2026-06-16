@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import {
   FileText,
   AlertCircle,
@@ -14,13 +14,25 @@ import {
   ChevronLeft,
   ChevronDown,
   Check,
+  ShieldAlert,
+  Copy,
+  ScrollText,
 } from "lucide-react";
 import { useProjectsStore } from "@/stores/projectsStore";
 import { useAiProvidersStore } from "@/stores/aiProvidersStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useResumeStore } from "@/stores/resumeStore";
-import type { JobDirection, Tone, ResumeV2 } from "@/types/resume";
-import { exportResumeV2ToMarkdownWithDialog } from "@/services/resume/export";
+import { useSettingsStore } from "@/stores/settingsStore";
+import type { JobDirection, PersonalInfo, ResumeV2 } from "@/types/resume";
+import {
+  exportResumeV2ToDocxWithDialog,
+  exportResumeV2ToMarkdownWithDialog,
+} from "@/services/resume/export";
+import {
+  hasResumeProfileContent,
+  loadResumeProfile,
+  saveResumeProfile,
+} from "@/services/resume/profile";
 import {
   loadResumePreference,
   resolveResumeProvider,
@@ -31,9 +43,10 @@ import { Button, showToast } from "@/components/ui";
 import { EmptyState } from "@/components/common";
 import { ToolPanelHeader } from "../index";
 import { KnowledgePanel } from "./KnowledgePanel";
-import { JobConfigPanel } from "./JobConfigPanel";
+import { PromptConfigDialog } from "./PromptConfigDialog";
 import { ResumePanelV2 } from "./ResumePanelV2";
 import { SaveResumeDialog } from "./SaveResumeDialog";
+import { SensitiveFileRulesDialog } from "./SensitiveFileRulesDialog";
 
 type Tab = "select" | "knowledge" | "resume";
 type View = "history" | "workflow";
@@ -46,6 +59,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   const projects = useProjectsStore((s) => s.projects);
   const { aiProviders } = useAiProvidersStore();
   const setCurrentPage = useUiStore((s) => s.setCurrentPage);
+  const sensitiveFilePatterns = useSettingsStore((s) => s.sensitiveFilePatterns);
   const {
     knowledgeDocs,
     loadAllKnowledgeFromDisk,
@@ -59,11 +73,13 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   const [activeTab, setActiveTab] = useState<Tab>("select");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [jobDirection, setJobDirection] = useState<JobDirection>("backend");
-  const [jdKeywords, setJdKeywords] = useState<string[]>([]);
-  const [tone, setTone] = useState<Tone>("professional");
   const [resume, setResume] = useState<ResumeV2 | null>(null);
+  const [resumeProfile, setResumeProfile] = useState<PersonalInfo>(() => loadResumeProfile());
   const [saveDialogResume, setSaveDialogResume] = useState<ResumeV2 | null>(null);
   const [renameTarget, setRenameTarget] = useState<ResumeV2 | null>(null);
+  const [sensitiveRulesOpen, setSensitiveRulesOpen] = useState(false);
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [promptConfigVersion, setPromptConfigVersion] = useState(0);
   // 用户选过的 provider/model;null = 跟系统默认走。
   const [preference, setPreference] = useState<ResumePreference | null>(() =>
     loadResumePreference()
@@ -78,6 +94,14 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       return p ? { name: p.name, path: p.path } : undefined;
     });
   }, [loadAllKnowledgeFromDisk, projects]);
+
+  useEffect(() => {
+    if (hasResumeProfileContent(resumeProfile)) return;
+    const fallback = savedResumes.find((item) => hasResumeProfileContent(item.personalInfo))?.personalInfo;
+    if (!fallback) return;
+    setResumeProfile(fallback);
+    saveResumeProfile(fallback);
+  }, [resumeProfile, savedResumes]);
 
   const resolved = useMemo(
     () => resolveResumeProvider(aiProviders, preference),
@@ -98,6 +122,16 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     setPickerOpen(false);
   };
 
+  const openPromptManager = () => setPromptDialogOpen(true);
+
+  const startNewResume = () => {
+    setResume(null);
+    setSelectedIds(new Set());
+    setJobDirection("backend");
+    setView("workflow");
+    setActiveTab("select");
+  };
+
   const selectedProjects = useMemo(
     () => projects.filter((p) => selectedIds.has(p.id)),
     [projects, selectedIds]
@@ -106,6 +140,13 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   const selectedKnowledgeDocs = useMemo(
     () => selectedProjects.map((p) => knowledgeDocs[p.id]).filter(Boolean),
     [selectedProjects, knowledgeDocs]
+  );
+  const sensitiveRuleCount = useMemo(
+    () =>
+      sensitiveFilePatterns.filter(
+        (line) => line.trim() && !line.trim().startsWith("#")
+      ).length,
+    [sensitiveFilePatterns]
   );
 
   const goToAISettings = () => {
@@ -132,7 +173,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
 
   const handleSaveResume = async (r: ResumeV2) => {
     // 打开命名 dialog,真正的写盘在 persistResume 里。返回 Promise 以兼容 ResumePanelV2 的 await。
-    setSaveDialogResume(r);
+    setSaveDialogResume({ ...r, personalInfo: resumeProfile });
   };
 
   const defaultResumeName = useMemo(() => {
@@ -147,6 +188,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     const stored: ResumeV2 = {
       ...saveDialogResume,
       name,
+      personalInfo: resumeProfile,
       updatedAt: new Date().toISOString(),
       isSaved: true,
     };
@@ -167,14 +209,12 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   const handleOpenSaved = (r: ResumeV2) => {
     setResume(r);
     setJobDirection(r.jobDirection);
-    setJdKeywords(r.jdKeywords || []);
-    setTone(r.tone);
     setSelectedIds(new Set(r.experiences.map((e) => e.projectId)));
     setActiveTab("resume");
     setView("workflow");
   };
 
-  const handleDeleteSaved = async (e: React.MouseEvent, id: string) => {
+  const handleDeleteSaved = async (e: MouseEvent, id: string) => {
     e.stopPropagation();
     const updated = savedResumes.filter((r) => r.id !== id);
     try {
@@ -189,17 +229,57 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     showToast("success", "已删除");
   };
 
-  const handleExportSaved = async (e: React.MouseEvent, r: ResumeV2) => {
+  const handleExportSaved = async (e: MouseEvent, r: ResumeV2) => {
     e.stopPropagation();
     try {
-      const filePath = await exportResumeV2ToMarkdownWithDialog(r);
+      const filePath = await exportResumeV2ToMarkdownWithDialog({
+        ...r,
+        personalInfo: r.personalInfo ?? resumeProfile,
+      });
       if (filePath) showToast("success", `已导出到 ${filePath}`);
     } catch (err) {
       showToast("error", `导出失败: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
-  const handleRenameSaved = (e: React.MouseEvent, r: ResumeV2) => {
+  const handleExportSavedDocx = async (e: MouseEvent, r: ResumeV2) => {
+    e.stopPropagation();
+    try {
+      const filePath = await exportResumeV2ToDocxWithDialog({
+        ...r,
+        personalInfo: r.personalInfo ?? resumeProfile,
+      });
+      if (filePath) showToast("success", `已导出到 ${filePath}`);
+    } catch (err) {
+      showToast("error", `导出失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleDuplicateSaved = async (e: MouseEvent, r: ResumeV2) => {
+    e.stopPropagation();
+    const now = new Date().toISOString();
+    const duplicate: ResumeV2 = {
+      ...r,
+      id: makeResumeId(),
+      name: `${r.name || `${r.jobDirection} · ${r.experiences.length} 个项目`} 副本`,
+      createdAt: now,
+      updatedAt: now,
+      isSaved: true,
+      personalInfo: r.personalInfo ?? resumeProfile,
+    };
+    const updated = [duplicate, ...savedResumes];
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("save_resumes", { data: updated });
+      setSavedResumes(updated);
+      showToast("success", "已复制为新简历");
+    } catch (err) {
+      console.error(err);
+      showToast("error", `复制失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleRenameSaved = (e: MouseEvent, r: ResumeV2) => {
     e.stopPropagation();
     setRenameTarget(r);
   };
@@ -233,7 +313,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
         ? "没有启用的 AI 供应商"
         : "未找到可用的 AI 供应商 / 模型";
       return (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
           <div className="flex items-start gap-3">
             <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
@@ -256,26 +336,26 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     }
 
     return (
-      <div className="bg-green-50 border border-green-200 rounded-lg">
+      <div className="overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm shadow-emerald-900/5">
         <div className="flex items-center gap-3 p-3">
-          <Bot size={18} className="text-green-600" />
-          <div className="flex-1 text-sm text-green-800">
+          <Bot size={18} className="text-emerald-600" />
+          <div className="flex-1 text-sm text-emerald-900">
             使用 <span className="font-medium">{resolved.provider.name}</span>
-            <span className="text-green-600"> / {resolved.modelName}</span>
+            <span className="text-emerald-600"> / {resolved.modelName}</span>
             {resolved.source === "system" && (
-              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-white text-green-700 border border-green-200">
+              <span className="ml-2 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
                 系统默认
               </span>
             )}
             {resolved.source === "user" && (
-              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-white text-blue-700 border border-blue-200">
+              <span className="ml-2 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
                 已自选
               </span>
             )}
           </div>
           <button
             onClick={() => setPickerOpen((v) => !v)}
-            className="text-xs text-green-700 hover:text-green-800 flex items-center gap-1"
+            className="flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-800"
           >
             <Settings size={12} /> 切换
             <ChevronDown
@@ -285,13 +365,13 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
           </button>
         </div>
         {pickerOpen && (
-          <div className="border-t border-green-200 p-3 space-y-2 bg-white rounded-b-lg">
+          <div className="space-y-2 border-t border-emerald-100 bg-emerald-50/50 p-3">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-gray-600">选择本页要使用的供应商和模型</span>
               {resolved.source === "user" && (
                 <button
                   onClick={() => applyPreference(null)}
-                  className="text-xs text-gray-500 hover:text-blue-600"
+                  className="text-xs text-gray-500 hover:text-emerald-600"
                 >
                   恢复为系统默认
                 </button>
@@ -321,12 +401,12 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
                             onClick={() =>
                               applyPreference({ providerId: p.id, modelId: m.id })
                             }
-                            className={`w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-blue-50 ${
-                              active ? "bg-blue-50 text-blue-700" : "text-gray-700"
+                            className={`w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-emerald-50 ${
+                              active ? "bg-emerald-50 text-emerald-700" : "text-gray-700"
                             }`}
                           >
                             <span className="truncate">{m.model}</span>
-                            {active && <Check size={12} className="text-blue-600" />}
+                            {active && <Check size={12} className="text-emerald-600" />}
                           </button>
                         );
                       })}
@@ -338,7 +418,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
             <div className="pt-2 border-t border-gray-100 flex justify-end">
               <button
                 onClick={goToAISettings}
-                className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1"
+                className="text-xs text-gray-500 hover:text-emerald-600 flex items-center gap-1"
               >
                 <Settings size={12} /> 去 AI 设置增删供应商
               </button>
@@ -353,23 +433,30 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
     <div className="space-y-5">
       {renderProviderStatus()}
 
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-medium text-gray-900">
-            选择项目 ({selectedIds.size}/{projects.length})
-          </h3>
-          <button
-            onClick={toggleAll}
-            className="text-xs text-blue-600 hover:text-blue-700"
-            disabled={projects.length === 0}
-          >
-            {selectedIds.size === projects.length && projects.length > 0
-              ? "取消全选"
-              : "全选"}
-          </button>
+      <div className="overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm shadow-emerald-900/5">
+        <div className="border-b border-emerald-100 bg-emerald-50/70 px-4 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-emerald-950">
+                选择项目
+              </h3>
+              <div className="mt-1 text-xs text-emerald-700/75">
+                已选择 {selectedIds.size} / {projects.length} 个项目
+              </div>
+            </div>
+            <button
+              onClick={toggleAll}
+              className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={projects.length === 0}
+            >
+              {selectedIds.size === projects.length && projects.length > 0
+                ? "取消全选"
+                : "全选项目"}
+            </button>
+          </div>
         </div>
         {projects.length === 0 ? (
-          <div className="bg-gray-50 rounded-lg">
+          <div className="bg-gray-50/60">
             <EmptyState
               icon={FileText}
               title="书架中没有项目"
@@ -378,41 +465,51 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
             />
           </div>
         ) : (
-          <div className="space-y-2 max-h-[400px] overflow-auto">
+          <div className="max-h-[520px] overflow-auto p-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {projects.map((p) => {
               const checked = selectedIds.has(p.id);
               const hasKnowledge = !!knowledgeDocs[p.id];
               return (
                 <label
                   key={p.id}
-                  className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
+                  className={`group flex min-h-[156px] cursor-pointer flex-col rounded-2xl border p-4 transition-all ${
                     checked
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-gray-200 hover:border-gray-300"
+                      ? "border-emerald-300 bg-emerald-50/70 shadow-sm shadow-emerald-500/10"
+                      : "border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40"
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleProject(p.id)}
-                    className="mr-3"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleProject(p.id)}
+                          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-500">
+                          项目
+                        </span>
+                      </div>
+                      <div className="mt-3 font-medium text-gray-900 flex items-center gap-2">
                       <span className="truncate">{p.name}</span>
                       {hasKnowledge && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">
+                        <span className="rounded-full border border-emerald-200 bg-emerald-100/70 px-1.5 py-0.5 text-[10px] text-emerald-700">
                           已生成背景知识
                         </span>
                       )}
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-500 mt-0.5 truncate">{p.path}</div>
+                  </div>
+                  <div className="mt-3 flex-1">
+                    <div className="line-clamp-2 text-xs leading-5 text-gray-500">{p.path}</div>
                     {p.labels.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
+                      <div className="mt-3 flex flex-wrap gap-1.5">
                         {p.labels.slice(0, 5).map((l) => (
                           <span
                             key={l}
-                            className="px-1.5 py-0.5 rounded text-[10px] bg-gray-100 text-gray-600"
+                            className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] text-gray-600"
                           >
                             {l}
                           </span>
@@ -423,17 +520,20 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
                 </label>
               );
             })}
+            </div>
           </div>
         )}
       </div>
 
-      <div className="flex justify-end pt-2 border-t border-gray-200">
+      <div className="flex justify-end">
         <Button
-          onClick={() => setActiveTab("knowledge")}
+          onClick={() => {
+            setActiveTab("knowledge");
+          }}
           disabled={selectedIds.size === 0}
           variant="primary"
           size="md"
-          className="gap-2"
+          className="gap-2 bg-emerald-500 hover:bg-emerald-600 focus:ring-emerald-500"
         >
           <Database size={16} />
           下一步：生成 / 查看背景知识
@@ -456,22 +556,18 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
         </div>
       ) : (
         <>
-          <JobConfigPanel
-            jobDirection={jobDirection}
-            onJobDirectionChange={setJobDirection}
-            jdKeywords={jdKeywords}
-            onJdKeywordsChange={setJdKeywords}
-            tone={tone}
-            onToneChange={setTone}
-          />
           <ResumePanelV2
             knowledgeDocs={selectedKnowledgeDocs}
             provider={effectiveProvider}
             jobDirection={jobDirection}
-            jdKeywords={jdKeywords}
-            tone={tone}
+            onJobDirectionChange={setJobDirection}
             resume={resume}
+            personalInfo={resumeProfile}
             onResumeChange={setResume}
+            onPersonalInfoChange={(info) => {
+              setResumeProfile(info);
+              saveResumeProfile(info);
+            }}
             onSaveResume={handleSaveResume}
           />
         </>
@@ -481,59 +577,85 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
 
   const renderHistoryView = () => (
     <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-4xl mx-auto space-y-5">
-        <div>
-          <h3 className="text-base font-medium text-gray-900">我的简历</h3>
-          <p className="text-xs text-gray-500 mt-1">
-            选择一份继续编辑、导出，或新建一份。
-          </p>
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">我的简历</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              点击卡片继续编辑，底部图标可直接执行复制、导出和删除。
+            </p>
+          </div>
+          <Button
+            onClick={startNewResume}
+            variant="primary"
+            size="sm"
+            className="gap-1.5 bg-emerald-500 hover:bg-emerald-600 focus:ring-emerald-500"
+          >
+            <Plus size={14} /> 创建简历
+          </Button>
         </div>
-        <div className="space-y-2">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
           {savedResumes.map((r) => (
-            <div
+            <article
               key={r.id}
               onClick={() => handleOpenSaved(r)}
-              className="flex items-center justify-between gap-3 p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all group cursor-pointer"
+              className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-lg hover:shadow-emerald-900/10 cursor-pointer"
             >
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-gray-900 truncate">
-                  {r.name || `${r.jobDirection} · ${r.experiences.length} 个项目`}
+              <div className="relative aspect-[3/2] border-b border-gray-200 bg-gradient-to-br from-white via-gray-50 to-emerald-50/50 p-3">
+                <div className="absolute right-3 top-3 rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] text-gray-500">
+                  {jobDirectionLabel(r.jobDirection)}
                 </div>
-                <div className="text-xs text-gray-500 mt-1 flex items-center gap-2">
-                  <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
-                    {r.jobDirection}
-                  </span>
-                  <span>{r.experiences.length} 个项目</span>
-                  <span>·</span>
-                  <span>
-                    {new Date(r.updatedAt || r.createdAt).toLocaleString("zh-CN")}
-                  </span>
+                <div className="flex h-full items-center justify-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-300 shadow-sm">
+                    <FileText size={30} />
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={(e) => handleExportSaved(e, r)}
-                  className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
-                  title="导出 Markdown"
-                >
-                  <FileDown size={14} />
-                </button>
-                <button
-                  onClick={(e) => handleRenameSaved(e, r)}
-                  className="p-1.5 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-600"
-                  title="重命名"
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  onClick={(e) => handleDeleteSaved(e, r.id)}
-                  className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
-                  title="删除"
-                >
-                  <Trash2 size={14} />
-                </button>
+              <div className="space-y-2.5 p-3.5">
+                <div>
+                  <div className="truncate text-sm font-semibold text-gray-900">
+                    {r.name || `${jobDirectionLabel(r.jobDirection)}简历`}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    最近更新于 {formatRelativeTime(r.updatedAt || r.createdAt)}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 text-[11px] text-gray-500">
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5">{r.experiences.length} 个项目</span>
+                  {!!r.skills.length && <span className="rounded-full bg-gray-100 px-2 py-0.5">{r.skills.length} 个技能</span>}
+                </div>
+                <div className="flex items-center justify-between border-t border-gray-100 pt-2.5">
+                  <div className="flex items-center gap-1">
+                    <IconActionButton
+                      title="重命名"
+                      onClick={(e) => handleRenameSaved(e, r)}
+                      icon={<Pencil size={14} />}
+                    />
+                    <IconActionButton
+                      title="复制"
+                      onClick={(e) => handleDuplicateSaved(e, r)}
+                      icon={<Copy size={14} />}
+                    />
+                    <IconActionButton
+                      title="导出 docx"
+                      onClick={(e) => handleExportSavedDocx(e, r)}
+                      icon={<ScrollText size={14} />}
+                    />
+                    <IconActionButton
+                      title="导出 Markdown"
+                      onClick={(e) => handleExportSaved(e, r)}
+                      icon={<FileDown size={14} />}
+                    />
+                  </div>
+                  <IconActionButton
+                    title="删除"
+                    onClick={(e) => handleDeleteSaved(e, r.id)}
+                    icon={<Trash2 size={14} />}
+                    danger
+                  />
+                </div>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       </div>
@@ -543,7 +665,7 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   const TABS: Array<{
     id: Tab;
     label: string;
-    icon: React.ReactNode;
+    icon: ReactNode;
     badge?: string;
     disabled?: boolean;
   }> = [
@@ -572,28 +694,30 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   ];
 
   const renderTabs = () => (
-    <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg w-fit">
+    <div className="inline-flex w-fit gap-1 rounded-full border border-emerald-100 bg-white p-1 shadow-sm shadow-emerald-900/5">
       {TABS.map((t) => {
         const active = activeTab === t.id;
         return (
-          <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
-            disabled={t.disabled}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            <button
+              key={t.id}
+              onClick={() => {
+                setActiveTab(t.id);
+              }}
+              disabled={t.disabled}
+            className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
               active
-                ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                ? "bg-emerald-500 text-white shadow-sm"
                 : t.disabled
                 ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                : "text-gray-600 hover:bg-emerald-50 hover:text-emerald-700"
             }`}
           >
             {t.icon}
             {t.label}
             {t.badge && (
               <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-                  active ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-600"
+                className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                  active ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
                 }`}
               >
                 {t.badge}
@@ -607,26 +731,43 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
 
   const showHistory = view === "history" && savedResumes.length > 0;
 
-  const headerActions = showHistory ? (
-    <Button
-      onClick={() => {
-        setView("workflow");
-        setActiveTab("select");
-      }}
-      variant="primary"
-      size="sm"
-      className="gap-1.5"
-    >
-      <Plus size={14} /> 新建简历
-    </Button>
-  ) : savedResumes.length > 0 ? (
-    <button
-      onClick={() => setView("history")}
-      className="text-sm text-gray-600 hover:text-blue-600 flex items-center gap-1"
-    >
-      <ChevronLeft size={16} /> 我的简历
-    </button>
-  ) : null;
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      <Button
+        onClick={openPromptManager}
+        variant="secondary"
+        size="sm"
+        className="gap-1.5"
+        title="编辑背景知识与简历生成提示词"
+      >
+        <Settings size={14} />
+        提示词
+      </Button>
+      <Button
+        onClick={() => setSensitiveRulesOpen(true)}
+        variant="secondary"
+        size="sm"
+        className="gap-1.5"
+        title="配置背景知识生成时需要跳过的敏感文件规则"
+      >
+        <ShieldAlert size={14} />
+        敏感规则
+        {sensitiveRuleCount > 0 && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white text-gray-600 border border-gray-200">
+            {sensitiveRuleCount}
+          </span>
+        )}
+      </Button>
+      {!showHistory && savedResumes.length > 0 ? (
+        <button
+          onClick={() => setView("history")}
+          className="text-sm text-gray-600 hover:text-emerald-600 flex items-center gap-1"
+        >
+          <ChevronLeft size={16} /> 我的简历
+        </button>
+      ) : null}
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -642,18 +783,19 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
           renderHistoryView()
         ) : activeTab === "knowledge" ? (
           <>
-            <div className="px-6 pt-6 pb-4">
-              <div className="max-w-4xl mx-auto">{renderTabs()}</div>
+            <div className="px-6 pt-5 pb-4">
+              <div className="max-w-6xl mx-auto">{renderTabs()}</div>
             </div>
             <KnowledgePanel
               selectedProjects={selectedProjects}
               provider={effectiveProvider}
+              promptConfigVersion={promptConfigVersion}
               onNext={() => setActiveTab("resume")}
             />
           </>
         ) : (
           <div className="flex-1 overflow-auto p-6">
-            <div className="max-w-4xl mx-auto space-y-5">
+            <div className="max-w-7xl mx-auto space-y-5">
               {renderTabs()}
               {activeTab === "select" && renderSelectTab()}
               {activeTab === "resume" && renderResumeTab()}
@@ -679,6 +821,68 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
         onCancel={() => setRenameTarget(null)}
         onConfirm={persistRename}
       />
+
+      <SensitiveFileRulesDialog
+        open={sensitiveRulesOpen}
+        onClose={() => setSensitiveRulesOpen(false)}
+      />
+      <PromptConfigDialog
+        open={promptDialogOpen}
+        onClose={() => setPromptDialogOpen(false)}
+        onSaved={() => setPromptConfigVersion((value) => value + 1)}
+      />
     </div>
   );
+}
+
+function IconActionButton({
+  title,
+  onClick,
+  icon,
+  danger = false,
+}: {
+  title: string;
+  onClick: (event: MouseEvent) => void;
+  icon: ReactNode;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition ${
+        danger
+          ? "border-red-100 text-red-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+          : "border-gray-200 text-gray-400 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+      }`}
+    >
+      {icon}
+    </button>
+  );
+}
+
+function formatRelativeTime(value: string): string {
+  const now = Date.now();
+  const time = new Date(value).getTime();
+  const diffHours = Math.max(0, Math.floor((now - time) / (1000 * 60 * 60)));
+  if (diffHours < 1) return "1 小时内";
+  if (diffHours < 24) return `${diffHours} 小时前`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `${diffDays} 天前`;
+  return new Date(value).toLocaleDateString("zh-CN");
+}
+
+function jobDirectionLabel(direction: JobDirection): string {
+  if (direction === "backend") return "后端";
+  if (direction === "frontend") return "前端";
+  return "全栈";
+}
+
+function makeResumeId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

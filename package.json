@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run resume-agent:build && tsc && vite build",
+    "resume-agent:build": "tsc -p src-node/resume-agent/tsconfig.json",
     "preview": "vite preview",
     "tauri": "tauri",
     "verify:release": "bash scripts/verify-release.sh",
@@ -24,6 +25,7 @@
   },
   "homepage": "https://github.com/en-o/codeshelf#readme",
   "dependencies": {
+    "@langchain/openai": "^1.4.1",
     "@tanstack/react-query": "^5.100.5",
     "@tauri-apps/api": "^2.9.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
@@ -32,6 +34,7 @@
     "@tauri-apps/plugin-shell": "^2.3.4",
     "@tauri-apps/plugin-updater": "^2",
     "date-fns": "^4.1.0",
+    "deepagents": "^1.10.2",
     "docx": "^9.6.1",
     "ignore": "^7.0.5",
     "lucide-react": "^0.563.0",

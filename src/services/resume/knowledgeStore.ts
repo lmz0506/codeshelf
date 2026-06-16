@@ -1,111 +1,138 @@
 import { invoke } from "@tauri-apps/api/core";
 
-/// 后端 QualityIssue 镜像。
-export type QualityIssueSeverity = "warn" | "error";
-export type QualityIssueCode =
-  | "missing_section"
-  | "empty_section"
-  | "placeholder_left"
-  | "low_confidence"
-  | string;
+import type { ResumeV2 } from "@/types/resume";
+
+export type AgentRunStatus = "running" | "success" | "error" | "cancelled";
+export type ToolPermissionMode = "read_only" | "workspace_write" | "full_agent";
+
+export interface ResumeAgentPromptConfig {
+  version: string;
+  backgroundPrompt: string;
+  resumePrompt: string;
+}
+
+export interface ArtifactRef {
+  id: string;
+  label: string;
+  kind: string;
+  chars: number;
+}
+
+export type AgentEventType = "system" | "model_call" | "tool_call" | "finalize" | "error";
+
+export interface AgentEvent {
+  id: string;
+  type: AgentEventType;
+  status: string;
+  at: string;
+  startedAt?: string;
+  finishedAt?: string;
+  durationMs?: number;
+  turnIndex?: number;
+  title?: string;
+  modelProvider?: string;
+  modelName?: string;
+  thinkingEnabled?: boolean;
+  temperature?: number;
+  toolName?: string;
+  returnedChars?: number;
+  truncated?: boolean;
+  blocked?: boolean;
+  blockedBy?: string;
+  data?: Record<string, unknown>;
+  artifacts?: ArtifactRef[];
+  error?: string;
+}
+
+export interface AgentRunRecord {
+  id: string;
+  requestId: string;
+  projectId: string;
+  status: AgentRunStatus;
+  startedAt: string;
+  finishedAt?: string;
+  durationMs?: number;
+  modelProvider?: string;
+  modelName?: string;
+  promptSnapshot: ResumeAgentPromptConfig;
+  toolPermissionMode: ToolPermissionMode;
+  events: AgentEvent[];
+  output?: {
+    backgroundChars: number;
+    resume?: ResumeV2;
+  };
+  error?: {
+    message: string;
+    eventId?: string;
+  };
+}
+
+export interface AgentRunState {
+  current?: AgentRunRecord;
+}
+
+export interface ArtifactContent {
+  artifactId: string;
+  content: string;
+}
 
 export interface QualityIssue {
-  severity: QualityIssueSeverity;
-  code: QualityIssueCode;
+  severity: "warn" | "error";
+  code: string;
   message: string;
   section?: string;
 }
 
-export type KnowledgeRunStatus = "success" | "error" | "cancelled" | "manual";
-export type KnowledgeRunSource = "agent" | "manual";
-
-/// 后端 KnowledgeRunMeta 镜像。一次 agent 运行(或一次手编保存)的元信息。
-export interface KnowledgeRunMeta {
-  requestId: string;
-  modelProvider?: string;
-  modelName?: string;
-  startedAt: string;
-  finishedAt: string;
-  durationMs: number;
-  stepCount: number;
-  source: KnowledgeRunSource;
-  status: KnowledgeRunStatus;
-  error?: string;
-  qualityIssues: QualityIssue[];
-}
-
-/// 历史列表条目。从 sidecar (.meta.json / .fail.json) 反序列化后跟 .md 合并。
-/// legacy 条目(只有 .md)回落 status: "success",其他字段 undefined。
-export interface ResumeKnowledgeHistoryEntry {
-  timestamp: string;
-  size: number;
-  status: KnowledgeRunStatus;
-  hasContent: boolean;
-  modelName?: string;
-  durationMs?: number;
-  stepCount?: number;
-  qualityWarningCount?: number;
-  qualityErrorCount?: number;
-  error?: string;
-}
-
-export interface ReadKnowledgeHistoryResponse {
-  content?: string;
-  meta?: KnowledgeRunMeta;
-}
+export type KnowledgePromptConfig = ResumeAgentPromptConfig;
+export type KnowledgeRunStatus = AgentRunStatus;
+export type KnowledgeRunRecord = AgentRunRecord;
+export type KnowledgeRunArtifactRef = ArtifactRef;
+export type KnowledgeRunArtifactContent = ArtifactContent;
 
 export async function loadResumeKnowledge(projectId: string): Promise<string | null> {
-  return await invoke<string | null>("load_resume_knowledge", { projectId });
+  return await invoke<string | null>("load_resume_agent_background", { projectId });
 }
 
-/// 保存当前活动版本的背景知识。
-/// - 已存在的旧版本会被自动备份到 `<id>.history/<ts>.md` + `.meta.json`(若有)。
-/// - `meta` 传 agent 跑完拿到的 KnowledgeRunMeta;手编保存时传 undefined,后端合成 manual 元信息。
 export async function saveResumeKnowledge(
   projectId: string,
   content: string,
-  userEdited: boolean,
-  meta?: KnowledgeRunMeta,
+  _userEdited: boolean,
 ): Promise<void> {
-  await invoke<void>("save_resume_knowledge", {
-    projectId,
-    content,
-    userEdited,
-    meta: meta ?? null,
-  });
+  await invoke<void>("save_resume_agent_background", { projectId, content });
 }
 
 export async function listResumeKnowledge(): Promise<string[]> {
-  return await invoke<string[]>("list_resume_knowledge");
-}
-
-export async function listResumeKnowledgeHistory(
-  projectId: string,
-): Promise<ResumeKnowledgeHistoryEntry[]> {
-  return await invoke<ResumeKnowledgeHistoryEntry[]>("list_resume_knowledge_history", {
-    projectId,
-  });
-}
-
-export async function readResumeKnowledgeHistory(
-  projectId: string,
-  timestamp: string,
-): Promise<ReadKnowledgeHistoryResponse> {
-  return await invoke<ReadKnowledgeHistoryResponse>("read_resume_knowledge_history", {
-    projectId,
-    timestamp,
-  });
+  return await invoke<string[]>("list_resume_agent_background");
 }
 
 export async function deleteResumeKnowledge(projectId: string): Promise<void> {
-  await invoke<void>("delete_resume_knowledge", { projectId });
+  await invoke<void>("delete_resume_agent_background", { projectId });
 }
 
-/// 记录一次 agent 失败/取消运行(无 .md 内容,仅 fail.json)。
-/// 用于事后追溯:历史列表会出现该条目带状态/模型/错误信息,但不能 restore。
-export async function recordKnowledgeFailure(
+export async function getResumeKnowledgePromptConfig(): Promise<ResumeAgentPromptConfig> {
+  return await invoke<ResumeAgentPromptConfig>("get_resume_agent_prompt_config");
+}
+
+export async function saveResumeKnowledgePromptConfig(
+  config: ResumeAgentPromptConfig,
+): Promise<ResumeAgentPromptConfig> {
+  return await invoke<ResumeAgentPromptConfig>("save_resume_agent_prompt_config", { config });
+}
+
+export async function resetResumeKnowledgePromptConfig(): Promise<ResumeAgentPromptConfig> {
+  return await invoke<ResumeAgentPromptConfig>("reset_resume_agent_prompt_config");
+}
+
+export async function getResumeKnowledgeRuns(projectId: string): Promise<AgentRunState> {
+  return await invoke<AgentRunState>("get_resume_agent_runs", { projectId });
+}
+
+export async function readResumeKnowledgeRunArtifact(
   projectId: string,
-  meta: KnowledgeRunMeta,
-): Promise<void> {
-  await invoke<void>("record_knowledge_failure", { projectId, meta });
+  artifactId: string,
+): Promise<ArtifactContent> {
+  return await invoke<ArtifactContent>("read_resume_agent_artifact", {
+    projectId,
+    artifactId,
+  });
 }

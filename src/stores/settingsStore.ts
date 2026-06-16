@@ -31,7 +31,7 @@ interface SettingsState {
   setAppShortcuts: (shortcuts: AppShortcutBinding[]) => void;
 
   sensitiveFilePatterns: string[];
-  setSensitiveFilePatterns: (patterns: string[]) => void;
+  setSensitiveFilePatterns: (patterns: string[]) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>()((set) => ({
@@ -81,10 +81,10 @@ export const useSettingsStore = create<SettingsState>()((set) => ({
   setAppShortcuts: (appShortcuts) => set({ appShortcuts }),
 
   sensitiveFilePatterns: [],
-  setSensitiveFilePatterns: (sensitiveFilePatterns) => {
-    set({ sensitiveFilePatterns });
-    invoke("save_sensitive_file_patterns", {
+  setSensitiveFilePatterns: async (sensitiveFilePatterns) => {
+    await invoke("save_sensitive_file_patterns", {
       patterns: sensitiveFilePatterns,
-    }).catch(console.error);
+    });
+    set({ sensitiveFilePatterns });
   },
 }));

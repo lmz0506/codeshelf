@@ -1,5 +1,6 @@
 // 设置管理模块 - 标签、分类、编辑器、终端、应用设置、UI状态、通知
 
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -659,35 +660,16 @@ pub async fn save_recommended_template(content: String) -> AppResult<()> {
 
 // ============== 敏感文件规则管理 ==============
 
-#[tauri::command]
-#[specta::specta]
-pub async fn get_sensitive_file_patterns() -> AppResult<Vec<String>> {
+pub fn default_sensitive_file_patterns() -> Vec<String> {
+    DEFAULT_SENSITIVE_FILE_PATTERNS.clone()
+}
+
+pub fn load_sensitive_file_patterns() -> AppResult<Vec<String>> {
     let config = get_storage_config()?;
     let path = config.sensitive_file_patterns_file();
 
     if !path.exists() {
-        return Ok(vec![
-            ".env".to_string(),
-            ".env.*".to_string(),
-            "*.key".to_string(),
-            "*.pem".to_string(),
-            "*.p12".to_string(),
-            "*.pfx".to_string(),
-            "credentials*.json".to_string(),
-            "secrets*.json".to_string(),
-            "*.keystore".to_string(),
-            "*.jks".to_string(),
-            ".npmrc".to_string(),
-            ".pypirc".to_string(),
-            "id_rsa".to_string(),
-            "id_ed25519".to_string(),
-            "config.local.json".to_string(),
-            "application*.yml".to_string(),
-            "application*.yaml".to_string(),
-            "application*.properties".to_string(),
-            "bootstrap*.yml".to_string(),
-            "bootstrap*.yaml".to_string(),
-        ]);
+        return Ok(default_sensitive_file_patterns());
     }
 
     let content = fs::read_to_string(&path)
@@ -699,9 +681,21 @@ pub async fn get_sensitive_file_patterns() -> AppResult<Vec<String>> {
 
 #[tauri::command]
 #[specta::specta]
+pub async fn get_sensitive_file_patterns() -> AppResult<Vec<String>> {
+    load_sensitive_file_patterns()
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn save_sensitive_file_patterns(patterns: Vec<String>) -> AppResult<()> {
     let config = get_storage_config()?;
     config.ensure_dirs()?;
+
+    let patterns: Vec<String> = patterns
+        .into_iter()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect();
 
     let content = serde_json::to_string(&patterns)
         .map_err(|e| crate::error::AppError::from(format!("序列化敏感文件规则失败: {}", e)))?;
@@ -823,3 +817,7 @@ pub async fn get_claude_config_templates() -> AppResult<String> {
 }
 
 // ============== 简历数据持久化已迁移到 commands::resume 模块 ==============
+static DEFAULT_SENSITIVE_FILE_PATTERNS: Lazy<Vec<String>> = Lazy::new(|| {
+    serde_json::from_str(include_str!("../../../src/config/defaultSensitiveFilePatterns.json"))
+        .expect("defaultSensitiveFilePatterns.json must be valid JSON")
+});

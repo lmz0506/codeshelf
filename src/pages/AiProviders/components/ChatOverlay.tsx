@@ -452,8 +452,17 @@ export function ChatOverlay({ providers, onClose }: ChatOverlayProps) {
         thinking: selected.model.thinking,
         stream: selected.model.stream !== false,
         messages: saved.messages
-          .filter((m) => m.role !== "assistant" || m.content.trim() !== "")
-          .map((m) => ({ role: m.role, content: m.content })),
+          .filter(
+            (m) =>
+              m.role !== "assistant" ||
+              m.content.trim() !== "" ||
+              Boolean(m.thinkingContent?.trim()),
+          )
+          .map((m) => ({
+            role: m.role,
+            content: m.content,
+            thinkingContent: m.thinkingContent ?? undefined,
+          })),
       });
     } catch {
       showToast("error", "发送失败");

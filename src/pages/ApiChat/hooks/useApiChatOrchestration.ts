@@ -53,10 +53,12 @@ function toStreamMessages(session: ApiChatSession): ChatStreamMessage[] {
   for (const m of session.messages) {
     if (m.role === "assistant") {
       const hasToolCalls = (m.toolCalls?.length ?? 0) > 0;
-      if (!hasToolCalls && (!m.content || !m.content.trim())) continue;
+      const hasThinking = Boolean(m.thinkingContent?.trim());
+      if (!hasToolCalls && !hasThinking && (!m.content || !m.content.trim())) continue;
       out.push({
         role: "assistant",
         content: m.content ?? "",
+        thinkingContent: m.thinkingContent ?? undefined,
         toolCalls: hasToolCalls
           ? m.toolCalls!.map((tc) => ({
               id: tc.id,

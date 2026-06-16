@@ -1,10 +1,8 @@
-// STAR 文本 → HR 友好的三段式 (项目背景 / 主要职责 / 项目成果) 转换。
+// ResumeProjectExperience → HR 友好的项目经历结构转换。
 //
-// 目的:Agent 产出的 STAR 字段含「S/T/A/R」专业术语,HR 阅读不友好。预览 + docx
-// 导出走这个 formatter,把 4 段重新组合成:
-//   - 项目背景:S + T 合并成一段连贯描述
-//   - 主要职责:A 按句号拆成 bullet 列表
-//   - 项目成果:R 按句号拆成 bullet 列表
+// 目标格式:
+//   项目名称 / 项目时间 / 项目角色 / 技术栈 / 项目描述 / 核心职责 / 项目成果
+// 其中“技术亮点”不单独展示,而是融合进核心职责的每个 bullet。
 //
 // 不动 LLM,纯文本处理。原 starExperience 数据保持原样,只在 render 时转换。
 
@@ -22,11 +20,15 @@ const DIRECTION_TITLE: Record<string, string> = {
 
 export interface FormattedExperience {
   projectName: string;
+  projectTime?: string;
+  projectRole?: string;
   techStack: string[];
-  background: string;
-  /** 主要职责 (A) 按句拆分后的要点列表 */
+  description: string;
+  responsibilitiesMarkdown: string;
+  achievementsMarkdown: string;
+  /** 核心职责:职责 + 项目亮点融合后的要点列表 */
   responsibilities: string[];
-  /** 项目成果 (R) 按句拆分后的要点列表 */
+  /** 项目成果 */
   achievements: string[];
   /** 是否实际有可显示内容 */
   hasContent: boolean;
@@ -50,6 +52,13 @@ export function jobDirectionTitle(direction: string): string {
 function splitToBullets(text: string): string[] {
   const t = (text ?? "").trim();
   if (!t) return [];
+  const lines = t.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const markdownLines = lines.filter((line) => /^([-*•]|\d+[.)、])\s+/.test(line));
+  if (markdownLines.length >= 2) {
+    return markdownLines
+      .map((s) => s.replace(/^[-*•]\s+/u, "").replace(/^\d+[.)、]\s*/u, "").trim())
+      .filter(Boolean);
+  }
   // 首选标点
   let parts = t
     .split(/(?<=[。!?；;！？])\s*/)
@@ -67,34 +76,26 @@ function splitToBullets(text: string): string[] {
   return parts.map((s) => s.replace(/[。!?；;！？]$/u, "").trim()).filter(Boolean);
 }
 
-/// 拼 S + T 为一段「项目背景」描述。
-/// 优先逻辑:两段都有 → 拼接;只 S → S;只 T → T;都无 → 空串。
-function mergeBackground(situation: string, task: string): string {
-  const s = (situation ?? "").trim();
-  const t = (task ?? "").trim();
-  if (s && t) {
-    // 避免重复:若 task 已经完整出现在 situation,就只用 situation
-    if (s.includes(t)) return s;
-    if (t.includes(s)) return t;
-    return `${s}${s.endsWith("。") || s.endsWith(".") ? "" : "。"}${t}`;
-  }
-  return s || t;
-}
-
 export function formatExperience(
   exp: ResumeProjectExperience,
 ): FormattedExperience {
   const star = exp.starExperience;
-  const background = mergeBackground(star.situation, star.task);
-  const responsibilities = splitToBullets(star.action);
-  const achievements = splitToBullets(star.result);
+  const description = (star.situation ?? "").trim();
+  const responsibilitiesMarkdown = (star.action ?? "").trim();
+  const achievementsMarkdown = (star.result ?? "").trim();
+  const responsibilities = splitToBullets(responsibilitiesMarkdown);
+  const achievements = splitToBullets(achievementsMarkdown);
   return {
     projectName: exp.projectName,
+    projectTime: exp.projectTime?.trim() || undefined,
+    projectRole: exp.projectRole?.trim() || star.task?.trim() || undefined,
     techStack: exp.techStack,
-    background,
+    description,
+    responsibilitiesMarkdown,
+    achievementsMarkdown,
     responsibilities,
     achievements,
-    hasContent: !!(background || responsibilities.length || achievements.length),
+    hasContent: !!(description || responsibilities.length || achievements.length),
   };
 }
 
@@ -102,7 +103,7 @@ export function formatResume(resume: ResumeV2): FormattedResume {
   return {
     title: jobDirectionTitle(resume.jobDirection),
     generatedAt: resume.createdAt,
-    summary: (resume.summary ?? "").trim(),
+    summary: (resume.personalInfo?.summary ?? resume.summary ?? "").trim(),
     skills: resume.skills,
     jdKeywords: resume.jdKeywords,
     experiences: resume.experiences.map(formatExperience),
@@ -123,38 +124,29 @@ export const PERSONAL_INFO_BASIC_FIELDS: PersonalInfoFieldDef<
   keyof PersonalInfo["basic"]
 >[] = [
   { key: "name", label: "姓名" },
-  { key: "gender", label: "性别" },
-  { key: "birthDate", label: "出生年月" },
   { key: "phone", label: "手机" },
   { key: "email", label: "邮箱" },
-  { key: "location", label: "现居地" },
-  { key: "jobStatus", label: "求职状态" },
+  { key: "workExperience", label: "工作经验" },
 ];
 
 export const PERSONAL_INFO_EDUCATION_FIELDS: PersonalInfoFieldDef<
-  keyof PersonalInfo["education"]
+  keyof PersonalInfo["educations"][number]
 >[] = [
-  { key: "degree", label: "最高学历" },
-  { key: "school", label: "毕业院校" },
-  { key: "major", label: "专业" },
-  { key: "graduationYear", label: "毕业年份" },
+  { key: "school", label: "学校" },
+  { key: "degree", label: "学历" },
+  { key: "startDate", label: "开始时间" },
+  { key: "endDate", label: "结束时间" },
 ];
 
 export const PERSONAL_INFO_JOB_FIELDS: PersonalInfoFieldDef<
   keyof PersonalInfo["jobPreference"]
 >[] = [
-  { key: "yearsOfExperience", label: "工作年限" },
   { key: "expectedPosition", label: "期望职位" },
   { key: "expectedSalary", label: "期望薪资" },
-  { key: "expectedCity", label: "期望城市" },
 ];
 
 export const PERSONAL_INFO_SOCIAL_FIELDS: PersonalInfoFieldDef<
   keyof PersonalInfo["social"]
 >[] = [
-  { key: "website", label: "个人网站" },
-  { key: "github", label: "GitHub" },
-  { key: "blog", label: "博客" },
-  { key: "linkedin", label: "领英" },
-  { key: "wechat", label: "微信" },
+  { key: "websites", label: "网站链接" },
 ];
