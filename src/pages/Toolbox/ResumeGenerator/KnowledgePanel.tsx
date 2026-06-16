@@ -232,8 +232,8 @@ export function KnowledgePanel({ selectedProjects, provider, promptConfigVersion
 
   return (
     <div className="flex-1 min-h-0 overflow-hidden bg-white">
-      <div className="h-full overflow-auto px-6 pb-5">
-        <div className={`mx-auto grid min-h-full max-w-6xl gap-4 ${showProjectRail ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-1"}`}>
+      <div className="h-full overflow-hidden px-6 pb-5">
+        <div className={`mx-auto grid h-full min-h-0 grid-rows-1 max-w-6xl gap-4 ${showProjectRail ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-1"}`}>
           {showProjectRail && (
             <ProjectRail
               projects={selectedProjects}
@@ -244,7 +244,7 @@ export function KnowledgePanel({ selectedProjects, provider, promptConfigVersion
             />
           )}
 
-          <section className="min-w-0 overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm shadow-emerald-900/5">
+          <section className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm shadow-emerald-900/5">
             <PanelHeader
               project={activeProject}
               provider={provider}
@@ -259,7 +259,7 @@ export function KnowledgePanel({ selectedProjects, provider, promptConfigVersion
               onRefresh={() => activeProject && refreshRuns(activeProject.id)}
             />
 
-            <div className="min-h-[560px] p-4">
+            <div className="min-h-0 flex-1 overflow-auto p-4">
               {activeView === "background" && (
                 <BackgroundView activeDoc={activeDoc} />
               )}
@@ -322,7 +322,7 @@ function PanelHeader({
   const modelName = provider?.models.find((item) => item.isDefault)?.model ?? provider?.models[0]?.model ?? "-";
 
   return (
-    <div className="border-b border-emerald-100 bg-emerald-50/70 px-4 py-4">
+    <div className="shrink-0 border-b border-emerald-100 bg-emerald-50/70 px-4 py-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -386,12 +386,12 @@ function ProjectRail({
   onSelect: (id: string) => void;
 }) {
   return (
-    <aside className="min-h-0 overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm shadow-emerald-900/5">
-      <div className="border-b border-emerald-100 bg-emerald-50/70 px-3 py-3">
+    <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm shadow-emerald-900/5">
+      <div className="shrink-0 border-b border-emerald-100 bg-emerald-50/70 px-3 py-3">
         <div className="text-sm font-medium text-emerald-950">已选项目</div>
         <div className="mt-0.5 text-xs text-gray-500">{projects.length} 个项目</div>
       </div>
-      <div className="max-h-[680px] overflow-auto p-2">
+      <div className="min-h-0 flex-1 overflow-auto p-2">
         {projects.map((project) => {
           const active = project.id === activeProjectId;
           const hasDoc = !!knowledgeDocs[project.id];

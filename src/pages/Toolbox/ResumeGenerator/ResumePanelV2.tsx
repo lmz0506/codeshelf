@@ -260,10 +260,12 @@ export function ResumePanelV2({
 
   const handleGenerateFromSelection = async () => {
     const docs = allKnowledgeDocs.filter((doc) => generateSelectedProjectIds.includes(doc.projectId));
+    if (docs.length === 0) return;
+    // 先关弹窗再生成：生成过程会持续向主面板流式追加步骤（含 loading 动画），
+    // 半透明遮罩长时间盖在不断重绘的背景上会触发 WebView 合成花屏。进度改由主面板呈现。
+    setGenerateDialogOpen(false);
+    setGenerateSelectedProjectIds([]);
     await executeGenerate(docs);
-    if (docs.length > 0) {
-      closeGenerateDialog();
-    }
   };
 
   const handleUpdateExperience = (updated: ResumeProjectExperience) => {
