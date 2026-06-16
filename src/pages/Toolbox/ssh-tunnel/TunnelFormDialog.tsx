@@ -100,7 +100,7 @@ export function TunnelFormDialog(props: TunnelFormDialogProps) {
           {isEditing ? "编辑 SSH 隧道" : "创建 SSH 隧道"}
         </h3>
         <p className="text-xs text-gray-400 mb-4">
-          相当于 <code className="font-mono">ssh -N -L 本地:远程主机:远程端口 用户@SSH主机</code>
+          相当于 <code className="font-mono">ssh -N -L 本地:目标主机:远程端口 用户@SSH主机</code>
         </p>
 
         <div className="space-y-4">
@@ -151,43 +151,66 @@ export function TunnelFormDialog(props: TunnelFormDialogProps) {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-2">本地端口</label>
-              <Input
-                type="number"
-                value={formLocalPort}
-                onChange={(e) => onFormLocalPortChange(e.target.value)}
-                placeholder="如: 16379"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-2">远程端口</label>
-              <Input
-                type="number"
-                value={formRemotePort}
-                onChange={(e) => onFormRemotePortChange(e.target.value)}
-                placeholder="如: 6379"
-              />
-            </div>
+          {/* 第一段：本地 / 项目连接侧 —— 你的项目和局域网设备连这里 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-500 mb-2">本地端口</label>
+            <Input
+              type="number"
+              value={formLocalPort}
+              onChange={(e) => onFormLocalPortChange(e.target.value)}
+              placeholder="如: 16379"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              监听 <code className="font-mono">0.0.0.0</code>：本机用{" "}
+              <code className="font-mono">127.0.0.1:{formLocalPort || "端口"}</code> 连接；
+              同局域网其他电脑可用 <span className="font-mono">本机IP:{formLocalPort || "端口"}</span> 共享连接。
+            </p>
+            {localIps.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {localIps.map((ip) => (
+                  <span
+                    key={ip}
+                    className="px-2 py-0.5 rounded-md text-xs font-mono bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
+                  >
+                    {ip}:{formLocalPort || "端口"}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-500 mb-2">
-              远程主机 <span className="text-gray-400 font-normal">(SSH 服务端看到的目标)</span>
-            </label>
-            <Input
-              value={formRemoteHost}
-              onChange={(e) => onFormRemoteHostChange(e.target.value)}
-              placeholder="默认 127.0.0.1"
-              list="ssh-tunnel-remote-host-datalist"
-            />
-            <datalist id="ssh-tunnel-remote-host-datalist">
-              {["127.0.0.1", "localhost", ...localIps].map((ip) => (
-                <option key={ip} value={ip} />
-              ))}
-            </datalist>
-            <p className="text-xs text-gray-400 mt-1">可选下拉，也可手动输入；本机 IP 已自动列出</p>
+          {/* 第二段：SSH 服务端映射目标 —— 由服务端去连接的地址 */}
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+            <p className="text-sm font-medium text-gray-500 mb-0.5">SSH 服务端映射目标</p>
+            <p className="text-xs text-gray-400 mb-3">由 SSH 服务端去连接的地址与端口</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-2">目标主机</label>
+                <Input
+                  value={formRemoteHost}
+                  onChange={(e) => onFormRemoteHostChange(e.target.value)}
+                  placeholder="默认 127.0.0.1"
+                  list="ssh-tunnel-remote-host-datalist"
+                />
+                <datalist id="ssh-tunnel-remote-host-datalist">
+                  {["127.0.0.1", "localhost"].map((ip) => (
+                    <option key={ip} value={ip} />
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-2">远程端口</label>
+                <Input
+                  type="number"
+                  value={formRemotePort}
+                  onChange={(e) => onFormRemotePortChange(e.target.value)}
+                  placeholder="如: 6379"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              通常 <code className="font-mono">127.0.0.1</code>（即服务器自身），也可填 SSH 服务器能访问到的其他 IP。
+            </p>
           </div>
 
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
