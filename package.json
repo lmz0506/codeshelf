@@ -6,8 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run resume-agent:build && tsc && vite build",
+    "build": "npm run resume-agent:build && npm run resume-agent:prepare-sidecar && tsc && vite build",
     "resume-agent:build": "tsc -p src-node/resume-agent/tsconfig.json",
+    "resume-agent:prepare-sidecar": "node scripts/prepare-resume-agent-sidecar.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "verify:release": "bash scripts/verify-release.sh",

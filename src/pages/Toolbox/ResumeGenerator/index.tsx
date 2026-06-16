@@ -172,7 +172,18 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
   };
 
   const handleSaveResume = async (r: ResumeV2) => {
-    // 打开命名 dialog,真正的写盘在 persistResume 里。返回 Promise 以兼容 ResumePanelV2 的 await。
+    const exists = savedResumes.some((item) => item.id === r.id);
+    if (exists) {
+      await saveResumeRecord({
+        ...r,
+        personalInfo: resumeProfile,
+        updatedAt: new Date().toISOString(),
+        isSaved: true,
+      });
+      showToast("success", "已保存");
+      return;
+    }
+    // 新简历首次保存时才打开命名 dialog。返回 Promise 以兼容 ResumePanelV2 的 await。
     setSaveDialogResume({ ...r, personalInfo: resumeProfile });
   };
 
@@ -192,18 +203,22 @@ export function ResumeGenerator({ onBack }: ResumeGeneratorProps) {
       updatedAt: new Date().toISOString(),
       isSaved: true,
     };
-    const updated = [stored, ...savedResumes.filter((s) => s.id !== stored.id)];
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("save_resumes", { data: updated });
-      setSavedResumes(updated);
-      setResume(stored);
+      await saveResumeRecord(stored);
       setSaveDialogResume(null);
       showToast("success", "已保存");
     } catch (err) {
       console.error("保存简历失败:", err);
       showToast("error", `保存失败: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  const saveResumeRecord = async (stored: ResumeV2) => {
+    const updated = [stored, ...savedResumes.filter((s) => s.id !== stored.id)];
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("save_resumes", { data: updated });
+    setSavedResumes(updated);
+    setResume(stored);
   };
 
   const handleOpenSaved = (r: ResumeV2) => {

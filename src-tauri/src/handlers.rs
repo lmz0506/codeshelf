@@ -329,6 +329,7 @@ pub fn make_builder() -> Builder<tauri::Wry> {
         resume_node_agent::save_resume_agent_background,
         resume_node_agent::list_resume_agent_background,
         resume_node_agent::delete_resume_agent_background,
+        resume_node_agent::delete_resume_agent_runs,
         // Keyboard hook
         keyboard_hook::register_global_shortcuts,
         keyboard_hook::unregister_all_global_shortcuts,

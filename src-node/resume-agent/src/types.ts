@@ -245,7 +245,8 @@ export type RpcRequest =
   | { id: string; method: "load_background"; params: { dataDir: string; projectId: string } }
   | { id: string; method: "save_background"; params: { dataDir: string; projectId: string; content: string } }
   | { id: string; method: "list_background"; params: { dataDir: string } }
-  | { id: string; method: "delete_background"; params: { dataDir: string; projectId: string } };
+  | { id: string; method: "delete_background"; params: { dataDir: string; projectId: string } }
+  | { id: string; method: "delete_runs"; params: { dataDir: string; projectId: string } };
 
 export interface RpcResponse {
   id: string;

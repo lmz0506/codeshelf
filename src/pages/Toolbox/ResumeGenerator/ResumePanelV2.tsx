@@ -82,30 +82,56 @@ export function ResumePanelV2({
   onPersonalInfoChange,
   onSaveResume,
 }: ResumePanelV2Props) {
-  const { resumeRun, startResumeRun, appendResumeStep, finishResumeRun } = useResumeStore();
+  const {
+    resumeRun,
+    startResumeRun,
+    appendResumeStep,
+    finishResumeRun,
+    knowledgeDocs: allKnowledgeDocMap,
+  } = useResumeStore();
   const running = resumeRun?.status === "running";
   const [previewOpen, setPreviewOpen] = useState(false);
   const [refineTask, setRefineTask] = useState<RefineTask | null>(null);
   const [refineInstruction, setRefineInstruction] = useState("");
   const [refineRunning, setRefineRunning] = useState(false);
   const [docxExporting, setDocxExporting] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addSelectedProjectIds, setAddSelectedProjectIds] = useState<string[]>([]);
+  const [addRunning, setAddRunning] = useState(false);
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [generateSelectedProjectIds, setGenerateSelectedProjectIds] = useState<string[]>([]);
 
-  const ready = knowledgeDocs.length > 0 && !!provider;
+  const allKnowledgeDocs = useMemo(() => Object.values(allKnowledgeDocMap), [allKnowledgeDocMap]);
+  const ready = allKnowledgeDocs.length > 0 && !!provider;
+  const knowledgeDocByProjectId = useMemo(() => {
+    const map = new Map<string, ProjectKnowledge>();
+    allKnowledgeDocs.forEach((doc) => map.set(doc.projectId, doc));
+    return map;
+  }, [allKnowledgeDocs]);
+  const availableKnowledgeDocs = useMemo(() => {
+    const used = new Set(resume?.experiences.map((item) => item.projectId) ?? []);
+    return allKnowledgeDocs.filter((doc) => !used.has(doc.projectId));
+  }, [allKnowledgeDocs, resume]);
+  const generatedExperienceProjectIds = useMemo(
+    () => new Set(resume?.experiences.map((item) => item.projectId) ?? []),
+    [resume]
+  );
 
-  const handleGenerate = async () => {
+  const executeGenerate = async (docs: ProjectKnowledge[]) => {
     if (!provider) {
       showToast("warning", "请先配置默认 AI 供应商");
       return;
     }
-    if (knowledgeDocs.length === 0) {
-      showToast("warning", "请先在「背景知识」页生成至少一份项目背景");
+    if (docs.length === 0) {
+      showToast("warning", "请至少选择一份项目背景知识");
       return;
     }
     const requestId = generateRequestId();
     startResumeRun(requestId);
     try {
       const baseResume = resume ?? createDraftResume(jobDirection);
-      const sourceExperiences = knowledgeDocs.map((doc) =>
+      const selectedProjectIds = new Set(docs.map((doc) => doc.projectId));
+      const sourceExperiences = docs.map((doc) =>
         baseResume.experiences.find((item) => item.projectId === doc.projectId)
           ?? createEmptyProjectExperience(doc)
       );
@@ -129,7 +155,7 @@ export function ResumePanelV2({
           jobDirection,
           jdKeywords: EMPTY_JD_KEYWORDS,
           tone: DEFAULT_TONE,
-          knowledgeDocs,
+          knowledgeDocs: docs.filter((doc) => doc.projectId === experience.projectId),
           projectId: experience.projectId,
           currentExperience: experience,
           skills: baseResume.skills,
@@ -139,7 +165,22 @@ export function ResumePanelV2({
       }
 
       const generatedSkills = uniqueTags(experiences.flatMap((item) => item.techStack));
-      const skills = generatedSkills.length > 0 ? generatedSkills : baseResume.skills;
+      const generatedByProjectId = new Map(
+        experiences.map((item) => [item.projectId, item] as const)
+      );
+      const mergedExperiences = baseResume.experiences.map((item) =>
+        generatedByProjectId.get(item.projectId) ?? item
+      );
+      experiences.forEach((item) => {
+        if (!baseResume.experiences.some((exp) => exp.projectId === item.projectId)) {
+          mergedExperiences.push(item);
+        }
+      });
+      const orderedExperiences = [
+        ...mergedExperiences.filter((item) => selectedProjectIds.has(item.projectId)),
+        ...mergedExperiences.filter((item) => !selectedProjectIds.has(item.projectId)),
+      ];
+      const skills = uniqueTags(orderedExperiences.flatMap((item) => item.techStack));
       appendResumeStep({
         kind: "llm_text",
         label: "生成核心技能标签",
@@ -152,7 +193,7 @@ export function ResumePanelV2({
         jobDirection,
         jdKeywords: EMPTY_JD_KEYWORDS,
         tone: DEFAULT_TONE,
-        experiences,
+        experiences: orderedExperiences,
         skills,
         updatedAt: new Date().toISOString(),
       };
@@ -171,7 +212,7 @@ export function ResumePanelV2({
           jobDirection,
           jdKeywords: EMPTY_JD_KEYWORDS,
           tone: DEFAULT_TONE,
-          knowledgeDocs,
+          knowledgeDocs: docs,
           personalInfo,
           skills,
           instruction: "",
@@ -192,6 +233,36 @@ export function ResumePanelV2({
       const msg = err instanceof Error ? err.message : String(err);
       finishResumeRun(msg);
       showToast("error", `生成失败: ${msg}`);
+    }
+  };
+
+  const openGenerateDialog = () => {
+    const defaults = allKnowledgeDocs
+      .filter((doc) => !generatedExperienceProjectIds.has(doc.projectId))
+      .map((doc) => doc.projectId);
+    setGenerateSelectedProjectIds(defaults);
+    setGenerateDialogOpen(true);
+  };
+
+  const closeGenerateDialog = () => {
+    if (running) return;
+    setGenerateDialogOpen(false);
+    setGenerateSelectedProjectIds([]);
+  };
+
+  const toggleGenerateProject = (projectId: string) => {
+    setGenerateSelectedProjectIds((prev) =>
+      prev.includes(projectId)
+        ? prev.filter((id) => id !== projectId)
+        : [...prev, projectId]
+    );
+  };
+
+  const handleGenerateFromSelection = async () => {
+    const docs = allKnowledgeDocs.filter((doc) => generateSelectedProjectIds.includes(doc.projectId));
+    await executeGenerate(docs);
+    if (docs.length > 0) {
+      closeGenerateDialog();
     }
   };
 
@@ -266,6 +337,72 @@ export function ResumePanelV2({
     setRefineInstruction("");
   };
 
+  const toggleAddProject = (projectId: string) => {
+    setAddSelectedProjectIds((prev) =>
+      prev.includes(projectId)
+        ? prev.filter((id) => id !== projectId)
+        : [...prev, projectId]
+    );
+  };
+
+  const openAddDialog = () => {
+    setAddSelectedProjectIds([]);
+    setAddDialogOpen(true);
+  };
+
+  const closeAddDialog = () => {
+    if (addRunning) return;
+    setAddDialogOpen(false);
+    setAddSelectedProjectIds([]);
+  };
+
+  const handleAddExperiences = async () => {
+    if (!provider) {
+      showToast("warning", "请先配置默认 AI 供应商");
+      return;
+    }
+    if (!resume) {
+      showToast("warning", "请先生成一份简历");
+      return;
+    }
+    const docs = availableKnowledgeDocs.filter((doc) => addSelectedProjectIds.includes(doc.projectId));
+    if (docs.length === 0) {
+      showToast("warning", "请先选择至少一个背景知识项目");
+      return;
+    }
+    setAddRunning(true);
+    try {
+      const created: ResumeProjectExperience[] = [];
+      for (const doc of docs) {
+        const generated = await regenerateProjectExperienceFragment({
+          provider,
+          jobDirection,
+          jdKeywords: EMPTY_JD_KEYWORDS,
+          tone: DEFAULT_TONE,
+          knowledgeDocs: [doc],
+          projectId: doc.projectId,
+          currentExperience: createEmptyProjectExperience(doc),
+          skills: resume.skills,
+          instruction: "",
+        });
+        created.push(generated);
+      }
+      const nextExperiences = [...resume.experiences, ...created];
+      onResumeChange({
+        ...resume,
+        experiences: nextExperiences,
+        skills: uniqueTags(nextExperiences.flatMap((item) => item.techStack)),
+        updatedAt: new Date().toISOString(),
+      });
+      showToast("success", `已新增 ${created.length} 个项目经历`);
+      closeAddDialog();
+    } catch (err) {
+      showToast("error", `新增项目经历失败: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setAddRunning(false);
+    }
+  };
+
   const handleConfirmRefine = async () => {
     if (!refineTask) return;
     if (!provider) {
@@ -314,12 +451,14 @@ export function ResumePanelV2({
         if (!resume) throw new Error("尚未生成简历");
         const current = resume.experiences.find((exp) => exp.projectId === refineTask.projectId);
         if (!current) throw new Error("项目经历不存在");
+        const doc = knowledgeDocByProjectId.get(refineTask.projectId);
+        if (!doc) throw new Error("未找到对应的背景知识");
         const updated = await regenerateProjectExperienceFragment({
           provider,
           jobDirection,
           jdKeywords: EMPTY_JD_KEYWORDS,
           tone: DEFAULT_TONE,
-          knowledgeDocs,
+          knowledgeDocs: [doc],
           projectId: refineTask.projectId,
           currentExperience: current,
           skills: resume.skills,
@@ -343,10 +482,10 @@ export function ResumePanelV2({
         ready={ready}
         running={running}
         hasResume={!!resume}
-        knowledgeCount={knowledgeDocs.length}
+        knowledgeCount={allKnowledgeDocs.length}
         jobDirection={jobDirection}
         onJobDirectionChange={onJobDirectionChange}
-        onGenerate={handleGenerate}
+        onGenerate={openGenerateDialog}
         onPreview={() => setPreviewOpen(true)}
         onSave={handleSave}
         onExportDocx={handleExportDocx}
@@ -396,6 +535,22 @@ export function ResumePanelV2({
               icon={<FileIcon size={16} />}
               title="项目经历"
               description={`${resume.experiences.length} 个项目，可编辑项目描述、核心职责、项目成果和关键词（技术标签）`}
+              action={
+                <Button
+                  onClick={openAddDialog}
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1"
+                  disabled={availableKnowledgeDocs.length === 0}
+                  title={
+                    availableKnowledgeDocs.length === 0
+                      ? "当前没有可新增的背景知识"
+                      : "从已有背景知识新增项目经历"
+                  }
+                >
+                  <Plus size={14} /> 新增项目经历
+                </Button>
+              }
             >
               <div className="space-y-3">
                 {resume.experiences.map((exp) => (
@@ -426,6 +581,25 @@ export function ResumePanelV2({
         onChange={setRefineInstruction}
         onCancel={closeRefineDialog}
         onConfirm={handleConfirmRefine}
+      />
+      <AddProjectExperienceDialog
+        open={addDialogOpen}
+        docs={availableKnowledgeDocs}
+        selectedProjectIds={addSelectedProjectIds}
+        running={addRunning}
+        onToggle={toggleAddProject}
+        onCancel={closeAddDialog}
+        onConfirm={handleAddExperiences}
+      />
+      <GenerateProjectSelectionDialog
+        open={generateDialogOpen}
+        docs={allKnowledgeDocs}
+        generatedProjectIds={generatedExperienceProjectIds}
+        selectedProjectIds={generateSelectedProjectIds}
+        running={running}
+        onToggle={toggleGenerateProject}
+        onCancel={closeGenerateDialog}
+        onConfirm={handleGenerateFromSelection}
       />
     </div>
   );
@@ -485,6 +659,208 @@ function RefineInstructionDialog({
           留空时会使用默认策略：保留事实边界，不虚构数据，增强专业表达和信息密度。
         </div>
       </div>
+    </Dialog>
+  );
+}
+
+function AddProjectExperienceDialog({
+  open,
+  docs,
+  selectedProjectIds,
+  running,
+  onToggle,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  docs: ProjectKnowledge[];
+  selectedProjectIds: string[];
+  running: boolean;
+  onToggle: (projectId: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onClose={onCancel}
+      title="新增项目经历"
+      icon={Plus}
+      size="md"
+      closeOnOverlayClick={!running}
+      footer={
+        <>
+          <Button onClick={onCancel} variant="secondary" disabled={running}>
+            取消
+          </Button>
+          <Button
+            onClick={onConfirm}
+            variant="primary"
+            disabled={running || selectedProjectIds.length === 0}
+            className="gap-1"
+          >
+            {running && <Loader2 size={14} className="animate-spin" />}
+            {running ? "生成中..." : `生成 ${selectedProjectIds.length} 个项目经历`}
+          </Button>
+        </>
+      }
+    >
+      {docs.length === 0 ? (
+        <EmptyState
+          icon={FileIcon}
+          title="没有可新增的背景知识"
+          description="当前已有背景知识都已经生成过项目经历了。"
+          className="py-8"
+        />
+      ) : (
+        <div className="space-y-2">
+          <p className="text-sm leading-6 text-gray-600">
+            可从尚未生成项目经历的背景知识中选择，直接新增到当前简历。
+          </p>
+          <div className="max-h-[360px] space-y-2 overflow-auto pr-1">
+            {docs.map((doc) => {
+              const checked = selectedProjectIds.includes(doc.projectId);
+              return (
+                <button
+                  key={doc.projectId}
+                  type="button"
+                  onClick={() => onToggle(doc.projectId)}
+                  className={`flex w-full items-start justify-between rounded-xl border px-3 py-3 text-left transition ${
+                    checked
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-gray-900">{doc.projectName}</div>
+                    <div className="mt-1 truncate text-xs text-gray-500">{doc.projectPath}</div>
+                    <div className="mt-1 text-[11px] text-gray-400">
+                      最近更新于 {formatRelativeTime(doc.updatedAt)}
+                    </div>
+                  </div>
+                  <span
+                    className={`ml-3 mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${
+                      checked
+                        ? "border-emerald-500 bg-emerald-500 text-white"
+                        : "border-gray-300 bg-white text-transparent"
+                    }`}
+                  >
+                    <Check size={12} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+function GenerateProjectSelectionDialog({
+  open,
+  docs,
+  generatedProjectIds,
+  selectedProjectIds,
+  running,
+  onToggle,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  docs: ProjectKnowledge[];
+  generatedProjectIds: Set<string>;
+  selectedProjectIds: string[];
+  running: boolean;
+  onToggle: (projectId: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onClose={onCancel}
+      title="选择项目背景知识"
+      icon={Sparkles}
+      size="lg"
+      closeOnOverlayClick={!running}
+      footer={
+        <>
+          <Button onClick={onCancel} variant="secondary" disabled={running}>
+            取消
+          </Button>
+          <Button
+            onClick={onConfirm}
+            variant="primary"
+            disabled={running || selectedProjectIds.length === 0}
+            className="gap-1"
+          >
+            {running && <Loader2 size={14} className="animate-spin" />}
+            {running ? "生成中..." : `生成 ${selectedProjectIds.length} 个项目内容`}
+          </Button>
+        </>
+      }
+    >
+      {docs.length === 0 ? (
+        <EmptyState
+          icon={FileIcon}
+          title="没有可用的背景知识"
+          description="请先到背景知识页生成至少一份项目背景知识。"
+          className="py-8"
+        />
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm leading-6 text-gray-600">
+            默认勾选尚未生成项目经历的项目。你也可以手动选择已生成项目，重新生成对应内容。
+          </p>
+          <div className="max-h-[420px] space-y-2 overflow-auto pr-1">
+            {docs.map((doc) => {
+              const checked = selectedProjectIds.includes(doc.projectId);
+              const generated = generatedProjectIds.has(doc.projectId);
+              return (
+                <button
+                  key={doc.projectId}
+                  type="button"
+                  onClick={() => onToggle(doc.projectId)}
+                  className={`flex w-full items-start justify-between rounded-xl border px-3 py-3 text-left transition ${
+                    checked
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-gray-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="truncate text-sm font-medium text-gray-900">{doc.projectName}</div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          generated
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {generated ? "已生成项目经历" : "未生成项目经历"}
+                      </span>
+                    </div>
+                    <div className="mt-1 truncate text-xs text-gray-500">{doc.projectPath}</div>
+                    <div className="mt-1 text-[11px] text-gray-400">
+                      最近更新于 {formatRelativeTime(doc.updatedAt)}
+                    </div>
+                  </div>
+                  <span
+                    className={`ml-3 mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${
+                      checked
+                        ? "border-emerald-500 bg-emerald-500 text-white"
+                        : "border-gray-300 bg-white text-transparent"
+                    }`}
+                  >
+                    <Check size={12} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </Dialog>
   );
 }
@@ -1554,6 +1930,20 @@ function labelOf(key: "situation" | "action" | "result"): string {
     action: "核心职责",
     result: "项目成果",
   }[key];
+}
+
+function formatRelativeTime(value: string): string {
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return value;
+  const diff = Date.now() - time;
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diff < minute) return "刚刚";
+  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`;
+  if (diff < day) return `${Math.floor(diff / hour)} 小时前`;
+  if (diff < 7 * day) return `${Math.floor(diff / day)} 天前`;
+  return new Date(value).toLocaleDateString("zh-CN");
 }
 
 function formatStep(step: AgentStep): string {

@@ -109,6 +109,10 @@ export async function deleteResumeKnowledge(projectId: string): Promise<void> {
   await invoke<void>("delete_resume_agent_background", { projectId });
 }
 
+export async function deleteResumeKnowledgeRuns(projectId: string): Promise<void> {
+  await invoke<void>("delete_resume_agent_runs", { projectId });
+}
+
 export async function getResumeKnowledgePromptConfig(): Promise<ResumeAgentPromptConfig> {
   return await invoke<ResumeAgentPromptConfig>("get_resume_agent_prompt_config");
 }

@@ -25,6 +25,7 @@ import { EmptyState } from "@/components/common";
 import { useResumeStore } from "@/stores/resumeStore";
 import { runKnowledgeAgent } from "@/services/resume/agents/knowledgeAgent";
 import {
+  deleteResumeKnowledgeRuns,
   getResumeKnowledgePromptConfig,
   getResumeKnowledgeRuns,
   readResumeKnowledgeRunArtifact,
@@ -60,6 +61,7 @@ export function KnowledgePanel({ selectedProjects, provider, promptConfigVersion
     startKnowledgeRun,
     setKnowledgeRunSnapshot,
     finishKnowledgeRun,
+    clearKnowledgeRun,
   } = useResumeStore();
   const [activeProjectId, setActiveProjectId] = useState(selectedProjects[0]?.id ?? "");
   const [activeView, setActiveView] = useState<KnowledgeView>("background");
@@ -112,6 +114,11 @@ export function KnowledgePanel({ selectedProjects, provider, promptConfigVersion
       showToast("warning", "请先配置默认 AI 供应商");
       return;
     }
+    await deleteResumeKnowledgeRuns(project.id).catch(() => undefined);
+    clearKnowledgeRun(project.id);
+    setRunState(null);
+    setArtifactContent({});
+    setActiveArtifact(null);
     const requestId = generateRequestId();
     setActiveProjectId(project.id);
     setActiveView("runs");
@@ -142,6 +149,14 @@ export function KnowledgePanel({ selectedProjects, provider, promptConfigVersion
       await refreshRuns(project.id);
       showToast("error", `${project.name} 生成失败: ${msg}`);
     }
+  }
+
+  async function handleDelete(projectId: string) {
+    clearKnowledgeRun(projectId);
+    setRunState(null);
+    setArtifactContent({});
+    setActiveArtifact(null);
+    await removeKnowledge(projectId);
   }
 
   async function openArtifact(run: AgentRunRecord, artifact: ArtifactRef) {
@@ -240,7 +255,7 @@ export function KnowledgePanel({ selectedProjects, provider, promptConfigVersion
               onViewChange={setActiveView}
               onGenerate={() => activeProject && handleGenerate(activeProject)}
               onNext={onNext}
-              onDelete={() => activeProject && removeKnowledge(activeProject.id)}
+              onDelete={() => activeProject && handleDelete(activeProject.id)}
               onRefresh={() => activeProject && refreshRuns(activeProject.id)}
             />
 

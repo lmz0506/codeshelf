@@ -6,7 +6,7 @@ use std::sync::Arc;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::RwLock;
@@ -136,6 +136,7 @@ pub async fn run_resume_deep_agent(
 #[tauri::command]
 #[specta::specta]
 pub async fn generate_resume_from_knowledge(
+    app: AppHandle,
     request: GenerateResumeFromKnowledgeRequest,
 ) -> AppResult<Value> {
     let params = json!({
@@ -149,7 +150,7 @@ pub async fn generate_resume_from_knowledge(
         "promptConfig": request.prompt_config,
     });
     call_node_rpc_with_events(
-        None,
+        Some(app),
         "generate_resume",
         params,
         Some(request.request_id.clone()),
@@ -160,6 +161,7 @@ pub async fn generate_resume_from_knowledge(
 #[tauri::command]
 #[specta::specta]
 pub async fn generate_resume_fragment(
+    app: AppHandle,
     request: GenerateResumeFragmentRequest,
 ) -> AppResult<Value> {
     let params = json!({
@@ -173,7 +175,7 @@ pub async fn generate_resume_fragment(
         "fragment": request.fragment,
     });
     call_node_rpc_with_events(
-        None,
+        Some(app),
         "generate_resume_fragment",
         params,
         Some(request.request_id.clone()),
@@ -192,8 +194,9 @@ pub async fn cancel_resume_deep_agent(request_id: String) -> AppResult<()> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_resume_agent_runs(project_id: String) -> AppResult<Value> {
+pub async fn get_resume_agent_runs(app: AppHandle, project_id: String) -> AppResult<Value> {
     call_node_rpc(
+        app,
         "get_runs",
         json!({
             "dataDir": data_dir_string()?,
@@ -206,10 +209,12 @@ pub async fn get_resume_agent_runs(project_id: String) -> AppResult<Value> {
 #[tauri::command]
 #[specta::specta]
 pub async fn read_resume_agent_artifact(
+    app: AppHandle,
     project_id: String,
     artifact_id: String,
 ) -> AppResult<Value> {
     call_node_rpc(
+        app,
         "read_artifact",
         json!({
             "dataDir": data_dir_string()?,
@@ -222,8 +227,9 @@ pub async fn read_resume_agent_artifact(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_resume_agent_prompt_config() -> AppResult<Value> {
+pub async fn get_resume_agent_prompt_config(app: AppHandle) -> AppResult<Value> {
     call_node_rpc(
+        app,
         "get_prompt_config",
         json!({ "dataDir": data_dir_string()? }),
     )
@@ -232,8 +238,9 @@ pub async fn get_resume_agent_prompt_config() -> AppResult<Value> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_resume_agent_prompt_config(config: Value) -> AppResult<Value> {
+pub async fn save_resume_agent_prompt_config(app: AppHandle, config: Value) -> AppResult<Value> {
     call_node_rpc(
+        app,
         "save_prompt_config",
         json!({
             "dataDir": data_dir_string()?,
@@ -245,8 +252,9 @@ pub async fn save_resume_agent_prompt_config(config: Value) -> AppResult<Value> 
 
 #[tauri::command]
 #[specta::specta]
-pub async fn reset_resume_agent_prompt_config() -> AppResult<Value> {
+pub async fn reset_resume_agent_prompt_config(app: AppHandle) -> AppResult<Value> {
     call_node_rpc(
+        app,
         "reset_prompt_config",
         json!({ "dataDir": data_dir_string()? }),
     )
@@ -255,8 +263,9 @@ pub async fn reset_resume_agent_prompt_config() -> AppResult<Value> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn load_resume_agent_background(project_id: String) -> AppResult<Option<String>> {
+pub async fn load_resume_agent_background(app: AppHandle, project_id: String) -> AppResult<Option<String>> {
     let value = call_node_rpc(
+        app,
         "load_background",
         json!({
             "dataDir": data_dir_string()?,
@@ -269,8 +278,13 @@ pub async fn load_resume_agent_background(project_id: String) -> AppResult<Optio
 
 #[tauri::command]
 #[specta::specta]
-pub async fn save_resume_agent_background(project_id: String, content: String) -> AppResult<()> {
+pub async fn save_resume_agent_background(
+    app: AppHandle,
+    project_id: String,
+    content: String,
+) -> AppResult<()> {
     let _ = call_node_rpc(
+        app,
         "save_background",
         json!({
             "dataDir": data_dir_string()?,
@@ -284,8 +298,9 @@ pub async fn save_resume_agent_background(project_id: String, content: String) -
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_resume_agent_background() -> AppResult<Value> {
+pub async fn list_resume_agent_background(app: AppHandle) -> AppResult<Value> {
     call_node_rpc(
+        app,
         "list_background",
         json!({ "dataDir": data_dir_string()? }),
     )
@@ -294,9 +309,25 @@ pub async fn list_resume_agent_background() -> AppResult<Value> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_resume_agent_background(project_id: String) -> AppResult<()> {
+pub async fn delete_resume_agent_background(app: AppHandle, project_id: String) -> AppResult<()> {
     let _ = call_node_rpc(
+        app,
         "delete_background",
+        json!({
+            "dataDir": data_dir_string()?,
+            "projectId": project_id,
+        }),
+    )
+    .await?;
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_resume_agent_runs(app: AppHandle, project_id: String) -> AppResult<()> {
+    let _ = call_node_rpc(
+        app,
+        "delete_runs",
         json!({
             "dataDir": data_dir_string()?,
             "projectId": project_id,
@@ -310,8 +341,8 @@ fn data_dir_string() -> AppResult<String> {
     Ok(get_storage_config()?.data_dir.to_string_lossy().to_string())
 }
 
-async fn call_node_rpc(method: &str, params: Value) -> AppResult<Value> {
-    call_node_rpc_with_events(None, method, params, None).await
+async fn call_node_rpc(app: AppHandle, method: &str, params: Value) -> AppResult<Value> {
+    call_node_rpc_with_events(Some(app), method, params, None).await
 }
 
 async fn call_node_rpc_with_events(
@@ -320,9 +351,9 @@ async fn call_node_rpc_with_events(
     params: Value,
     request_id_for_pid: Option<String>,
 ) -> AppResult<Value> {
-    let main_js = node_agent_main_js()?;
-    let mut child = Command::new("node")
-        .arg(main_js)
+    let runtime = node_agent_runtime(app.as_ref())?;
+    let mut child = Command::new(&runtime.node_executable)
+        .arg(&runtime.entry_script)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -414,25 +445,84 @@ async fn call_node_rpc_with_events(
     }
 }
 
-fn node_agent_main_js() -> AppResult<PathBuf> {
+#[derive(Debug, Clone)]
+struct NodeAgentRuntime {
+    node_executable: PathBuf,
+    entry_script: PathBuf,
+}
+
+fn node_agent_runtime(app: Option<&AppHandle>) -> AppResult<NodeAgentRuntime> {
     let cwd = std::env::current_dir()
         .map_err(|e| AppError::from(format!("获取当前目录失败: {}", e)))?;
-    let candidates = [
+
+    #[cfg(target_os = "windows")]
+    let local_sidecar_candidates = [
+        (
+            cwd.join("src-tauri/resources/sidecars/node/node.exe"),
+            cwd.join("src-tauri/resources/sidecars/resume-agent/main.cjs"),
+        ),
+        (
+            cwd.join("../src-tauri/resources/sidecars/node/node.exe"),
+            cwd.join("../src-tauri/resources/sidecars/resume-agent/main.cjs"),
+        ),
+    ];
+    #[cfg(not(target_os = "windows"))]
+    let local_sidecar_candidates = [
+        (
+            cwd.join("src-tauri/resources/sidecars/node/node"),
+            cwd.join("src-tauri/resources/sidecars/resume-agent/main.cjs"),
+        ),
+        (
+            cwd.join("../src-tauri/resources/sidecars/node/node"),
+            cwd.join("../src-tauri/resources/sidecars/resume-agent/main.cjs"),
+        ),
+    ];
+    if let Some((node_executable, entry_script)) = local_sidecar_candidates
+        .into_iter()
+        .find(|(node, entry)| node.exists() && entry.exists())
+    {
+        return Ok(NodeAgentRuntime {
+            node_executable,
+            entry_script,
+        });
+    }
+
+    let dev_entry_candidates = [
         cwd.join("src-node/resume-agent/dist/main.js"),
         cwd.join("../src-node/resume-agent/dist/main.js"),
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("sidecars/resume-agent/main.js")))
-            .unwrap_or_default(),
     ];
-    candidates
-        .into_iter()
-        .find(|path| path.exists())
-        .ok_or_else(|| {
-            AppError::from(
-                "未找到 Node resume agent，请先运行 npm run resume-agent:build".to_string(),
-            )
+    if let Some(entry_script) = dev_entry_candidates.into_iter().find(|path| path.exists()) {
+        return Ok(NodeAgentRuntime {
+            node_executable: PathBuf::from("node"),
+            entry_script,
+        });
+    }
+
+    let resource_dir = app
+        .and_then(|handle| handle.path().resource_dir().ok())
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|p| p.join("resources")))
         })
+        .ok_or_else(|| AppError::from("未找到内置 Node resume agent 资源目录".to_string()))?;
+
+    #[cfg(target_os = "windows")]
+    let bundled_node = resource_dir.join("sidecars/node/node.exe");
+    #[cfg(not(target_os = "windows"))]
+    let bundled_node = resource_dir.join("sidecars/node/node");
+
+    let entry_script = resource_dir.join("sidecars/resume-agent/main.cjs");
+    if bundled_node.exists() && entry_script.exists() {
+        return Ok(NodeAgentRuntime {
+            node_executable: bundled_node,
+            entry_script,
+        });
+    }
+
+    Err(AppError::from(
+        "未找到内置 Node resume agent，请重新执行应用打包构建。".to_string(),
+    ))
 }
 
 async fn load_project(project_id: &str) -> AppResult<Project> {

@@ -35,6 +35,10 @@ export async function rotateRuns(dataDir: string, projectId: string): Promise<vo
   await fs.rm(runsDir(dataDir, projectId), { recursive: true, force: true });
 }
 
+export async function deleteRuns(dataDir: string, projectId: string): Promise<void> {
+  await fs.rm(runsDir(dataDir, projectId), { recursive: true, force: true });
+}
+
 export async function writeRun(dataDir: string, run: AgentRunRecord): Promise<void> {
   await writeJson(runFile(dataDir, run.projectId), run);
 }

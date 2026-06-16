@@ -7,6 +7,7 @@ import { generateResumeFromKnowledge } from "./agent/generateResume.js";
 import { runResumeDeepAgent } from "./agent/runAgent.js";
 import {
   deleteProjectKnowledge,
+  deleteRuns,
   listBackgroundProjects,
   loadBackground,
   readArtifact,
@@ -68,6 +69,9 @@ startRpc(async (request: RpcRequest) => {
     case "delete_background":
       await deleteProjectKnowledge(request.params.dataDir, request.params.projectId);
       return null;
+    case "delete_runs":
+      await deleteRuns(request.params.dataDir, request.params.projectId);
+      return null;
     default:
       throw new Error(`Unknown method ${(request as { method: string }).method}`);
   }
@@ -85,7 +89,7 @@ async function ensureWorkingDir(): Promise<void> {
   if (process.argv.includes("--print-ready")) {
     process.stdout.write("ready\n");
   }
-  const dir = path.dirname(new URL(import.meta.url).pathname);
+  const dir = path.dirname(process.argv[1] ?? process.cwd());
   await fs.access(dir);
 }
 

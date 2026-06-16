@@ -35,3 +35,4 @@ CodeShelf-Portable-*
 /src-node/resume-agent/dist/rpc.js
 /src-node/resume-agent/dist/types.js
 /src-node/resume-agent/dist/util.js
+/src-tauri/resources/sidecars/

@@ -16,6 +16,7 @@ import {
   saveResumeKnowledge,
   listResumeKnowledge,
   deleteResumeKnowledge,
+  deleteResumeKnowledgeRuns,
 } from "@/services/resume/knowledgeStore";
 import type { KnowledgeRunRecord } from "@/services/resume/knowledgeStore";
 
@@ -396,10 +397,13 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
     set((s) => {
       const next = { ...s.knowledgeDocs };
       delete next[projectId];
-      return { knowledgeDocs: next };
+      const nextRuns = { ...s.knowledgeRuns };
+      delete nextRuns[projectId];
+      return { knowledgeDocs: next, knowledgeRuns: nextRuns };
     });
     try {
       await deleteResumeKnowledge(projectId);
+      await deleteResumeKnowledgeRuns(projectId);
     } catch (err) {
       console.error("删除项目背景知识失败:", err);
     }
