@@ -101,6 +101,9 @@ export function ResumePanelV2({
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [generateSelectedProjectIds, setGenerateSelectedProjectIds] = useState<string[]>([]);
 
+  // 生成 / 润色 / 新增 任一在进行时，禁用其它所有简历操作按钮，避免并发 AI 调用相互覆盖。
+  const busy = running || refineRunning || addRunning;
+
   const allKnowledgeDocs = useMemo(() => Object.values(allKnowledgeDocMap), [allKnowledgeDocMap]);
   const ready = allKnowledgeDocs.length > 0 && !!provider;
   const knowledgeDocByProjectId = useMemo(() => {
@@ -228,7 +231,7 @@ export function ResumePanelV2({
       }
 
       finishResumeRun();
-      showToast("success", "简历内容已生成");
+      showToast("success", "简历生成完成", `已生成 ${experiences.length} 个项目内容`, 4000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       finishResumeRun(msg);
@@ -483,6 +486,7 @@ export function ResumePanelV2({
       <ResumeSidebar
         ready={ready}
         running={running}
+        busy={busy}
         hasResume={!!resume}
         knowledgeCount={allKnowledgeDocs.length}
         jobDirection={jobDirection}
@@ -505,6 +509,7 @@ export function ResumePanelV2({
           onPolishWork={(workId) => openRefineDialog({ kind: "work_polish", workId })}
           refineRunning={refineRunning}
           activeRefineTask={refineTask}
+          busy={busy}
         />
 
         {!resume && !running && (
@@ -532,6 +537,7 @@ export function ResumePanelV2({
             <CoreSkillsEditor
               resume={resume}
               onUpdate={(patch) => updateResume(patch)}
+              busy={busy}
             />
             <SectionCard
               icon={<FileIcon size={16} />}
@@ -543,7 +549,7 @@ export function ResumePanelV2({
                   variant="secondary"
                   size="sm"
                   className="gap-1"
-                  disabled={availableKnowledgeDocs.length === 0}
+                  disabled={availableKnowledgeDocs.length === 0 || busy}
                   title={
                     availableKnowledgeDocs.length === 0
                       ? "当前没有可新增的背景知识"
@@ -562,6 +568,7 @@ export function ResumePanelV2({
                     onUpdate={handleUpdateExperience}
                     onRegenerate={(projectId) => openRefineDialog({ kind: "project_regenerate", projectId })}
                     regenerateRunning={refineRunning && refineTask?.kind === "project_regenerate" && refineTask.projectId === exp.projectId}
+                    busy={busy}
                   />
                 ))}
               </div>
@@ -909,6 +916,7 @@ const JOB_OPTIONS: Array<{ id: JobDirection; name: string; description: string }
 function ResumeSidebar({
   ready,
   running,
+  busy,
   hasResume,
   knowledgeCount,
   jobDirection,
@@ -923,6 +931,7 @@ function ResumeSidebar({
 }: {
   ready: boolean;
   running: boolean;
+  busy: boolean;
   hasResume: boolean;
   knowledgeCount: number;
   jobDirection: JobDirection;
@@ -962,7 +971,7 @@ function ResumeSidebar({
           <button
             type="button"
             onClick={onGenerate}
-            disabled={!ready || running}
+            disabled={!ready || busy}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-emerald-500/25 transition hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {running ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
@@ -973,7 +982,7 @@ function ResumeSidebar({
             <button
               type="button"
               onClick={onPreview}
-              disabled={!hasResume}
+              disabled={!hasResume || busy}
               className="inline-flex items-center justify-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Eye size={14} /> 预览
@@ -981,7 +990,7 @@ function ResumeSidebar({
             <button
               type="button"
               onClick={onSave}
-              disabled={!hasResume}
+              disabled={!hasResume || busy}
               className="inline-flex items-center justify-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Save size={14} /> 保存
@@ -989,7 +998,7 @@ function ResumeSidebar({
             <button
               type="button"
               onClick={onExportDocx}
-              disabled={!hasResume || docxExporting}
+              disabled={!hasResume || docxExporting || busy}
               className="inline-flex items-center justify-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {docxExporting ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
@@ -998,7 +1007,7 @@ function ResumeSidebar({
             <button
               type="button"
               onClick={onExportMarkdown}
-              disabled={!hasResume}
+              disabled={!hasResume || busy}
               className="inline-flex items-center justify-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <FileIcon size={14} /> 导出 MD
@@ -1030,7 +1039,8 @@ function ResumeSidebar({
                       key={opt.id}
                       type="button"
                       onClick={() => onJobDirectionChange(opt.id)}
-                      className={`rounded-lg border px-2 py-2 text-left transition ${
+                      disabled={busy}
+                      className={`rounded-lg border px-2 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         jobDirection === opt.id
                           ? "border-emerald-400 bg-emerald-50 text-emerald-700"
                           : "border-gray-200 bg-white text-gray-700 hover:border-emerald-200 hover:bg-white"
@@ -1109,6 +1119,7 @@ function GlobalProfileEditor({
   onPolishWork,
   refineRunning,
   activeRefineTask,
+  busy,
 }: {
   value: PersonalInfo;
   onChange: (next: PersonalInfo) => void;
@@ -1117,6 +1128,7 @@ function GlobalProfileEditor({
   onPolishWork: (workId: string) => void;
   refineRunning: boolean;
   activeRefineTask: RefineTask | null;
+  busy: boolean;
 }) {
   const basic = value.basic;
   const job = value.jobPreference;
@@ -1217,7 +1229,7 @@ function GlobalProfileEditor({
         onChange={(summary) => onChange({ ...value, summary })}
         onGenerate={onGenerateSummary}
         onPolish={onPolishSummary}
-        running={refineRunning}
+        busy={busy}
       />
 
       <WorkExperienceEditor
@@ -1226,6 +1238,7 @@ function GlobalProfileEditor({
         onPolish={onPolishWork}
         activePolishId={activeRefineTask?.kind === "work_polish" ? activeRefineTask.workId : null}
         polishRunning={refineRunning}
+        busy={busy}
       />
 
       <EducationEditor
@@ -1241,13 +1254,13 @@ function SummaryEditor({
   onChange,
   onGenerate,
   onPolish,
-  running,
+  busy,
 }: {
   value: string;
   onChange: (value: string) => void;
   onGenerate: () => void;
   onPolish: () => void;
-  running: boolean;
+  busy: boolean;
 }) {
   return (
     <SectionCard
@@ -1259,7 +1272,7 @@ function SummaryEditor({
           <button
             type="button"
             onClick={onGenerate}
-            disabled={running}
+            disabled={busy}
             className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1.5 text-xs text-white hover:bg-emerald-600 disabled:opacity-50"
           >
             <Sparkles size={12} /> AI 生成
@@ -1267,7 +1280,7 @@ function SummaryEditor({
           <button
             type="button"
             onClick={onPolish}
-            disabled={running || !value.trim()}
+            disabled={busy || !value.trim()}
             className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             <Edit3 size={12} /> 润色
@@ -1289,9 +1302,11 @@ function SummaryEditor({
 function CoreSkillsEditor({
   resume,
   onUpdate,
+  busy,
 }: {
   resume: ResumeV2;
   onUpdate: (patch: Partial<ResumeV2>) => void;
+  busy: boolean;
 }) {
   const [newSkill, setNewSkill] = useState("");
   const addSkill = () => {
@@ -1320,7 +1335,8 @@ function CoreSkillsEditor({
                 <button
                   type="button"
                   onClick={() => onUpdate({ skills: resume.skills.filter((item) => item !== s) })}
-                  className="rounded-full p-0.5 text-gray-400 hover:bg-gray-100 hover:text-red-600"
+                  disabled={busy}
+                  className="rounded-full p-0.5 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label={`删除 ${s}`}
                 >
                   <X size={11} />
@@ -1333,16 +1349,17 @@ function CoreSkillsEditor({
           <input
             value={newSkill}
             onChange={(event) => setNewSkill(event.target.value)}
+            disabled={busy}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
                 addSkill();
               }
             }}
-            className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 outline-none focus:ring-2 focus:ring-blue-500"
+            className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
             placeholder="新增核心技能，回车确认"
           />
-          <Button type="button" onClick={addSkill} variant="secondary" size="sm" className="gap-1">
+          <Button type="button" onClick={addSkill} variant="secondary" size="sm" className="gap-1" disabled={busy}>
             <Plus size={12} /> 新增
           </Button>
         </div>
@@ -1482,12 +1499,14 @@ function WorkExperienceEditor({
   onPolish,
   activePolishId,
   polishRunning,
+  busy,
 }: {
   items: WorkExperience[];
   onChange: (next: WorkExperience[]) => void;
   onPolish: (workId: string) => void;
   activePolishId: string | null;
   polishRunning: boolean;
+  busy: boolean;
 }) {
   const add = () => onChange([...items, { id: makeId("work"), company: "", position: "", startDate: "", endDate: "", description: "" }]);
   const update = (id: string, patch: Partial<WorkExperience>) =>
@@ -1514,7 +1533,7 @@ function WorkExperienceEditor({
                 <button
                   type="button"
                   onClick={() => onPolish(item.id)}
-                  disabled={polishRunning}
+                  disabled={busy}
                   className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-xs text-white hover:bg-emerald-600 disabled:opacity-50"
                 >
                   {polishRunning && activePolishId === item.id ? (
@@ -1609,11 +1628,13 @@ function ExperienceCard({
   onUpdate,
   onRegenerate,
   regenerateRunning,
+  busy,
 }: {
   experience: ResumeProjectExperience;
   onUpdate: (e: ResumeProjectExperience) => void;
   onRegenerate: (projectId: string) => void;
   regenerateRunning: boolean;
+  busy: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -1703,7 +1724,7 @@ function ExperienceCard({
               event.stopPropagation();
               onRegenerate(experience.projectId);
             }}
-            disabled={regenerateRunning || editing}
+            disabled={regenerateRunning || editing || busy}
             className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-xs text-white hover:bg-emerald-600 disabled:cursor-default disabled:opacity-50"
           >
             {regenerateRunning ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
