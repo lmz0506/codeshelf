@@ -299,12 +299,19 @@ export class ResumeProjectBackend implements SandboxBackendProtocolV2 {
   private resolve(input: string): { ok: true; fullPath: string } | { ok: false; error: string } {
     const root = path.resolve(this.projectRoot);
     const normalizedInput = input.replaceAll("\\", "/").trim();
-    const absoluteCandidate = path.isAbsolute(input)
-      ? path.resolve(input)
-      : /^[a-zA-Z]:\//.test(normalizedInput)
-        ? path.resolve(normalizedInput)
-        : null;
-    if (absoluteCandidate) {
+
+    // 模型在以项目根为 "/" 的虚拟文件系统里工作：ls/glob/grep/read 返回的都是 "/rel" 形式。
+    // 因此 "/"、"/main.py" 这类前导斜杠路径是“虚拟根”路径，绝不能当成操作系统根目录解析，
+    // 否则会一律落到项目外、报 path_outside_project（正是工具全部失败的根因）。
+    // 只有 Windows 盘符路径（C:/...）或确实落在项目根内部的真实绝对路径，才按真实绝对路径处理；
+    // 其余一切（含项目外的真实绝对路径）都交给下面的虚拟路径分支，安全地映射回项目根内。
+    const isWindowsAbsolute = /^[a-zA-Z]:\//.test(normalizedInput);
+    const realAbsolute = path.isAbsolute(input) ? path.resolve(input) : null;
+    const isRealInsideRoot =
+      realAbsolute !== null && (realAbsolute === root || realAbsolute.startsWith(root + path.sep));
+
+    if (isWindowsAbsolute || isRealInsideRoot) {
+      const absoluteCandidate = isWindowsAbsolute ? path.resolve(normalizedInput) : (realAbsolute as string);
       if (absoluteCandidate !== root && !absoluteCandidate.startsWith(root + path.sep)) {
         return { ok: false, error: "path_outside_project" };
       }
