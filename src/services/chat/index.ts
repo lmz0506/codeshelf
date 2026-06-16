@@ -11,6 +11,7 @@ export type ChatMessageContent =
 export interface ChatStreamMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: ChatMessageContent;
+  thinkingContent?: string;
   toolCalls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }>;
   toolCallId?: string;
   name?: string;

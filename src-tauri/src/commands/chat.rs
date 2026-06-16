@@ -44,6 +44,13 @@ pub struct ChatStreamMessage {
     pub role: String,
     /// string 或 OpenAI 多模态内容数组
     pub content: serde_json::Value,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "thinkingContent",
+        alias = "reasoningContent"
+    )]
+    pub reasoning_content: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "toolCalls")]
     pub tool_calls: Option<Vec<serde_json::Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "toolCallId")]
@@ -888,6 +895,7 @@ fn build_chat_payload(
 ) -> AppResult<(String, reqwest::header::HeaderMap, serde_json::Value)> {
     let base_url = request.base_url.trim_end_matches('/');
     let url = format!("{}/chat/completions", base_url);
+    let is_deepseek = base_url.to_ascii_lowercase().contains("deepseek");
 
     let mut headers = reqwest::header::HeaderMap::new();
     if let Some(key) = request.api_key.as_ref() {
@@ -912,6 +920,12 @@ fn build_chat_payload(
             if m.tool_calls.as_ref().map_or(false, |t| !t.is_empty()) {
                 return true;
             }
+            if m.reasoning_content
+                .as_ref()
+                .map_or(false, |s| !s.trim().is_empty())
+            {
+                return true;
+            }
             match &m.content {
                 serde_json::Value::String(s) => !s.trim().is_empty(),
                 serde_json::Value::Array(a) => !a.is_empty(),
@@ -925,30 +939,50 @@ fn build_chat_payload(
         "messages": filtered_messages,
         "stream": use_stream,
     });
+    let keep_reasoning_content = is_deepseek && request.thinking == Some(true);
+    if !keep_reasoning_content {
+        if let Some(messages) = payload.get_mut("messages").and_then(|v| v.as_array_mut()) {
+            for msg in messages {
+                if let Some(obj) = msg.as_object_mut() {
+                    obj.remove("reasoning_content");
+                }
+            }
+        }
+    }
 
     if use_stream {
         // 让供应商在流式末帧带出 token 用量
         payload["stream_options"] = serde_json::json!({ "include_usage": true });
     }
 
-    if let Some(temperature) = request.temperature {
-        payload["temperature"] = serde_json::json!(temperature);
-    }
     if let Some(max_tokens) = request.max_tokens {
         payload["max_tokens"] = serde_json::json!(max_tokens);
     }
-    if let Some(top_p) = request.top_p {
-        payload["top_p"] = serde_json::json!(top_p);
-    }
-    if let Some(frequency_penalty) = request.frequency_penalty {
-        payload["frequency_penalty"] = serde_json::json!(frequency_penalty);
-    }
-    if let Some(presence_penalty) = request.presence_penalty {
-        payload["presence_penalty"] = serde_json::json!(presence_penalty);
-    }
-    if let Some(true) = request.thinking {
-        payload["enable_thinking"] = serde_json::json!(true);
-        payload["reasoning"] = serde_json::json!({ "effort": "medium" });
+    if is_deepseek {
+        if request.thinking == Some(true) {
+            payload["thinking"] = serde_json::json!({ "type": "enabled" });
+            payload["reasoning_effort"] = serde_json::json!("high");
+        } else {
+            // DeepSeek defaults thinking to enabled, so close it explicitly for normal chat models.
+            payload["thinking"] = serde_json::json!({ "type": "disabled" });
+        }
+    } else {
+        if let Some(temperature) = request.temperature {
+            payload["temperature"] = serde_json::json!(temperature);
+        }
+        if let Some(top_p) = request.top_p {
+            payload["top_p"] = serde_json::json!(top_p);
+        }
+        if let Some(frequency_penalty) = request.frequency_penalty {
+            payload["frequency_penalty"] = serde_json::json!(frequency_penalty);
+        }
+        if let Some(presence_penalty) = request.presence_penalty {
+            payload["presence_penalty"] = serde_json::json!(presence_penalty);
+        }
+        if let Some(true) = request.thinking {
+            payload["enable_thinking"] = serde_json::json!(true);
+            payload["reasoning"] = serde_json::json!({ "effort": "medium" });
+        }
     }
     if let Some(tools) = request.tools.as_ref() {
         if !tools.is_empty() {

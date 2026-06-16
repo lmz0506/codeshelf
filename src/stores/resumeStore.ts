@@ -16,8 +16,9 @@ import {
   saveResumeKnowledge,
   listResumeKnowledge,
   deleteResumeKnowledge,
+  deleteResumeKnowledgeRuns,
 } from "@/services/resume/knowledgeStore";
-import type { KnowledgeRunMeta } from "@/services/resume/knowledgeStore";
+import type { KnowledgeRunRecord } from "@/services/resume/knowledgeStore";
 
 interface ResumeGeneratorState {
   data: ResumeDataSource | null;
@@ -31,9 +32,9 @@ interface ResumeGeneratorState {
 /** 单个项目背景知识 agent 的运行状态。按 projectId 隔离,跨页面/tab 不丢,关窗口才清。 */
 export interface KnowledgeRunState {
   status: "running" | "done" | "error";
-  /** 最近 30 条进度,超出自动 slice */
-  steps: AgentStep[];
-  /** 用于 cancel_knowledge_agent IPC */
+  /** 当前背景知识生成的实时 run 快照。 */
+  run?: KnowledgeRunRecord;
+  /** 当前生成请求 ID，用于取消 Node Deep Agent */
   requestId: string;
   startedAt: number;
   error?: string;
@@ -48,7 +49,7 @@ export interface ResumeRunState {
   error?: string;
 }
 
-const MAX_STEPS = 30;
+const MAX_RESUME_STEPS = 200;
 
 interface ResumeState {
   resumeGeneratorState: ResumeGeneratorState;
@@ -74,13 +75,13 @@ interface ResumeState {
   clearResumeGeneratorState: () => void;
   // 背景知识管理
   loadAllKnowledgeFromDisk: (resolveName?: (projectId: string) => { name?: string; path?: string } | undefined) => Promise<void>;
-  upsertKnowledge: (doc: ProjectKnowledge, userEdited: boolean, meta?: KnowledgeRunMeta) => Promise<void>;
+  upsertKnowledge: (doc: ProjectKnowledge, userEdited: boolean) => Promise<void>;
   setKnowledgeInMemory: (doc: ProjectKnowledge) => void;
   removeKnowledge: (projectId: string) => Promise<void>;
   getKnowledge: (projectId: string) => ProjectKnowledge | undefined;
   // Agent run lifecycle
   startKnowledgeRun: (projectId: string, requestId: string) => void;
-  appendKnowledgeStep: (projectId: string, step: AgentStep) => void;
+  setKnowledgeRunSnapshot: (projectId: string, run: KnowledgeRunRecord) => void;
   finishKnowledgeRun: (projectId: string, error?: string) => void;
   clearKnowledgeRun: (projectId: string) => void;
   startResumeRun: (requestId: string) => void;
@@ -119,35 +120,68 @@ function normalizePersonalInfo(value: unknown): PersonalInfo | undefined {
     }
     return out;
   };
+  const websites = Array.isArray((raw.social as Record<string, unknown> | undefined)?.websites)
+    ? ((raw.social as Record<string, unknown>).websites as unknown[])
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+        .map((item, index) => ({
+          id: typeof item.id === "string" ? item.id : `website-${index}`,
+          label: typeof item.label === "string" ? item.label : "",
+          url: typeof item.url === "string" ? item.url : "",
+        }))
+        .filter((item) => item.url.trim())
+    : [];
+  const workExperiences = Array.isArray(raw.workExperiences)
+    ? raw.workExperiences
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+        .map((item, index) => ({
+          id: typeof item.id === "string" ? item.id : `work-${index}`,
+          company: typeof item.company === "string" ? item.company : undefined,
+          position: typeof item.position === "string" ? item.position : undefined,
+          startDate: typeof item.startDate === "string" ? item.startDate : undefined,
+          endDate: typeof item.endDate === "string" ? item.endDate : undefined,
+          description: typeof item.description === "string" ? item.description : undefined,
+        }))
+    : [];
+  const educations = Array.isArray(raw.educations)
+    ? raw.educations
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+        .map((item, index) => ({
+          id: typeof item.id === "string" ? item.id : `education-${index}`,
+          school: typeof item.school === "string" ? item.school : undefined,
+          degree: typeof item.degree === "string" ? item.degree : undefined,
+          startDate: typeof item.startDate === "string" ? item.startDate : undefined,
+          endDate: typeof item.endDate === "string" ? item.endDate : undefined,
+        }))
+    : [];
+  const social: PersonalInfo["social"] = {};
+  if (websites.length) social.websites = websites;
+  const customFields = Array.isArray(raw.customFields)
+    ? raw.customFields
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+        .map((item, index) => ({
+          id: typeof item.id === "string" ? item.id : `field-${index}`,
+          label: typeof item.label === "string" ? item.label : "",
+          value: typeof item.value === "string" ? item.value : "",
+        }))
+        .filter((item) => item.label.trim() || item.value.trim())
+    : [];
   return {
+    summary: typeof raw.summary === "string" ? raw.summary : "",
     basic: pickStrings(raw.basic, [
+      "avatarUrl",
       "name",
-      "gender",
-      "birthDate",
       "phone",
       "email",
-      "location",
-      "jobStatus",
+      "workExperience",
     ]) as PersonalInfo["basic"],
-    education: pickStrings(raw.education, [
-      "degree",
-      "school",
-      "major",
-      "graduationYear",
-    ]) as PersonalInfo["education"],
+    educations,
     jobPreference: pickStrings(raw.jobPreference, [
-      "yearsOfExperience",
       "expectedPosition",
       "expectedSalary",
-      "expectedCity",
     ]) as PersonalInfo["jobPreference"],
-    social: pickStrings(raw.social, [
-      "website",
-      "github",
-      "blog",
-      "linkedin",
-      "wechat",
-    ]) as PersonalInfo["social"],
+    social,
+    customFields,
+    workExperiences,
   };
 }
 
@@ -189,6 +223,8 @@ function normalizeSavedResume(input: unknown): SavedResume | null {
         return {
           projectId: typeof item.projectId === "string" ? item.projectId : "",
           projectName: typeof item.projectName === "string" ? item.projectName : "未命名项目",
+          projectTime: typeof item.projectTime === "string" ? item.projectTime : undefined,
+          projectRole: typeof item.projectRole === "string" ? item.projectRole : undefined,
           techStack: asStringArray(item.techStack),
           starExperience: {
             situation: typeof star.situation === "string" ? star.situation : "",
@@ -199,6 +235,7 @@ function normalizeSavedResume(input: unknown): SavedResume | null {
           customDescription:
             typeof item.customDescription === "string" ? item.customDescription : undefined,
           isEdited: item.isEdited === true,
+          evidenceFiles: asStringArray(item.evidenceFiles),
         };
       }),
     isSaved: raw.isSaved !== false,
@@ -338,7 +375,7 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
       set({ knowledgeLoaded: true });
     }
   },
-  upsertKnowledge: async (doc, userEdited, meta) => {
+  upsertKnowledge: async (doc, userEdited) => {
     const next: ProjectKnowledge = {
       ...doc,
       userEdited,
@@ -348,7 +385,7 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
       knowledgeDocs: { ...s.knowledgeDocs, [doc.projectId]: next },
     }));
     try {
-      await saveResumeKnowledge(doc.projectId, doc.content, userEdited, meta);
+      await saveResumeKnowledge(doc.projectId, doc.content, userEdited);
     } catch (err) {
       console.error("保存项目背景知识失败:", err);
       throw err;
@@ -360,10 +397,13 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
     set((s) => {
       const next = { ...s.knowledgeDocs };
       delete next[projectId];
-      return { knowledgeDocs: next };
+      const nextRuns = { ...s.knowledgeRuns };
+      delete nextRuns[projectId];
+      return { knowledgeDocs: next, knowledgeRuns: nextRuns };
     });
     try {
       await deleteResumeKnowledge(projectId);
+      await deleteResumeKnowledgeRuns(projectId);
     } catch (err) {
       console.error("删除项目背景知识失败:", err);
     }
@@ -377,13 +417,12 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
         ...s.knowledgeRuns,
         [projectId]: {
           status: "running",
-          steps: [],
           requestId,
           startedAt: Date.now(),
         },
       },
     })),
-  appendKnowledgeStep: (projectId, step) =>
+  setKnowledgeRunSnapshot: (projectId, run) =>
     set((s) => {
       const cur = s.knowledgeRuns[projectId];
       if (!cur) return s;
@@ -392,7 +431,7 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
           ...s.knowledgeRuns,
           [projectId]: {
             ...cur,
-            steps: [...cur.steps, step].slice(-MAX_STEPS),
+            run,
           },
         },
       };
@@ -434,7 +473,7 @@ export const useResumeStore = create<ResumeState>()((set, get) => ({
       return {
         resumeRun: {
           ...s.resumeRun,
-          steps: [...s.resumeRun.steps, step].slice(-MAX_STEPS),
+          steps: [...s.resumeRun.steps, step].slice(-MAX_RESUME_STEPS),
         },
       };
     }),

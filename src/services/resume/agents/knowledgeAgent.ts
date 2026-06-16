@@ -1,100 +1,73 @@
-// 项目知识抽取 agent 的前端 IPC wrapper。Rust 侧实现在
-// src-tauri/src/commands/resume_agent/knowledge_agent.rs (两步推理:规划 → 读文件 → 生成 md)。
-
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import type { AiProviderConfig, Project } from "@/types";
+import type { AiProviderConfig } from "@/types";
+import type { JobDirection, ResumeV2, Tone } from "@/types/resume";
 import type {
-  KnowledgeRunMeta,
-  QualityIssue,
+  AgentRunRecord,
+  ResumeAgentPromptConfig,
 } from "@/services/resume/knowledgeStore";
-
-import type { AgentStep, AgentStepKind } from "./resumeAgent";
-
-export type { AgentStep, AgentStepKind };
 
 export interface KnowledgeRunResult {
   background: string;
-  steps: AgentStep[];
-  meta: KnowledgeRunMeta;
-  qualityIssues: QualityIssue[];
+  run: AgentRunRecord;
+  resume: ResumeV2;
 }
 
 export interface RunKnowledgeAgentOptions {
-  project: Project;
+  requestId: string;
+  projectId: string;
   provider: AiProviderConfig;
-  initialBackground?: string;
-  onStep?: (step: AgentStep) => void;
+  jobDirection?: JobDirection;
+  jdKeywords?: string[];
+  tone?: Tone;
+  promptConfig?: ResumeAgentPromptConfig;
+  onRun?: (run: AgentRunRecord) => void;
   signal?: AbortSignal;
 }
 
-interface AgentStepEventPayload {
+interface RunEventPayload {
+  type: "event";
   requestId: string;
-  kind: AgentStepKind;
-  label?: string;
-  detail?: string;
-  ts: number;
+  projectId: string;
+  run: AgentRunRecord;
 }
 
-interface RunKnowledgeAgentResponse {
+interface RunCommandResult {
   background: string;
-  meta: KnowledgeRunMeta;
-  qualityIssues: QualityIssue[];
+  resume: ResumeV2;
+  run: AgentRunRecord;
 }
 
 export async function runKnowledgeAgent(
   opts: RunKnowledgeAgentOptions,
 ): Promise<KnowledgeRunResult> {
-  const requestId = generateRequestId();
-  const steps: AgentStep[] = [];
-  const unlisten = await listen<AgentStepEventPayload>(
-    "knowledge-agent-step",
-    (event) => {
-      if (event.payload.requestId !== requestId) return;
-      const step: AgentStep = {
-        kind: event.payload.kind,
-        label: event.payload.label,
-        detail: event.payload.detail,
-        ts: event.payload.ts,
-      };
-      steps.push(step);
-      opts.onStep?.(step);
-    },
-  );
+  const unlisten = await listen<RunEventPayload>("resume-agent-run-event-v3", (event) => {
+    if (event.payload.requestId !== opts.requestId) return;
+    opts.onRun?.(event.payload.run);
+  });
 
   const onAbort = () => {
-    void invoke("cancel_knowledge_agent", { requestId }).catch(() => {});
+    void invoke("cancel_resume_deep_agent", { requestId: opts.requestId }).catch(() => {});
   };
   opts.signal?.addEventListener("abort", onAbort, { once: true });
 
   try {
-    const result = await invoke<RunKnowledgeAgentResponse>(
-      "run_knowledge_agent",
-      {
-        request: {
-          requestId,
-          provider: opts.provider,
-          projectId: opts.project.id,
-          initialBackground: opts.initialBackground,
-        },
+    const result = await invoke<RunCommandResult>("run_resume_deep_agent", {
+      request: {
+        requestId: opts.requestId,
+        projectId: opts.projectId,
+        provider: opts.provider,
+        jobDirection: opts.jobDirection ?? "fullstack",
+        jdKeywords: opts.jdKeywords ?? [],
+        tone: opts.tone ?? "professional",
+        promptConfig: opts.promptConfig ?? null,
+        toolPermissionMode: "full_agent",
       },
-    );
-    return {
-      background: result.background,
-      steps,
-      meta: result.meta,
-      qualityIssues: result.qualityIssues,
-    };
+    });
+    return result;
   } finally {
     unlisten();
     opts.signal?.removeEventListener("abort", onAbort);
   }
-}
-
-function generateRequestId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

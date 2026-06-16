@@ -1,13 +1,12 @@
 // 简历 docx 导出。
 //
 // 把前端 ResumeV2 (作为 serde_json::Value 传过来) 渲染成 HR 标准格式的 .docx:
-//   - 顶部「个人信息」固定 4 大类:基础 / 教育 / 求职偏好 / 社交链接
-//   - 个人简介、技术栈、JD 关键词
-//   - 项目经历按三段式 (项目背景 / 主要职责 / 项目成果) 渲染,不出现 STAR 术语
+//   - 顶部个人信息、个人简介、核心技能、工作经历、项目经历、教育背景
+//   - 项目经历按固定格式渲染:项目时间 / 项目角色 / 技术栈 / 项目描述 / 核心职责 / 项目成果
 //
-// STAR → 三段式转换跟前端 src/services/resume/preview.ts 的算法保持一致:
-//   - 项目背景 = situation + task 拼接
-//   - 主要职责 = action 按句拆 bullet
+// STAR 兼容字段转换跟前端 src/services/resume/preview.ts 的算法保持一致:
+//   - 项目描述 = situation
+//   - 核心职责 = action 按句拆 bullet
 //   - 项目成果 = result 按句拆 bullet
 //
 // 用 docx-rs 直接写文件,不依赖外部模板。中文字体走 "Microsoft YaHei",在 Windows /
@@ -79,6 +78,10 @@ struct ExperiencePayload {
     #[serde(default)]
     project_name: String,
     #[serde(default)]
+    project_time: Option<String>,
+    #[serde(default)]
+    project_role: Option<String>,
+    #[serde(default)]
     tech_stack: Vec<String>,
     #[serde(default)]
     star_experience: StarPayload,
@@ -90,8 +93,6 @@ struct StarPayload {
     #[serde(default)]
     situation: String,
     #[serde(default)]
-    task: String,
-    #[serde(default)]
     action: String,
     #[serde(default)]
     result: String,
@@ -101,32 +102,35 @@ struct StarPayload {
 #[serde(rename_all = "camelCase")]
 struct PersonalInfoPayload {
     #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
     basic: BasicInfo,
     #[serde(default)]
-    education: EducationInfo,
+    educations: Vec<EducationInfo>,
     #[serde(default)]
     job_preference: JobPreferenceInfo,
     #[serde(default)]
     social: SocialInfo,
+    #[serde(default)]
+    custom_fields: Vec<CustomFieldPayload>,
+    #[serde(default)]
+    work_experiences: Vec<WorkExperiencePayload>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BasicInfo {
     #[serde(default)]
+    #[allow(dead_code)]
+    avatar_url: Option<String>,
+    #[serde(default)]
     name: Option<String>,
-    #[serde(default)]
-    gender: Option<String>,
-    #[serde(default)]
-    birth_date: Option<String>,
     #[serde(default)]
     phone: Option<String>,
     #[serde(default)]
     email: Option<String>,
     #[serde(default)]
-    location: Option<String>,
-    #[serde(default)]
-    job_status: Option<String>,
+    work_experience: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -137,72 +141,79 @@ struct EducationInfo {
     #[serde(default)]
     school: Option<String>,
     #[serde(default)]
-    major: Option<String>,
+    start_date: Option<String>,
     #[serde(default)]
-    graduation_year: Option<String>,
+    end_date: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JobPreferenceInfo {
     #[serde(default)]
-    years_of_experience: Option<String>,
-    #[serde(default)]
     expected_position: Option<String>,
     #[serde(default)]
     expected_salary: Option<String>,
-    #[serde(default)]
-    expected_city: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SocialInfo {
     #[serde(default)]
-    website: Option<String>,
+    websites: Vec<WebsitePayload>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebsitePayload {
     #[serde(default)]
-    github: Option<String>,
+    label: Option<String>,
     #[serde(default)]
-    blog: Option<String>,
+    url: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomFieldPayload {
     #[serde(default)]
-    linkedin: Option<String>,
+    label: Option<String>,
     #[serde(default)]
-    wechat: Option<String>,
+    value: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkExperiencePayload {
+    #[serde(default)]
+    company: Option<String>,
+    #[serde(default)]
+    position: Option<String>,
+    #[serde(default)]
+    start_date: Option<String>,
+    #[serde(default)]
+    end_date: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 fn val(opt: &Option<String>) -> &str {
     opt.as_deref().unwrap_or("")
 }
 
-// =================== STAR → 三段式 (跟前端 preview.ts 同算法) ===================
-
-fn merge_background(situation: &str, task: &str) -> String {
-    let s = situation.trim();
-    let t = task.trim();
-    if s.is_empty() {
-        return t.to_string();
-    }
-    if t.is_empty() {
-        return s.to_string();
-    }
-    if s.contains(t) {
-        return s.to_string();
-    }
-    if t.contains(s) {
-        return t.to_string();
-    }
-    let sep = if s.ends_with('。') || s.ends_with('.') {
-        ""
-    } else {
-        "。"
-    };
-    format!("{}{}{}", s, sep, t)
-}
+// =================== STAR 兼容字段 → 投递版格式 ===================
 
 fn split_bullets(text: &str) -> Vec<String> {
     let t = text.trim();
     if t.is_empty() {
         return Vec::new();
+    }
+    let markdown_items: Vec<String> = t
+        .lines()
+        .map(str::trim)
+        .filter_map(strip_list_marker)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if markdown_items.len() >= 2 {
+        return markdown_items;
     }
     let mut parts: Vec<String> = split_by_chars(t, &['。', '！', '？', '；', ';', '!', '?'])
         .into_iter()
@@ -230,6 +241,34 @@ fn split_bullets(text: &str) -> Vec<String> {
         })
         .filter(|s| !s.is_empty())
         .collect()
+}
+
+fn strip_list_marker(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    for marker in ["- ", "* ", "• "] {
+        if let Some(rest) = trimmed.strip_prefix(marker) {
+            return Some(rest.trim().to_string());
+        }
+    }
+    let mut chars = trimmed.char_indices().peekable();
+    let mut end = 0;
+    while let Some((idx, c)) = chars.peek().copied() {
+        if c.is_ascii_digit() {
+            end = idx + c.len_utf8();
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    if end > 0 {
+        let rest = &trimmed[end..];
+        for marker in [". ", ") ", "、"] {
+            if let Some(value) = rest.strip_prefix(marker) {
+                return Some(value.trim().to_string());
+            }
+        }
+    }
+    None
 }
 
 /// 中文标点切分,需要保留切分符之前的内容。简化做法:对每个字符判断,
@@ -307,7 +346,7 @@ fn label_value(label: &str, value: &str) -> Paragraph {
         .add_run(cn_run_with(value, false, 24))
 }
 
-/// 编号列表项 (主要职责 / 项目成果)
+/// 编号列表项 (核心职责 / 项目成果)
 fn numbered_item(text: &str) -> Paragraph {
     Paragraph::new()
         .numbering(NumberingId::new(NUM_ID), IndentLevel::new(0))
@@ -326,27 +365,64 @@ fn info_cell(label: &str, value: &str) -> TableCell {
     TableCell::new().add_paragraph(label_para).add_paragraph(value_para)
 }
 
-/// 基础信息走 2 列 4 行表格,标签 + 值竖排在同一格。
-fn render_basic_info_table(basic: &BasicInfo) -> Table {
-    let cells = vec![
+/// 顶部个人信息走 2 列表格,标签 + 值竖排在同一格。
+fn render_basic_info_table(
+    basic: &BasicInfo,
+    job: &JobPreferenceInfo,
+    social: &SocialInfo,
+    custom_fields: &[CustomFieldPayload],
+) -> Table {
+    let website = websites_text(social);
+    let mut cells: Vec<(&str, String)> = vec![
         ("姓名", val(&basic.name)),
-        ("性别", val(&basic.gender)),
-        ("出生年月", val(&basic.birth_date)),
         ("手机", val(&basic.phone)),
         ("邮箱", val(&basic.email)),
-        ("现居地", val(&basic.location)),
-        ("求职状态", val(&basic.job_status)),
-        ("", ""),
-    ];
+        ("工作经验", val(&basic.work_experience)),
+        ("求职岗位", val(&job.expected_position)),
+        ("期望薪资", val(&job.expected_salary)),
+        ("网站", website.as_str()),
+    ]
+    .into_iter()
+    .filter(|(_, value)| !value.trim().is_empty())
+    .map(|(label, value)| (label, value.to_string()))
+    .collect();
+    for field in custom_fields {
+        let label = val(&field.label).trim();
+        let value = val(&field.value).trim();
+        if !label.is_empty() || !value.is_empty() {
+            cells.push((if label.is_empty() { "自定义" } else { label }, value.to_string()));
+        }
+    }
+    let cells = if cells.is_empty() {
+        vec![("个人信息", "未填写".to_string())]
+    } else {
+        cells
+    };
     let rows: Vec<TableRow> = cells
         .chunks(2)
         .map(|pair| {
-            let left = info_cell(pair[0].0, pair[0].1);
-            let right = info_cell(pair[1].0, pair[1].1);
+            let left = info_cell(pair[0].0, &pair[0].1);
+            let right = pair
+                .get(1)
+                .map(|item| info_cell(item.0, &item.1))
+                .unwrap_or_else(|| info_cell("", ""));
             TableRow::new(vec![left, right])
         })
         .collect();
     Table::new(rows).width(9000, WidthType::Dxa)
+}
+
+fn websites_text(social: &SocialInfo) -> String {
+    social
+        .websites
+        .iter()
+        .filter_map(|item| {
+            let url = item.url.as_deref().map(str::trim).filter(|s| !s.is_empty())?;
+            let label = item.label.as_deref().map(str::trim).filter(|s| !s.is_empty());
+            Some(label.map(|l| format!("{}: {}", l, url)).unwrap_or_else(|| url.to_string()))
+        })
+        .collect::<Vec<_>>()
+        .join("；")
 }
 
 // =================== 整体组装 ===================
@@ -373,58 +449,60 @@ fn build_docx(p: &ResumePayload) -> Docx {
     docx = docx.add_paragraph(h1(&format!("{}简历", job_direction_title(&p.job_direction))));
     docx = docx.add_paragraph(spacer());
 
-    // ---- 个人信息 ----
+    // ---- 顶部个人信息 ----
     docx = docx.add_paragraph(h2("个人信息"));
     let pi_default = PersonalInfoPayload::default();
     let pi = p.personal_info.as_ref().unwrap_or(&pi_default);
-    docx = docx.add_table(render_basic_info_table(&pi.basic));
-    docx = docx.add_paragraph(spacer());
-
-    docx = docx.add_paragraph(h3("教育背景"));
-    docx = docx.add_paragraph(label_value("最高学历", val(&pi.education.degree)));
-    docx = docx.add_paragraph(label_value("毕业院校", val(&pi.education.school)));
-    docx = docx.add_paragraph(label_value("专业", val(&pi.education.major)));
-    docx = docx.add_paragraph(label_value("毕业年份", val(&pi.education.graduation_year)));
-    docx = docx.add_paragraph(spacer());
-
-    docx = docx.add_paragraph(h3("求职偏好"));
-    docx = docx.add_paragraph(label_value(
-        "工作年限",
-        val(&pi.job_preference.years_of_experience),
+    docx = docx.add_table(render_basic_info_table(
+        &pi.basic,
+        &pi.job_preference,
+        &pi.social,
+        &pi.custom_fields,
     ));
-    docx = docx.add_paragraph(label_value(
-        "期望职位",
-        val(&pi.job_preference.expected_position),
-    ));
-    docx = docx.add_paragraph(label_value(
-        "期望薪资",
-        val(&pi.job_preference.expected_salary),
-    ));
-    docx = docx.add_paragraph(label_value(
-        "期望城市",
-        val(&pi.job_preference.expected_city),
-    ));
-    docx = docx.add_paragraph(spacer());
-
-    docx = docx.add_paragraph(h3("社交链接"));
-    docx = docx.add_paragraph(label_value("个人网站", val(&pi.social.website)));
-    docx = docx.add_paragraph(label_value("GitHub", val(&pi.social.github)));
-    docx = docx.add_paragraph(label_value("博客", val(&pi.social.blog)));
-    docx = docx.add_paragraph(label_value("领英", val(&pi.social.linkedin)));
-    docx = docx.add_paragraph(label_value("微信", val(&pi.social.wechat)));
     docx = docx.add_paragraph(spacer());
 
     // ---- 个人简介 ----
-    if let Some(summary) = p.summary.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let summary = val(&pi.summary);
+    let summary = if summary.trim().is_empty() {
+        p.summary.as_deref().unwrap_or("").trim()
+    } else {
+        summary.trim()
+    };
+    if !summary.is_empty() {
         docx = docx.add_paragraph(h2("个人简介"));
         docx = docx.add_paragraph(body_text(summary));
         docx = docx.add_paragraph(spacer());
     }
 
-    // ---- 技术栈 ----
+    // ---- 核心技能 ----
     if !p.skills.is_empty() {
-        docx = docx.add_paragraph(h2("技术栈"));
+        docx = docx.add_paragraph(h2("核心技能"));
         docx = docx.add_paragraph(body_text(&p.skills.join(" · ")));
+        docx = docx.add_paragraph(spacer());
+    }
+
+    // ---- 工作经历 ----
+    if !pi.work_experiences.is_empty() {
+        docx = docx.add_paragraph(h2("工作经历"));
+        for item in &pi.work_experiences {
+            let title = [val(&item.company), val(&item.position)]
+                .into_iter()
+                .filter(|s| !s.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ");
+            docx = docx.add_paragraph(h3(if title.trim().is_empty() { "工作经历" } else { &title }));
+            let time = [val(&item.start_date), val(&item.end_date)]
+                .into_iter()
+                .filter(|s| !s.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join(" - ");
+            if !time.trim().is_empty() {
+                docx = docx.add_paragraph(label_value("时间", &time));
+            }
+            for bullet in split_bullets(val(&item.description)) {
+                docx = docx.add_paragraph(numbered_item(&bullet));
+            }
+        }
         docx = docx.add_paragraph(spacer());
     }
 
@@ -433,20 +511,26 @@ fn build_docx(p: &ResumePayload) -> Docx {
         docx = docx.add_paragraph(h2("项目经历"));
         for (idx, exp) in p.experiences.iter().enumerate() {
             docx = docx.add_paragraph(h3(&format!("{}. {}", idx + 1, exp.project_name)));
+            if let Some(project_time) = exp.project_time.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                docx = docx.add_paragraph(label_value("项目时间", project_time));
+            }
+            if let Some(project_role) = exp.project_role.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                docx = docx.add_paragraph(label_value("项目角色", project_role));
+            }
             if !exp.tech_stack.is_empty() {
                 docx = docx.add_paragraph(label_value("技术栈", &exp.tech_stack.join(", ")));
             }
             let star = &exp.star_experience;
-            let background = merge_background(&star.situation, &star.task);
+            let description = star.situation.trim();
             let responsibilities = split_bullets(&star.action);
             let achievements = split_bullets(&star.result);
 
-            if !background.is_empty() {
-                docx = docx.add_paragraph(label_value_block("项目背景"));
-                docx = docx.add_paragraph(body_text(&background));
+            if !description.is_empty() {
+                docx = docx.add_paragraph(label_value_block("项目描述"));
+                docx = docx.add_paragraph(body_text(description));
             }
             if !responsibilities.is_empty() {
-                docx = docx.add_paragraph(label_value_block("主要职责"));
+                docx = docx.add_paragraph(label_value_block("核心职责"));
                 for item in &responsibilities {
                     docx = docx.add_paragraph(numbered_item(item));
                 }
@@ -464,10 +548,43 @@ fn build_docx(p: &ResumePayload) -> Docx {
         }
     }
 
+    // ---- 教育背景 ----
+    let educations: Vec<&EducationInfo> = pi
+        .educations
+        .iter()
+        .filter(|item| {
+            !val(&item.school).trim().is_empty()
+                || !val(&item.degree).trim().is_empty()
+                || !val(&item.start_date).trim().is_empty()
+                || !val(&item.end_date).trim().is_empty()
+        })
+        .collect();
+    if !educations.is_empty() {
+        docx = docx.add_paragraph(h2("教育背景"));
+        for item in educations {
+            let edu_title = [val(&item.school), val(&item.degree)]
+                .into_iter()
+                .filter(|s| !s.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ");
+            if !edu_title.trim().is_empty() {
+                docx = docx.add_paragraph(h3(&edu_title));
+            }
+            let edu_time = [val(&item.start_date), val(&item.end_date)]
+                .into_iter()
+                .filter(|s| !s.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join(" - ");
+            if !edu_time.trim().is_empty() {
+                docx = docx.add_paragraph(label_value("时间", &edu_time));
+            }
+        }
+    }
+
     docx
 }
 
-/// 段落级的「加粗小标题」(项目背景 / 主要职责 / 项目成果),独占一行。
+/// 段落级的「加粗小标题」(项目描述 / 核心职责 / 项目成果),独占一行。
 fn label_value_block(label: &str) -> Paragraph {
     Paragraph::new().add_run(cn_run_with(label, true, 22))
 }

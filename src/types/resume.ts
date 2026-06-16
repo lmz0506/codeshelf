@@ -254,10 +254,13 @@ export interface ResumeGenerateOptions {
 export interface ResumeProjectExperience {
   projectId: string;
   projectName: string;
+  projectTime?: string;
+  projectRole?: string;
   techStack: string[];
   starExperience: STARExperience;
   customDescription?: string;
   isEdited: boolean;
+  evidenceFiles?: string[];
 }
 
 /** ResumeAgent 产出的完整简历（V2） */
@@ -275,7 +278,7 @@ export interface ResumeV2 {
   skills: string[];
   experiences: ResumeProjectExperience[];
   isSaved: boolean;
-  /** HR 简历预览/docx 顶部固定栏的个人信息。Agent 不生成,用户在预览面板里手填。 */
+  /** HR 简历预览/docx 顶部固定栏的个人信息快照。实际维护使用全局个人信息。 */
   personalInfo?: PersonalInfo;
 }
 
@@ -284,55 +287,73 @@ export type SavedResume = ResumeV2;
 
 // ============== 个人信息(预览 / docx 顶部固定栏) ==============
 //
-// HR 简历模板里固定的「个人信息」区。值都是 string 可空 —— Agent 不会生成它们,
-// 用户在预览面板里手动填,填完跟简历一起持久化。导出 docx 时即使全空也会输出
-// 占位结构,方便用户在 Word 里继续手填。
+// HR 简历模板里固定的「个人信息」区。Agent 不会生成它们,由用户在简历制作页维护一份全局资料。
 
 export interface PersonalInfoBasic {
+  avatarUrl?: string;
   name?: string;
-  gender?: string;
-  birthDate?: string;
   phone?: string;
   email?: string;
-  location?: string;
-  jobStatus?: string;
+  workExperience?: string;
 }
 
-export interface PersonalInfoEducation {
+export interface EducationExperience {
+  id: string;
   degree?: string;
   school?: string;
-  major?: string;
-  graduationYear?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface PersonalInfoJobPreference {
-  yearsOfExperience?: string;
   expectedPosition?: string;
   expectedSalary?: string;
-  expectedCity?: string;
 }
 
 export interface PersonalInfoSocial {
-  website?: string;
-  github?: string;
-  blog?: string;
-  linkedin?: string;
-  wechat?: string;
+  websites?: PersonalWebsite[];
+}
+
+export interface PersonalWebsite {
+  id: string;
+  label: string;
+  url: string;
+}
+
+export interface PersonalCustomField {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export interface WorkExperience {
+  id: string;
+  company?: string;
+  position?: string;
+  startDate?: string;
+  endDate?: string;
+  description?: string;
 }
 
 export interface PersonalInfo {
+  summary?: string;
   basic: PersonalInfoBasic;
-  education: PersonalInfoEducation;
+  educations: EducationExperience[];
   jobPreference: PersonalInfoJobPreference;
   social: PersonalInfoSocial;
+  customFields: PersonalCustomField[];
+  workExperiences: WorkExperience[];
 }
 
 export function emptyPersonalInfo(): PersonalInfo {
   return {
+    summary: "",
     basic: {},
-    education: {},
+    educations: [],
     jobPreference: {},
     social: {},
+    customFields: [],
+    workExperiences: [],
   };
 }
 

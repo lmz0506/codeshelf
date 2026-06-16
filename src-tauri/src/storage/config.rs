@@ -164,20 +164,6 @@ impl StorageConfig {
         self.data_dir.join("resumes.json")
     }
 
-    pub fn resume_knowledge_dir(&self) -> PathBuf {
-        self.data_dir.join("resume_knowledge")
-    }
-
-    pub fn resume_knowledge_file(&self, project_id: &str) -> PathBuf {
-        self.resume_knowledge_dir()
-            .join(format!("{}.md", sanitize_id(project_id)))
-    }
-
-    pub fn resume_knowledge_history_dir(&self, project_id: &str) -> PathBuf {
-        self.resume_knowledge_dir()
-            .join(format!("{}.history", sanitize_id(project_id)))
-    }
-
     pub fn api_groups_file(&self) -> PathBuf {
         self.data_dir.join("api_groups.json")
     }
@@ -198,18 +184,6 @@ impl StorageConfig {
 
 /// 把 project_id 之类的标识符压成可以安全做文件名的形式：
 /// 只保留字母、数字、`-`、`_`，其它字符替换为 `_`。
-fn sanitize_id(id: &str) -> String {
-    id.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
 /// 初始化存储配置
 pub fn init_storage() -> AppResult<&'static StorageConfig> {
     let config = StorageConfig::new()?;

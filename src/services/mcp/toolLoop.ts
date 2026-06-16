@@ -193,6 +193,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<void> {
       {
         role: "assistant",
         content: turn.content,
+        thinkingContent: turn.thinking || undefined,
         toolCalls:
           callSummaries.length > 0
             ? callSummaries.map((c) => ({

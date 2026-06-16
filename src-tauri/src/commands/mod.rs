@@ -5,7 +5,7 @@ pub mod extras;
 pub mod git;
 pub mod project;
 pub mod resume;
-pub mod resume_agent;
+pub mod resume_node_agent;
 pub mod resume_docx;
 pub mod settings;
 pub mod stats;
