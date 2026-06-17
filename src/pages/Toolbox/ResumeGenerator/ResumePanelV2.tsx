@@ -167,7 +167,6 @@ export function ResumePanelV2({
         experiences.push(updated);
       }
 
-      const generatedSkills = uniqueTags(experiences.flatMap((item) => item.techStack));
       const generatedByProjectId = new Map(
         experiences.map((item) => [item.projectId, item] as const)
       );
@@ -452,7 +451,7 @@ export function ResumePanelV2({
           ),
         });
         showToast("success", "岗位职责已润色");
-      } else {
+      } else if (refineTask.kind === "project_regenerate") {
         if (!resume) throw new Error("尚未生成简历");
         const current = resume.experiences.find((exp) => exp.projectId === refineTask.projectId);
         if (!current) throw new Error("项目经历不存在");
