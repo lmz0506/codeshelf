@@ -15,6 +15,18 @@ import type {
   ForwardStats,
   ServerConfig,
   ServerConfigInput,
+  DockerStatus,
+  DockerCommandResult,
+  DockerImageInfo,
+  DockerContainerInfo,
+  DockerBuildInput,
+  DockerRunInput,
+  DockerAiGenerateInput,
+  DockerAiGenerateOutput,
+  SshTunnel,
+  SshTunnelInput,
+  SshTunnelStats,
+  TestPortResult,
 } from "@/types/toolbox";
 
 // ============== 端口扫描服务 ==============
@@ -155,6 +167,66 @@ export async function updateForwardRule(
   return invoke("update_forward_rule", { ruleId, input });
 }
 
+// ============== SSH 隧道服务 ==============
+
+export async function addSshTunnel(input: SshTunnelInput): Promise<SshTunnel> {
+  return invoke("add_ssh_tunnel", { input });
+}
+
+export async function updateSshTunnel(
+  tunnelId: string,
+  input: SshTunnelInput
+): Promise<SshTunnel> {
+  return invoke("update_ssh_tunnel", { tunnelId, input });
+}
+
+export async function removeSshTunnel(tunnelId: string): Promise<void> {
+  return invoke("remove_ssh_tunnel", { tunnelId });
+}
+
+export async function startSshTunnel(tunnelId: string): Promise<void> {
+  return invoke("start_ssh_tunnel", { tunnelId });
+}
+
+export async function stopSshTunnel(tunnelId: string): Promise<void> {
+  return invoke("stop_ssh_tunnel", { tunnelId });
+}
+
+export async function getSshTunnels(): Promise<SshTunnel[]> {
+  return invoke("get_ssh_tunnels");
+}
+
+export async function getSshTunnel(tunnelId: string): Promise<SshTunnel | null> {
+  return invoke("get_ssh_tunnel", { tunnelId });
+}
+
+export async function getSshTunnelStats(tunnelId: string): Promise<SshTunnelStats> {
+  return invoke("get_ssh_tunnel_stats", { tunnelId });
+}
+
+export async function listSshConfigHosts(): Promise<string[]> {
+  return invoke("list_ssh_config_hosts");
+}
+
+export async function listLocalIps(): Promise<string[]> {
+  return invoke("list_local_ips");
+}
+
+export async function setSshTunnelGroup(
+  tunnelId: string,
+  group: string
+): Promise<SshTunnel> {
+  return invoke("set_ssh_tunnel_group", { tunnelId, group });
+}
+
+export async function testSshTunnel(tunnelId: string): Promise<TestPortResult> {
+  return invoke("test_ssh_tunnel", { tunnelId });
+}
+
+export async function testLocalPort(port: number): Promise<TestPortResult> {
+  return invoke("test_local_port", { port });
+}
+
 // ============== 静态服务 ==============
 
 export async function createServer(
@@ -190,6 +262,89 @@ export async function updateServer(
 ): Promise<ServerConfig> {
   // 直接发送 camelCase，后端已配置 rename_all = "camelCase"
   return invoke("update_server", { serverId, input });
+}
+
+export async function generateNginxConfig(serverId: string): Promise<string> {
+  return invoke("generate_nginx_config", { serverId });
+}
+
+// ============== Docker 镜像服务 ==============
+
+export async function dockerCheckAvailable(): Promise<DockerStatus> {
+  return invoke("docker_check_available");
+}
+
+export async function dockerFindDockerfiles(projectPath: string): Promise<string[]> {
+  return invoke("docker_find_dockerfiles", { projectPath });
+}
+
+export async function dockerReadDockerfile(projectPath: string, dockerfilePath: string): Promise<string> {
+  return invoke("docker_read_dockerfile", { projectPath, dockerfilePath });
+}
+
+export async function dockerWriteDockerfile(
+  projectPath: string,
+  dockerfilePath: string,
+  content: string,
+): Promise<void> {
+  return invoke("docker_write_dockerfile", { projectPath, dockerfilePath, content });
+}
+
+export async function dockerGenerateDockerfileTemplate(
+  projectPath: string,
+  template?: string,
+): Promise<string> {
+  return invoke("docker_generate_dockerfile_template", { projectPath, template });
+}
+
+export async function dockerGenerateDockerfileAi(
+  input: DockerAiGenerateInput,
+): Promise<DockerAiGenerateOutput> {
+  return invoke("docker_generate_dockerfile_ai", { input });
+}
+
+export async function dockerBuildImage(input: DockerBuildInput): Promise<DockerCommandResult> {
+  return invoke("docker_build_image", { input });
+}
+
+export async function dockerListImages(): Promise<DockerImageInfo[]> {
+  return invoke("docker_list_images");
+}
+
+export async function dockerRemoveImage(image: string, force?: boolean): Promise<DockerCommandResult> {
+  return invoke("docker_remove_image", { image, force });
+}
+
+export async function dockerRunImage(input: DockerRunInput): Promise<DockerCommandResult> {
+  return invoke("docker_run_image", { input });
+}
+
+export async function dockerListContainers(): Promise<DockerContainerInfo[]> {
+  return invoke("docker_list_containers");
+}
+
+export async function dockerInspectContainerYaml(container: string): Promise<string> {
+  return invoke("docker_inspect_container_yaml", { container });
+}
+
+export async function dockerStopContainer(container: string): Promise<DockerCommandResult> {
+  return invoke("docker_stop_container", { container });
+}
+
+export async function dockerStartContainer(container: string): Promise<DockerCommandResult> {
+  return invoke("docker_start_container", { container });
+}
+
+export async function dockerRestartContainer(container: string): Promise<DockerCommandResult> {
+  return invoke("docker_restart_container", { container });
+}
+
+export async function dockerRemoveContainer(container: string, force?: boolean): Promise<DockerCommandResult> {
+  return invoke("docker_remove_container", { container, force });
+}
+
+export async function dockerPushImage(image: string): Promise<DockerCommandResult> {
+  return invoke("docker_push_image", { image });
 }
 
 // ============== Claude Code 配置服务 ==============
@@ -415,6 +570,64 @@ export async function resetRecommendedTemplate(): Promise<void> {
   return invoke("reset_recommended_template");
 }
 
+// Claude 配置模板目录（远程拉取 + 本地缓存回退，由后端完成）
+// 内置兜底：即使后端 invoke 抛错，前端也永远拿到一份非空目录
+const BUILTIN_CLAUDE_TEMPLATES: Record<string, unknown> = {
+  codex: {
+    alwaysThinkingEnabled: true,
+    enabledPlugins: {
+      "claude-mem@thedotmack": true,
+      "planning-with-files@planning-with-files": true,
+    },
+    env: {
+      ANTHROPIC_AUTH_TOKEN: "sk-",
+      ANTHROPIC_BASE_URL: "https://a-ocnfniawgw.cn-shanghai.fcapp.run/v1",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "gpt-5.5",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "gpt-5.5",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "gpt-5.5",
+      ANTHROPIC_MODEL: "gpt-5.5",
+      ANTHROPIC_REASONING_MODEL: "gpt-5.5",
+      CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    },
+    model: "opus[1m]",
+  },
+  claude: {
+    effortLevel: "medium",
+    env: {
+      ANTHROPIC_AUTH_TOKEN: "sk-",
+      ANTHROPIC_BASE_URL: "https://a-ocnfniawgw.cn-shanghai.fcapp.run",
+      CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      DISABLE_AUTOUPDATER: "1",
+      DISABLE_ERROR_REPORTING: "1",
+      DISABLE_TELEMETRY: "1",
+    },
+    model: "opus[1m]",
+    permissions: { defaultMode: "bypassPermissions" },
+  },
+};
+
+/**
+ * 获取 Claude 配置模板目录（形如 { codex: {...}, claude: {...}, ... }）。
+ * 后端已负责"远程 → 本地缓存 → 内置默认"的回退，永不报错；
+ * 这里再兜一层：万一 invoke 本身异常，也返回前端内置默认，保证 UI 永远有内容。
+ */
+export async function getClaudeConfigTemplates(): Promise<Record<string, unknown>> {
+  try {
+    const raw = await invoke<string>("get_claude_config_templates");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch (e) {
+    console.error("读取 Claude 配置模板目录失败:", e);
+  }
+  return { ...BUILTIN_CLAUDE_TEMPLATES };
+}
+
 // ============== Netcat 协议测试服务 ==============
 
 import type {
@@ -564,6 +777,34 @@ export async function writeToClipboard(content: string): Promise<void> {
 
 export async function updateClipboardNote(id: string, note: string): Promise<ClipboardEntry> {
   return invoke("update_clipboard_note", { id, note });
+}
+
+// ============== 跨设备传输（PairDrop） ==============
+
+import type {
+  PairDropServiceStatus,
+  PairDropPeerInfo,
+} from "@/types/toolbox";
+
+export async function pairdropStart(port?: number): Promise<PairDropServiceStatus> {
+  return invoke("pairdrop_start", { port });
+}
+
+export async function pairdropStop(): Promise<void> {
+  return invoke("pairdrop_stop");
+}
+
+export async function pairdropStatus(): Promise<PairDropServiceStatus> {
+  return invoke("pairdrop_status");
+}
+
+export async function pairdropPeers(): Promise<PairDropPeerInfo[]> {
+  return invoke("pairdrop_peers");
+}
+
+/** 把缓存中的接收文件直接写到本地，token 一次性消费。返回写入字节数。 */
+export async function pairdropSaveFile(token: string, savePath: string): Promise<number> {
+  return invoke("pairdrop_save_file", { token, savePath });
 }
 
 // ============== 工具函数 ==============

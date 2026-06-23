@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import {
-  BookOpen,
-  LayoutDashboard,
-  Settings,
   Clock,
   FolderGit2,
-  Wrench,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
-import { useAppStore, type PageType } from "@/stores/appStore";
+import { type PageType, useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import { AnimatedLogo } from "@/components/ui/AnimatedLogo";
 import { NotificationPanel } from "@/components/ui/NotificationPanel";
 import { getDashboardStats } from "@/services/stats";
@@ -18,17 +18,47 @@ interface SidebarProps {
   onPageChange: (page: PageType) => void;
 }
 
-const navItems: { id: PageType; label: string; icon: typeof BookOpen }[] = [
-  { id: "shelf", label: "项目书架", icon: BookOpen },
-  { id: "dashboard", label: "数据统计", icon: LayoutDashboard },
-  { id: "toolbox", label: "工具箱", icon: Wrench },
-  { id: "settings", label: "设置", icon: Settings },
+type NavNode =
+  | { kind: "leaf"; id: PageType; label: string }
+  | { kind: "group"; id: string; label: string; children: { id: PageType; label: string }[] };
+
+const navTree: NavNode[] = [
+  { kind: "leaf", id: "shelf", label: "📖 书架" },
+  { kind: "leaf", id: "dashboard", label: "📊 统计" },
+  {
+    kind: "group",
+    id: "ai",
+    label: "🤖 助手",
+    children: [
+      { id: "chat", label: "💬 对话" },
+      { id: "apiChat", label: "🧪 接口" },
+      { id: "aiProviders", label: "✨ 模型" },
+      { id: "workflows", label: "⚡ 流程" },
+    ],
+  },
+  { kind: "leaf", id: "toolbox", label: "🧰 工具" },
+  { kind: "leaf", id: "settings", label: "⚙️ 设置" },
 ];
 
 export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
-  const { sidebarCollapsed, projects, setSelectedProjectId, setCurrentPage } = useAppStore();
+  const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
+  const projects = useProjectsStore((s) => s.projects);
+  const setSelectedProjectId = useProjectsStore((s) => s.setSelectedProjectId);
+  const setCurrentPage = useUiStore((s) => s.setCurrentPage);
   const [showLogoPopup, setShowLogoPopup] = useState(false);
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
+    // 当前页属于智工组则默认展开
+    const isAiActive = ["chat", "aiProviders", "workflows", "apiChat"].includes(currentPage);
+    return { ai: isAiActive };
+  });
+
+  useEffect(() => {
+    // 切页到智工子项时自动展开该组
+    if (["chat", "aiProviders", "workflows", "apiChat"].includes(currentPage)) {
+      setExpandedGroups((g) => ({ ...g, ai: true }));
+    }
+  }, [currentPage]);
 
   // 获取最近活跃的项目
   useEffect(() => {
@@ -156,18 +186,50 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
       </div>
 
       <nav className="re-menu">
-        {navItems.map((item) => {
-          const isActive = currentPage === item.id;
-          const label = item.id === "shelf" ? "📖 书架" : item.id === "dashboard" ? "📊 统计" : item.id === "toolbox" ? "🧰 工具" : "⚙️ 设置";
-
+        {navTree.map((node) => {
+          if (node.kind === "leaf") {
+            const isActive = currentPage === node.id;
+            return (
+              <button
+                key={node.id}
+                onClick={() => onPageChange(node.id)}
+                className={isActive ? "active" : ""}
+              >
+                <span className="truncate">{node.label}</span>
+              </button>
+            );
+          }
+          const expanded = !!expandedGroups[node.id];
+          const hasActive = node.children.some((c) => c.id === currentPage);
           return (
-            <button
-              key={item.id}
-              onClick={() => onPageChange(item.id)}
-              className={isActive ? "active" : ""}
-            >
-              <span className="truncate">{label}</span>
-            </button>
+            <div key={node.id}>
+              <button
+                onClick={() => setExpandedGroups((g) => ({ ...g, [node.id]: !g[node.id] }))}
+                className={hasActive && !expanded ? "active" : ""}
+                title={node.label}
+              >
+                <span className="truncate flex-1 text-left">{node.label}</span>
+                {expanded
+                  ? <ChevronDown size={12} className="opacity-60" />
+                  : <ChevronRight size={12} className="opacity-60" />}
+              </button>
+              {expanded && (
+                <div className="ml-3 pl-2 border-l border-gray-200 dark:border-gray-700">
+                  {node.children.map((c) => {
+                    const isActive = currentPage === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => onPageChange(c.id)}
+                        className={isActive ? "active" : ""}
+                      >
+                        <span className="truncate">{c.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
       </nav>

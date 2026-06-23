@@ -6,7 +6,7 @@ import { LabelSelector } from "./LabelSelector";
 import type { Project, GitStatus, CommitInfo, RemoteInfo } from "@/types";
 import { getGitStatus, getCommitHistory, getRemotes } from "@/services/git";
 import { openInEditor, openInTerminal, updateProject } from "@/services/db";
-import { useAppStore } from "@/stores/appStore";
+import { useEditorsStore } from "@/stores/editorsStore";
 
 interface ProjectDetailDialogProps {
   project: Project;
@@ -23,7 +23,7 @@ export function ProjectDetailDialog({ project, onClose, onUpdate }: ProjectDetai
   const [editingLabels, setEditingLabels] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(project.tags);
   const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
-  const { terminalConfig, editors } = useAppStore();
+  const { terminalConfig, editors } = useEditorsStore();
 
   useEffect(() => {
     loadProjectDetails();

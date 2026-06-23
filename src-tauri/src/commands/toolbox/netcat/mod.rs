@@ -1,18 +1,19 @@
 // Netcat 模块 - Tauri 命令导出
 
-mod types;
 mod tcp_client;
 mod tcp_server;
+mod types;
 mod udp;
 
 pub use types::*;
 
 use super::generate_id;
+use crate::error::AppResult;
 use crate::storage::get_storage_config;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
-use tauri::{AppHandle, State};
 
 /// 全局会话管理器
 pub struct NetcatState {
@@ -27,7 +28,7 @@ impl NetcatState {
     }
 
     /// 从文件加载会话配置
-    pub async fn load_sessions(&self) -> Result<(), String> {
+    pub async fn load_sessions(&self) -> AppResult<()> {
         let config = get_storage_config()?;
         let file_path = config.netcat_sessions_file();
 
@@ -35,11 +36,13 @@ impl NetcatState {
             return Ok(());
         }
 
-        let content = std::fs::read_to_string(&file_path)
-            .map_err(|e| format!("读取 Netcat 会话文件失败: {}", e))?;
+        let content = std::fs::read_to_string(&file_path).map_err(|e| {
+            crate::error::AppError::from(format!("读取 Netcat 会话文件失败: {}", e))
+        })?;
 
-        let configs: Vec<NetcatSessionConfig> = serde_json::from_str(&content)
-            .map_err(|e| format!("解析 Netcat 会话文件失败: {}", e))?;
+        let configs: Vec<NetcatSessionConfig> = serde_json::from_str(&content).map_err(|e| {
+            crate::error::AppError::from(format!("解析 Netcat 会话文件失败: {}", e))
+        })?;
 
         let mut sessions = self.sessions.write().await;
         for cfg in configs {
@@ -60,6 +63,7 @@ impl NetcatState {
                 bytes_received: 0,
                 message_count: 0,
                 error_message: None,
+                local_addr: None,
                 client_count: 0,
                 auto_send: cfg.auto_send,
             };
@@ -71,7 +75,7 @@ impl NetcatState {
     }
 
     /// 保存会话配置到文件
-    pub async fn save_sessions(&self) -> Result<(), String> {
+    pub async fn save_sessions(&self) -> AppResult<()> {
         let config = get_storage_config()?;
         let file_path = config.netcat_sessions_file();
 
@@ -95,10 +99,11 @@ impl NetcatState {
         }
 
         let content = serde_json::to_string_pretty(&configs)
-            .map_err(|e| format!("序列化 Netcat 会话失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("序列化 Netcat 会话失败: {}", e)))?;
 
-        std::fs::write(&file_path, content)
-            .map_err(|e| format!("保存 Netcat 会话文件失败: {}", e))?;
+        std::fs::write(&file_path, content).map_err(|e| {
+            crate::error::AppError::from(format!("保存 Netcat 会话文件失败: {}", e))
+        })?;
 
         Ok(())
     }
@@ -112,19 +117,19 @@ impl Default for NetcatState {
 
 /// 初始化并加载已保存的会话
 #[tauri::command]
-pub async fn netcat_init(
-    state: State<'_, NetcatState>,
-) -> Result<(), String> {
+#[specta::specta]
+pub async fn netcat_init(state: State<'_, NetcatState>) -> AppResult<()> {
     state.load_sessions().await
 }
 
 /// 创建新会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_create_session(
     _app: AppHandle,
     state: State<'_, NetcatState>,
     input: NetcatSessionInput,
-) -> Result<NetcatSession, String> {
+) -> AppResult<NetcatSession> {
     let now = current_timestamp();
     let session_id = generate_id();
 
@@ -161,6 +166,7 @@ pub async fn netcat_create_session(
         bytes_received: 0,
         message_count: 0,
         error_message: None,
+        local_addr: None,
         client_count: 0,
         auto_send: AutoSendConfig::default(),
     };
@@ -168,7 +174,11 @@ pub async fn netcat_create_session(
     let session_state = Arc::new(RwLock::new(SessionState::new(session.clone())));
 
     // 添加到管理器
-    state.sessions.write().await.insert(session_id, session_state);
+    state
+        .sessions
+        .write()
+        .await
+        .insert(session_id, session_state);
 
     // 保存到文件
     state.save_sessions().await?;
@@ -178,11 +188,12 @@ pub async fn netcat_create_session(
 
 /// 启动会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_start_session(
     app: AppHandle,
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let session_state = {
         let sessions = state.sessions.read().await;
         sessions.get(&session_id).cloned()
@@ -238,7 +249,9 @@ pub async fn netcat_start_session(
             let app_clone = app.clone();
             let state_clone = session_state.clone();
             let handle = tokio::spawn(async move {
-                let _ = tcp_client::start_tcp_client(app_clone, state_clone, host, port, timeout_ms).await;
+                let _ =
+                    tcp_client::start_tcp_client(app_clone, state_clone, host, port, timeout_ms)
+                        .await;
             });
             handle.abort_handle()
         }
@@ -271,18 +284,16 @@ pub async fn netcat_start_session(
 
 /// 停止会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_stop_session(
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     stop_session_internal(&state, &session_id).await
 }
 
 /// 内部停止会话逻辑（可复用）
-async fn stop_session_internal(
-    state: &NetcatState,
-    session_id: &str,
-) -> Result<(), String> {
+async fn stop_session_internal(state: &NetcatState, session_id: &str) -> AppResult<()> {
     let session_state = {
         let sessions = state.sessions.read().await;
         sessions.get(session_id).cloned()
@@ -365,10 +376,11 @@ async fn stop_session_internal(
 
 /// 删除会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_remove_session(
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // 先停止
     let _ = stop_session_internal(&state, &session_id).await;
 
@@ -383,11 +395,12 @@ pub async fn netcat_remove_session(
 
 /// 更新会话的自动发送配置
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_update_auto_send(
     state: State<'_, NetcatState>,
     session_id: String,
     config: AutoSendConfig,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let sessions = state.sessions.read().await;
     let session_state = sessions.get(&session_id).ok_or("会话不存在")?;
 
@@ -406,13 +419,20 @@ pub async fn netcat_update_auto_send(
 
 /// 发送消息
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_send_message(
-    _app: AppHandle,
+    app: AppHandle,
     state: State<'_, NetcatState>,
     input: SendMessageInput,
-) -> Result<NetcatMessage, String> {
-    log::info!("Netcat 发送消息: session={}, size={}, format={:?}, target_client={:?}, broadcast={:?}",
-        input.session_id, input.data.len(), input.format, input.target_client, input.broadcast);
+) -> AppResult<NetcatMessage> {
+    log::info!(
+        "Netcat 发送消息: session={}, size={}, format={:?}, target_client={:?}, broadcast={:?}",
+        input.session_id,
+        input.data.len(),
+        input.format,
+        input.target_client,
+        input.broadcast
+    );
 
     let session_state = {
         let sessions = state.sessions.read().await;
@@ -435,6 +455,24 @@ pub async fn netcat_send_message(
 
     log::info!("Netcat 发送: protocol={:?}, mode={:?}", protocol, mode);
 
+    let resolved_tcp_target_client = if protocol == Protocol::Tcp
+        && mode == SessionMode::Server
+        && !input.broadcast.unwrap_or(false)
+    {
+        let target = input.target_client.as_deref().unwrap_or("").trim();
+        if target.is_empty() {
+            None
+        } else {
+            let s = session_state.read().await;
+            s.clients
+                .iter()
+                .find(|(id, client)| id.as_str() == target || client.addr == target)
+                .map(|(id, _)| id.clone())
+        }
+    } else {
+        None
+    };
+
     // 根据协议和模式发送
     match (protocol, mode) {
         (Protocol::Tcp, SessionMode::Client) => {
@@ -445,12 +483,14 @@ pub async fn netcat_send_message(
             if input.broadcast.unwrap_or(false) {
                 log::info!("Netcat TCP 服务器模式广播");
                 tcp_server::broadcast_to_clients(&input.session_id, data.clone()).await?;
-            } else if let Some(ref client_id) = input.target_client {
+            } else if let Some(ref client_id) = resolved_tcp_target_client {
                 log::info!("Netcat TCP 服务器模式发送到客户端: {}", client_id);
                 tcp_server::send_to_client(&input.session_id, client_id, data.clone()).await?;
             } else {
                 log::error!("Netcat TCP 服务器模式: 未指定目标客户端或广播");
-                return Err("服务器模式需要指定目标客户端或广播".to_string());
+                return Err(crate::error::AppError::from(
+                    "服务器模式需要指定目标客户端或广播".to_string(),
+                ));
             }
         }
         (Protocol::Udp, _) => {
@@ -459,6 +499,39 @@ pub async fn netcat_send_message(
             udp::send_udp_data(&input.session_id, data.clone(), target).await?;
         }
     }
+
+    if protocol == Protocol::Tcp && mode == SessionMode::Server {
+        let mirror_targets = if input.broadcast.unwrap_or(false) {
+            None
+        } else {
+            resolved_tcp_target_client
+                .as_ref()
+                .map(|client_id| vec![client_id.clone()])
+        };
+        mirror_tcp_server_send_to_local_clients(
+            &app,
+            state.inner(),
+            &input.session_id,
+            mirror_targets.as_deref(),
+            &data,
+        )
+        .await;
+    }
+
+    // 尝试获取 client_addr（如果指定了目标客户端）
+    let message_client_id = resolved_tcp_target_client.or_else(|| input.target_client.clone());
+
+    let client_addr = if let Some(ref cid) = message_client_id {
+        let s = session_state.read().await;
+        s.clients.get(cid).map(|c| c.addr.clone()).or_else(|| {
+            s.clients
+                .values()
+                .find(|client| client.addr == *cid)
+                .map(|client| client.addr.clone())
+        })
+    } else {
+        None
+    };
 
     // 创建消息记录
     let now = current_timestamp();
@@ -472,8 +545,8 @@ pub async fn netcat_send_message(
         format: input.format,
         size: data.len(),
         timestamp: now,
-        client_id: input.target_client,
-        client_addr: None,
+        client_id: message_client_id,
+        client_addr,
     };
 
     // 保存到会话
@@ -492,11 +565,141 @@ pub async fn netcat_send_message(
     Ok(message)
 }
 
+async fn mirror_tcp_server_send_to_local_clients(
+    app: &AppHandle,
+    state: &NetcatState,
+    server_session_id: &str,
+    target_client_ids: Option<&[String]>,
+    data: &[u8],
+) {
+    let data_preview = bytes_to_display_string(data);
+    let now = current_timestamp();
+
+    let (server_addr, target_addrs, local_sessions) = {
+        let sessions = state.sessions.read().await;
+        let server_state = match sessions.get(server_session_id) {
+            Some(session_state) => session_state.clone(),
+            None => return,
+        };
+
+        let server = server_state.read().await;
+        let server_host = server.session.host.clone();
+        let server_port = server.session.port;
+        let server_addr = format!("{}:{}", server_host, server_port);
+        let target_addrs: Vec<String> = match target_client_ids {
+            Some(client_ids) => client_ids
+                .iter()
+                .filter_map(|client_id| {
+                    server
+                        .clients
+                        .get(client_id)
+                        .map(|client| client.addr.clone())
+                })
+                .collect(),
+            None => server
+                .clients
+                .values()
+                .map(|client| client.addr.clone())
+                .collect(),
+        };
+        drop(server);
+
+        if target_addrs.is_empty() {
+            return;
+        }
+
+        let mut local_sessions = Vec::new();
+        for (session_id, session_state) in sessions.iter() {
+            if session_id == server_session_id {
+                continue;
+            }
+
+            let session = session_state.read().await;
+            let is_matching_tcp_client = session.session.protocol == Protocol::Tcp
+                && session.session.mode == SessionMode::Client
+                && session.session.host == server_host
+                && session.session.port == server_port
+                && session
+                    .session
+                    .local_addr
+                    .as_ref()
+                    .map(|addr| target_addrs.iter().any(|target| target == addr))
+                    .unwrap_or(false);
+
+            if is_matching_tcp_client {
+                local_sessions.push(session_state.clone());
+            }
+        }
+
+        (server_addr, target_addrs, local_sessions)
+    };
+
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+
+    for session_state in local_sessions {
+        let (session_id, message) = {
+            let mut session = session_state.write().await;
+            let already_received = session.messages.iter().rev().take(20).any(|message| {
+                message.direction == MessageDirection::Received
+                    && message.data == data_preview
+                    && message.size == data.len()
+                    && message.client_addr.as_deref() == Some(server_addr.as_str())
+                    && message.timestamp >= now.saturating_sub(1000)
+            });
+
+            if already_received {
+                log::debug!(
+                    "Netcat TCP 本地客户端会话已通过真实读取收到数据，跳过同步: session={}",
+                    session.session.id
+                );
+                continue;
+            }
+
+            let message = NetcatMessage {
+                id: generate_id(),
+                session_id: session.session.id.clone(),
+                direction: MessageDirection::Received,
+                data: data_preview.clone(),
+                format: DataFormat::Text,
+                size: data.len(),
+                timestamp: now,
+                client_id: None,
+                client_addr: Some(server_addr.clone()),
+            };
+
+            session.session.bytes_received += data.len() as u64;
+            session.session.message_count += 1;
+            session.session.last_activity = Some(now);
+            session.messages.push(message.clone());
+
+            if session.messages.len() > 1000 {
+                session.messages.remove(0);
+            }
+
+            (session.session.id.clone(), message)
+        };
+
+        let _ = app.emit(
+            "netcat-event",
+            NetcatEvent::MessageReceived {
+                session_id,
+                message,
+            },
+        );
+    }
+
+    if !target_addrs.is_empty() {
+        log::info!(
+            "Netcat TCP 服务端发送已同步到本地客户端会话: targets={:?}",
+            target_addrs
+        );
+    }
+}
+
 /// 获取所有会话
 #[tauri::command]
-pub async fn netcat_get_sessions(
-    state: State<'_, NetcatState>,
-) -> Result<Vec<NetcatSession>, String> {
+#[specta::specta]
+pub async fn netcat_get_sessions(state: State<'_, NetcatState>) -> AppResult<Vec<NetcatSession>> {
     let sessions = state.sessions.read().await;
     let mut result = Vec::new();
 
@@ -510,10 +713,11 @@ pub async fn netcat_get_sessions(
 
 /// 获取单个会话
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_get_session(
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<NetcatSession, String> {
+) -> AppResult<NetcatSession> {
     let sessions = state.sessions.read().await;
     let session_state = sessions.get(&session_id).ok_or("会话不存在")?;
     let s = session_state.read().await;
@@ -522,12 +726,13 @@ pub async fn netcat_get_session(
 
 /// 获取会话消息
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_get_messages(
     state: State<'_, NetcatState>,
     session_id: String,
     limit: Option<usize>,
     offset: Option<usize>,
-) -> Result<Vec<NetcatMessage>, String> {
+) -> AppResult<Vec<NetcatMessage>> {
     let sessions = state.sessions.read().await;
     let session_state = sessions.get(&session_id).ok_or("会话不存在")?;
     let s = session_state.read().await;
@@ -535,7 +740,8 @@ pub async fn netcat_get_messages(
     let offset = offset.unwrap_or(0);
     let limit = limit.unwrap_or(100);
 
-    let messages: Vec<NetcatMessage> = s.messages
+    let messages: Vec<NetcatMessage> = s
+        .messages
         .iter()
         .rev()
         .skip(offset)
@@ -548,10 +754,11 @@ pub async fn netcat_get_messages(
 
 /// 获取连接的客户端
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_get_clients(
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<Vec<ConnectedClient>, String> {
+) -> AppResult<Vec<ConnectedClient>> {
     let sessions = state.sessions.read().await;
     let session_state = sessions.get(&session_id).ok_or("会话不存在")?;
     let s = session_state.read().await;
@@ -561,10 +768,11 @@ pub async fn netcat_get_clients(
 
 /// 清空会话消息
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_clear_messages(
     state: State<'_, NetcatState>,
     session_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let sessions = state.sessions.read().await;
     let session_state = sessions.get(&session_id).ok_or("会话不存在")?;
     let mut s = session_state.write().await;
@@ -574,11 +782,12 @@ pub async fn netcat_clear_messages(
 
 /// 断开指定客户端（仅服务器模式）
 #[tauri::command]
+#[specta::specta]
 pub async fn netcat_disconnect_client(
     state: State<'_, NetcatState>,
     session_id: String,
     client_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // 对于 TCP 服务器，从全局存储中移除客户端发送器会导致连接关闭
     let _ = tcp_server::disconnect_client(&session_id, &client_id).await;
 
@@ -594,7 +803,7 @@ pub async fn netcat_disconnect_client(
 }
 
 /// HTTP 请求配置
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HttpFetchConfig {
     pub url: String,
@@ -610,34 +819,47 @@ pub struct HttpFetchConfig {
 
 /// HTTP 获取数据（用于自动发送的 HTTP 模式）
 #[tauri::command]
-pub async fn netcat_fetch_http(
-    config: HttpFetchConfig,
-) -> Result<String, String> {
+#[specta::specta]
+pub async fn netcat_fetch_http(config: HttpFetchConfig) -> AppResult<String> {
     use reqwest::{Client, Method};
     use std::time::Duration;
 
-    log::info!("Netcat HTTP 请求: url={}, method={:?}",
-        config.url, config.method);
+    log::info!(
+        "Netcat HTTP 请求: url={}, method={:?}",
+        config.url,
+        config.method
+    );
 
     // 创建 HTTP 客户端，配置更宽松的选项
     let client = Client::builder()
         .timeout(Duration::from_secs(10))
         .connect_timeout(Duration::from_secs(5))
-        .no_proxy()  // 禁用系统代理
+        .no_proxy() // 禁用系统代理
         .user_agent("CodeShelf-Netcat/1.0")
-        .danger_accept_invalid_certs(true)  // 接受无效证书（用于本地测试）
+        .danger_accept_invalid_certs(true) // 接受无效证书（用于本地测试）
         .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("创建 HTTP 客户端失败: {}", e)))?;
 
     // 解析 HTTP 方法
-    let method = match config.method.as_deref().unwrap_or("GET").to_uppercase().as_str() {
+    let method = match config
+        .method
+        .as_deref()
+        .unwrap_or("GET")
+        .to_uppercase()
+        .as_str()
+    {
         "GET" => Method::GET,
         "POST" => Method::POST,
         "PUT" => Method::PUT,
         "DELETE" => Method::DELETE,
         "PATCH" => Method::PATCH,
         "HEAD" => Method::HEAD,
-        other => return Err(format!("不支持的 HTTP 方法: {}", other)),
+        other => {
+            return Err(crate::error::AppError::from(format!(
+                "不支持的 HTTP 方法: {}",
+                other
+            )))
+        }
     };
 
     let mut request = client.request(method, &config.url);
@@ -654,29 +876,30 @@ pub async fn netcat_fetch_http(
         request = request.body(body);
     }
 
-    let response = request
-        .send()
-        .await
-        .map_err(|e| {
-            // 提供更详细的错误信息
-            let err_detail = if e.is_connect() {
-                format!("连接失败 (目标服务器可能未启动或防火墙阻止): {}", e)
-            } else if e.is_timeout() {
-                format!("请求超时: {}", e)
-            } else if e.is_request() {
-                format!("请求错误: {}", e)
-            } else {
-                format!("HTTP 请求失败: {}", e)
-            };
-            log::error!("Netcat HTTP 请求失败: {}", err_detail);
-            err_detail
-        })?;
+    let response = request.send().await.map_err(|e| {
+        // 提供更详细的错误信息
+        let err_detail = if e.is_connect() {
+            format!("连接失败 (目标服务器可能未启动或防火墙阻止): {}", e)
+        } else if e.is_timeout() {
+            format!("请求超时: {}", e)
+        } else if e.is_request() {
+            format!("请求错误: {}", e)
+        } else {
+            format!("HTTP 请求失败: {}", e)
+        };
+        log::error!("Netcat HTTP 请求失败: {}", err_detail);
+        err_detail
+    })?;
 
     let status = response.status();
     log::info!("Netcat HTTP 响应状态: {}", status);
 
     if !status.is_success() {
-        return Err(format!("HTTP 请求失败: {} {}", status.as_u16(), status.canonical_reason().unwrap_or("")));
+        return Err(crate::error::AppError::from(format!(
+            "HTTP 请求失败: {} {}",
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("")
+        )));
     }
 
     let content_type = response
@@ -689,17 +912,24 @@ pub async fn netcat_fetch_http(
     let text = response
         .text()
         .await
-        .map_err(|e| format!("读取响应失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取响应失败: {}", e)))?;
 
-    log::info!("Netcat HTTP 响应: {} bytes, content-type={}, preview={}",
-        text.len(), content_type, &text[..text.len().min(100)]);
+    log::info!(
+        "Netcat HTTP 响应: {} bytes, content-type={}, preview={}",
+        text.len(),
+        content_type,
+        &text[..text.len().min(100)]
+    );
 
     // 如果是 JSON 并且指定了路径，则提取
     if content_type.contains("application/json") || content_type.contains("text/json") {
         if let Some(path) = config.json_path {
             if !path.trim().is_empty() {
                 let result = extract_json_path(&text, &path)?;
-                log::info!("Netcat HTTP JSON 提取结果: {}", &result[..result.len().min(100)]);
+                log::info!(
+                    "Netcat HTTP JSON 提取结果: {}",
+                    &result[..result.len().min(100)]
+                );
                 return Ok(result);
             }
         }
@@ -709,9 +939,9 @@ pub async fn netcat_fetch_http(
 }
 
 /// 从 JSON 中提取指定路径的值
-fn extract_json_path(json_str: &str, path: &str) -> Result<String, String> {
+fn extract_json_path(json_str: &str, path: &str) -> AppResult<String> {
     let json: serde_json::Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("JSON 解析失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("JSON 解析失败: {}", e)))?;
 
     // 支持多路径: "data.name,data.id"
     let paths: Vec<&str> = path.split(',').map(|p| p.trim()).collect();
@@ -767,7 +997,7 @@ fn get_json_value<'a>(json: &'a serde_json::Value, path: &str) -> Option<&'a ser
 // ============== 辅助函数 ==============
 
 /// 解析输入数据
-fn parse_input_data(data: &str, format: DataFormat) -> Result<Vec<u8>, String> {
+fn parse_input_data(data: &str, format: DataFormat) -> AppResult<Vec<u8>> {
     match format {
         DataFormat::Text => Ok(data.as_bytes().to_vec()),
         DataFormat::Hex => {
@@ -782,23 +1012,37 @@ fn parse_input_data(data: &str, format: DataFormat) -> Result<Vec<u8>, String> {
             let hex_str: String = cleaned.split_whitespace().collect();
 
             if hex_str.len() % 2 != 0 {
-                return Err("十六进制字符串长度必须为偶数".to_string());
+                return Err(crate::error::AppError::from(
+                    "十六进制字符串长度必须为偶数".to_string(),
+                ));
             }
 
             (0..hex_str.len())
                 .step_by(2)
                 .map(|i| {
                     u8::from_str_radix(&hex_str[i..i + 2], 16)
-                        .map_err(|e| format!("无效的十六进制: {}", e))
+                        .map_err(|e| crate::error::AppError::from(format!("无效的十六进制: {}", e)))
                 })
                 .collect()
         }
         DataFormat::Base64 => {
-            use base64::{Engine as _, engine::general_purpose};
+            use base64::{engine::general_purpose, Engine as _};
             general_purpose::STANDARD
                 .decode(data.trim())
-                .map_err(|e| format!("Base64 解码失败: {}", e))
+                .map_err(|e| crate::error::AppError::from(format!("Base64 解码失败: {}", e)))
         }
+    }
+}
+
+/// 将字节转换为显示字符串
+fn bytes_to_display_string(data: &[u8]) -> String {
+    match String::from_utf8(data.to_vec()) {
+        Ok(s) => s,
+        Err(_) => data
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect::<Vec<_>>()
+            .join(" "),
     }
 }
 

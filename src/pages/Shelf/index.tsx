@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ProjectCard, ScanResultDialog, ProjectDetailPanel, AddProjectDialog, AddCategoryDialog, CategorySelector, LabelSelector } from "@/components/project";
+import { ResumeGenerator } from "../Toolbox/ResumeGenerator";
 import { FloatingCategoryBall, showToast } from "@/components/ui";
 import { MoreVertical, Plus, CheckSquare, Square, Trash2, Tag, Bookmark, ChevronLeft, ChevronRight } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import type { Project, GitRepo, GitStatus } from "@/types";
 import { getProjects, addProject, removeProject, updateProject } from "@/services/db";
 import { scanDirectory, getGitStatus } from "@/services/git";
@@ -14,15 +17,14 @@ export function ShelfPage() {
   const {
     projects,
     setProjects,
-    searchQuery,
-    setSearchQuery,
-    scanDepth,
     categories: storedCategories,
     labels: storedLabels,
     markProjectDirty,
     selectedProjectId,
     setSelectedProjectId,
-  } = useAppStore();
+  } = useProjectsStore();
+  const { searchQuery, setSearchQuery } = useUiStore();
+  const scanDepth = useSettingsStore((s) => s.scanDepth);
   const [loading, setLoading] = useState(true);
   const [scanResults, setScanResults] = useState<GitRepo[] | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -32,7 +34,7 @@ export function ShelfPage() {
   const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
   const [showAddCategoryDialog, setShowAddCategoryDialog] = useState(false);
   const [showFloatingBall, setShowFloatingBall] = useState(false);
-  const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
   const categoryBarRef = useRef<HTMLDivElement>(null);
   const catListRef = useRef<HTMLDivElement>(null);
   const [catScrollState, setCatScrollState] = useState({ left: false, right: false });
@@ -53,6 +55,9 @@ export function ShelfPage() {
 
   // 标签筛选状态
   const [selectedLabelFilters, setSelectedLabelFilters] = useState<string[]>([]);
+
+  // 简历生成器状态
+  const [showResumeGenerator, setShowResumeGenerator] = useState(false);
 
   useEffect(() => {
     loadProjects();
@@ -506,6 +511,11 @@ export function ShelfPage() {
                 label: "添加分类",
                 onClick: () => setShowAddCategoryDialog(true),
               },
+              {
+                icon: "📄",
+                label: "简历生成",
+                onClick: () => setShowResumeGenerator(true),
+              },
             ]}
           />
 
@@ -841,6 +851,24 @@ export function ShelfPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Resume Generator —— 与 re-main-wrap 同框,留出侧边栏 + 6px 间距 + 圆角白底 */}
+      {showResumeGenerator && (
+        <div
+          className="fixed z-50 bg-white overflow-hidden flex flex-col"
+          style={{
+            top: 6,
+            right: 6,
+            bottom: 6,
+            left: sidebarCollapsed ? 6 : 206,
+            borderRadius: 12,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+            transition: '0.25s ease',
+          }}
+        >
+          <ResumeGenerator onBack={() => setShowResumeGenerator(false)} />
         </div>
       )}
     </div>

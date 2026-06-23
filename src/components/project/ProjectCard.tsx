@@ -7,7 +7,8 @@ import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { LabelSelector } from "./LabelSelector";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { TerminalContextMenu } from "./TerminalContextMenu";
-import { useAppStore } from "@/stores/appStore";
+import { useEditorsStore } from "@/stores/editorsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import { getEditorForProject, getEditorConfigForProject, getEditorIcon } from "@/utils/editor";
 
 interface ProjectCardProps {
@@ -26,10 +27,11 @@ export function ProjectCard({ project, onUpdate, onShowDetail, onDelete }: Omit<
   const [showTerminalMenu, setShowTerminalMenu] = useState<{ x: number; y: number } | null>(null);
   const [editingLabels, setEditingLabels] = useState<string[]>([]);
   const [copiedPath, setCopiedPath] = useState(false);
-  const { terminalConfig, editors } = useAppStore();
+  const terminalConfig = useEditorsStore((s) => s.terminalConfig);
+  const editors = useEditorsStore((s) => s.editors);
 
   // 从 store 读取最新的 project 数据（解决切换编辑器后不刷新的问题）
-  const storeProject = useAppStore((state) => state.projects.find((p) => p.id === project.id)) || project;
+  const storeProject = useProjectsStore((state) => state.projects.find((p) => p.id === project.id)) || project;
 
   useEffect(() => {
     loadGitInfo();

@@ -1,4 +1,5 @@
 # 默认忽略的文件
+.DS_Store
 /shelf/
 /workspace.xml
 # 基于编辑器的 HTTP 客户端请求
@@ -19,3 +20,19 @@
 
 CodeShelf-Portable-*
 /scripts/extracted_data/
+
+.idea
+/src-node/resume-agent/dist/agent/fragments.js
+/src-node/resume-agent/dist/agent/generateResume.js
+/src-node/resume-agent/dist/agent/model.js
+/src-node/resume-agent/dist/agent/runAgent.js
+/src-node/resume-agent/dist/agent/runContext.js
+/src-node/resume-agent/dist/fs/projectBackend.js
+/src-node/resume-agent/dist/storage/paths.js
+/src-node/resume-agent/dist/storage/promptStore.js
+/src-node/resume-agent/dist/storage/runStore.js
+/src-node/resume-agent/dist/main.js
+/src-node/resume-agent/dist/rpc.js
+/src-node/resume-agent/dist/types.js
+/src-node/resume-agent/dist/util.js
+/src-tauri/resources/sidecars/

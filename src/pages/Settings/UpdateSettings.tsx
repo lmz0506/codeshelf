@@ -1,9 +1,17 @@
 import { useState, useEffect } from "react";
 import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2, ExternalLink } from "lucide-react";
-import { checkForUpdates, downloadAndInstallUpdate, type UpdateInfo } from "@/services/updater";
+import {
+  checkForUpdates,
+  downloadAndInstallUpdate,
+  getArchStatus,
+  openCorrectArchDownload,
+  type UpdateInfo,
+  type ArchStatus,
+} from "@/services/updater";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-shell";
-import { useAppStore } from "@/stores/appStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { ArchMismatchDialog, type ArchMismatchChoice, showToast } from "@/components/ui";
 
 export function UpdateSettings() {
   const [checking, setChecking] = useState(false);
@@ -12,8 +20,9 @@ export function UpdateSettings() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string>("...");
-  const autoUpdate = useAppStore((state) => state.autoUpdate);
-  const setAutoUpdate = useAppStore((state) => state.setAutoUpdate);
+  const [archMismatch, setArchMismatch] = useState<ArchStatus | null>(null);
+  const autoUpdate = useSettingsStore((state) => state.autoUpdate);
+  const setAutoUpdate = useSettingsStore((state) => state.setAutoUpdate);
 
   useEffect(() => {
     getVersion().then(setCurrentVersion).catch(() => setCurrentVersion("未知"));
@@ -32,7 +41,7 @@ export function UpdateSettings() {
     }
   }
 
-  async function handleDownloadUpdate() {
+  async function runSameArchDownload() {
     setDownloading(true);
     setError(null);
     setProgress(0);
@@ -44,6 +53,55 @@ export function UpdateSettings() {
       setError(String(err));
       setDownloading(false);
     }
+  }
+
+  /** 入口：点"下载并安装"。先检测架构，匹配则直接下；不匹配则弹窗等用户确认。 */
+  async function handleDownloadUpdate() {
+    let arch: ArchStatus | null = null;
+    try {
+      arch = await getArchStatus();
+    } catch (err) {
+      console.warn("架构检测失败，按同架构走默认更新流程", err);
+    }
+    if (arch?.mismatch) {
+      // 阻塞 —— 弹窗交给用户选择；选择前不做任何下载
+      setArchMismatch(arch);
+      return;
+    }
+    runSameArchDownload();
+  }
+
+  function handleArchConfirm(choice: ArchMismatchChoice) {
+    const arch = archMismatch;
+    const info = updateInfo;
+    setArchMismatch(null);
+    if (!arch || !info) return;
+    if (choice === "same") {
+      runSameArchDownload();
+    } else {
+      if (!info.version) {
+        showToast("warning", "未拿到新版本号", "请前往 GitHub Releases 手动下载");
+        open("https://github.com/en-o/codeshelf/releases/latest");
+        return;
+      }
+      openCorrectArchDownload(info.version, arch.hostArch)
+        .then(() => {
+          showToast(
+            "info",
+            "已在浏览器打开下载",
+            "下载完成后双击 dmg，将 CodeShelf 拖入 Applications 替换原 app 即可。数据不会丢失。",
+          );
+        })
+        .catch((err) => {
+          console.error("打开下载失败", err);
+          showToast("error", "打开下载失败", "请手动前往 GitHub Releases");
+        });
+    }
+  }
+
+  function handleArchCancel() {
+    setArchMismatch(null);
+    // 不改 downloading / progress：用户取消相当于回到点击前的状态
   }
 
   return (
@@ -91,7 +149,7 @@ export function UpdateSettings() {
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-green-700">
                 <Download size={16} />
-                <span className="text-sm font-medium">发现新版本：v{updateInfo.version}</span>
+                <span className="text-sm font-medium">发现新版本{updateInfo.version ? `：v${updateInfo.version}` : ''}</span>
               </div>
               {updateInfo.body && (
                 <div className="text-xs text-gray-600 whitespace-pre-wrap max-h-32 overflow-y-auto">
@@ -167,6 +225,16 @@ export function UpdateSettings() {
           </div>
         </div>
       </div>
+
+      {archMismatch && (
+        <ArchMismatchDialog
+          open
+          arch={archMismatch}
+          version={updateInfo?.version}
+          onCancel={handleArchCancel}
+          onConfirm={handleArchConfirm}
+        />
+      )}
     </div>
   );
 }

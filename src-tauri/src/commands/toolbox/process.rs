@@ -1,6 +1,7 @@
 // 进程查询模块 - 跨平台支持、端口查询、进程管理
 
 use super::{ProcessFilter, ProcessInfo};
+use crate::error::AppResult;
 use std::collections::HashMap;
 use sysinfo::{Pid, ProcessStatus, System};
 
@@ -13,18 +14,15 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// 获取进程列表
 #[tauri::command]
-pub async fn get_processes(filter: Option<ProcessFilter>) -> Result<Vec<ProcessInfo>, String> {
+#[specta::specta]
+pub async fn get_processes(filter: Option<ProcessFilter>) -> AppResult<Vec<ProcessInfo>> {
     let mut system = System::new_all();
     system.refresh_all();
 
     let mut processes: Vec<ProcessInfo> = Vec::new();
 
     // 如果有端口过滤，先获取端口-进程映射
-    let port_pid_map = if filter
-        .as_ref()
-        .map(|f| f.port.is_some())
-        .unwrap_or(false)
-    {
+    let port_pid_map = if filter.as_ref().map(|f| f.port.is_some()).unwrap_or(false) {
         get_port_pid_map().await?
     } else {
         HashMap::new()
@@ -120,14 +118,14 @@ fn format_process_status(status: ProcessStatus) -> String {
 
 /// 获取端口-进程映射
 #[cfg(target_os = "windows")]
-async fn get_port_pid_map() -> Result<HashMap<u16, Vec<u32>>, String> {
+async fn get_port_pid_map() -> AppResult<HashMap<u16, Vec<u32>>> {
     use std::process::Command;
 
     let output = Command::new("netstat")
         .args(["-ano"])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| format!("执行 netstat 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("执行 netstat 失败: {}", e)))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut map: HashMap<u16, Vec<u32>> = HashMap::new();
@@ -163,18 +161,19 @@ async fn get_port_pid_map() -> Result<HashMap<u16, Vec<u32>>, String> {
 
 /// 获取端口-进程映射（Linux）
 #[cfg(target_os = "linux")]
-async fn get_port_pid_map() -> Result<HashMap<u16, Vec<u32>>, String> {
+async fn get_port_pid_map() -> AppResult<HashMap<u16, Vec<u32>>> {
     use std::process::Command;
 
     // 尝试使用 ss 命令（需要 root 权限才能看到 PID）
-    let output = Command::new("ss")
-        .args(["-tulnp"])
-        .output()
-        .map_err(|e| format!("执行 ss 失败: {}。请确保已安装 iproute2 包", e))?;
+    let output = Command::new("ss").args(["-tulnp"]).output().map_err(|e| {
+        crate::error::AppError::from(format!("执行 ss 失败: {}。请确保已安装 iproute2 包", e))
+    })?;
 
     if !output.status.success() {
         // ss 可能需要 root 权限
-        return Err("获取端口信息失败，可能需要管理员权限".to_string());
+        return Err(crate::error::AppError::from(
+            "获取端口信息失败，可能需要管理员权限".to_string(),
+        ));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -215,20 +214,27 @@ async fn get_port_pid_map() -> Result<HashMap<u16, Vec<u32>>, String> {
 
 /// 获取端口-进程映射（macOS）
 #[cfg(target_os = "macos")]
-async fn get_port_pid_map() -> Result<HashMap<u16, Vec<u32>>, String> {
+async fn get_port_pid_map() -> AppResult<HashMap<u16, Vec<u32>>> {
     use std::process::Command;
 
     let output = Command::new("lsof")
         .args(["-i", "-P", "-n"])
         .output()
-        .map_err(|e| format!("执行 lsof 失败: {}。请确保已安装 lsof", e))?;
+        .map_err(|e| {
+            crate::error::AppError::from(format!("执行 lsof 失败: {}。请确保已安装 lsof", e))
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.contains("Permission denied") {
-            return Err("获取端口信息失败，可能需要管理员权限".to_string());
+            return Err(crate::error::AppError::from(
+                "获取端口信息失败，可能需要管理员权限".to_string(),
+            ));
         }
-        return Err(format!("lsof 执行失败: {}", stderr));
+        return Err(crate::error::AppError::from(format!(
+            "lsof 执行失败: {}",
+            stderr
+        )));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -262,7 +268,8 @@ async fn get_port_pid_map() -> Result<HashMap<u16, Vec<u32>>, String> {
 
 /// 查询端口占用
 #[tauri::command]
-pub async fn get_port_processes(port: u16) -> Result<Vec<ProcessInfo>, String> {
+#[specta::specta]
+pub async fn get_port_processes(port: u16) -> AppResult<Vec<ProcessInfo>> {
     get_processes(Some(ProcessFilter {
         port: Some(port),
         name: None,
@@ -273,11 +280,14 @@ pub async fn get_port_processes(port: u16) -> Result<Vec<ProcessInfo>, String> {
 
 /// 终止进程
 #[tauri::command]
-pub async fn kill_process(pid: u32, force: Option<bool>) -> Result<(), String> {
+#[specta::specta]
+pub async fn kill_process(pid: u32, force: Option<bool>) -> AppResult<()> {
     // 获取当前进程 PID，防止用户意外结束 CodeShelf 自身
     let current_pid = std::process::id();
     if pid == current_pid {
-        return Err("无法终止 CodeShelf 进程。如需停止内部服务，请使用本地服务页面的停止按钮。".to_string());
+        return Err(crate::error::AppError::from(
+            "无法终止 CodeShelf 进程。如需停止内部服务，请使用本地服务页面的停止按钮。".to_string(),
+        ));
     }
 
     let force = force.unwrap_or(false);
@@ -295,10 +305,12 @@ pub async fn kill_process(pid: u32, force: Option<bool>) -> Result<(), String> {
 
         let output = cmd
             .output()
-            .map_err(|e| format!("执行 taskkill 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("执行 taskkill 失败: {}", e)))?;
 
         if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).to_string());
+            return Err(crate::error::AppError::from(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
         }
     }
 
@@ -310,10 +322,12 @@ pub async fn kill_process(pid: u32, force: Option<bool>) -> Result<(), String> {
         let output = Command::new("kill")
             .args([signal, &pid.to_string()])
             .output()
-            .map_err(|e| format!("执行 kill 失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("执行 kill 失败: {}", e)))?;
 
         if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).to_string());
+            return Err(crate::error::AppError::from(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
         }
     }
 
@@ -322,7 +336,8 @@ pub async fn kill_process(pid: u32, force: Option<bool>) -> Result<(), String> {
 
 /// 获取系统资源使用情况
 #[tauri::command]
-pub async fn get_system_stats() -> Result<SystemStats, String> {
+#[specta::specta]
+pub async fn get_system_stats() -> AppResult<SystemStats> {
     let mut system = System::new_all();
     system.refresh_all();
 
@@ -337,7 +352,7 @@ pub async fn get_system_stats() -> Result<SystemStats, String> {
 }
 
 /// 系统统计信息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemStats {
     pub total_memory: u64,
@@ -349,7 +364,7 @@ pub struct SystemStats {
 }
 
 /// 端口占用信息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PortOccupation {
     pub port: u16,
@@ -362,7 +377,8 @@ pub struct PortOccupation {
 
 /// 获取本地端口占用情况
 #[tauri::command]
-pub async fn get_local_port_occupation() -> Result<Vec<PortOccupation>, String> {
+#[specta::specta]
+pub async fn get_local_port_occupation() -> AppResult<Vec<PortOccupation>> {
     #[cfg(target_os = "windows")]
     {
         get_port_occupation_windows().await
@@ -381,7 +397,7 @@ pub async fn get_local_port_occupation() -> Result<Vec<PortOccupation>, String> 
 
 /// Windows: 获取端口占用
 #[cfg(target_os = "windows")]
-async fn get_port_occupation_windows() -> Result<Vec<PortOccupation>, String> {
+async fn get_port_occupation_windows() -> AppResult<Vec<PortOccupation>> {
     use std::collections::HashMap;
     use std::process::Command;
 
@@ -389,7 +405,7 @@ async fn get_port_occupation_windows() -> Result<Vec<PortOccupation>, String> {
         .args(["-ano"])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| format!("执行 netstat 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("执行 netstat 失败: {}", e)))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut system = System::new_all();
@@ -419,7 +435,13 @@ async fn get_port_occupation_windows() -> Result<Vec<PortOccupation>, String> {
                         };
 
                         // 过滤掉 TIME_WAIT 和 CLOSE_WAIT 等非活跃状态
-                        if state == "TIME_WAIT" || state == "CLOSE_WAIT" || state == "FIN_WAIT_1" || state == "FIN_WAIT_2" || state == "CLOSING" || state == "LAST_ACK" {
+                        if state == "TIME_WAIT"
+                            || state == "CLOSE_WAIT"
+                            || state == "FIN_WAIT_1"
+                            || state == "FIN_WAIT_2"
+                            || state == "CLOSING"
+                            || state == "LAST_ACK"
+                        {
                             continue;
                         }
 
@@ -447,14 +469,17 @@ async fn get_port_occupation_windows() -> Result<Vec<PortOccupation>, String> {
                                     }
                                 }
 
-                                port_map.insert(key, PortOccupation {
-                                    port,
-                                    protocol: protocol.to_lowercase(),
-                                    pid,
-                                    process_name,
-                                    local_addr: local_addr.to_string(),
-                                    state,
-                                });
+                                port_map.insert(
+                                    key,
+                                    PortOccupation {
+                                        port,
+                                        protocol: protocol.to_lowercase(),
+                                        pid,
+                                        process_name,
+                                        local_addr: local_addr.to_string(),
+                                        state,
+                                    },
+                                );
                             }
                         }
                     }
@@ -484,13 +509,12 @@ fn state_priority(state: &str) -> u8 {
 
 /// Linux: 获取端口占用
 #[cfg(target_os = "linux")]
-async fn get_port_occupation_linux() -> Result<Vec<PortOccupation>, String> {
+async fn get_port_occupation_linux() -> AppResult<Vec<PortOccupation>> {
     use std::process::Command;
 
-    let output = Command::new("ss")
-        .args(["-tulnp"])
-        .output()
-        .map_err(|e| format!("执行 ss 失败: {}。请确保已安装 iproute2 包", e))?;
+    let output = Command::new("ss").args(["-tulnp"]).output().map_err(|e| {
+        crate::error::AppError::from(format!("执行 ss 失败: {}。请确保已安装 iproute2 包", e))
+    })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut results: Vec<PortOccupation> = Vec::new();
@@ -550,13 +574,13 @@ async fn get_port_occupation_linux() -> Result<Vec<PortOccupation>, String> {
 
 /// macOS: 获取端口占用
 #[cfg(target_os = "macos")]
-async fn get_port_occupation_macos() -> Result<Vec<PortOccupation>, String> {
+async fn get_port_occupation_macos() -> AppResult<Vec<PortOccupation>> {
     use std::process::Command;
 
     let output = Command::new("lsof")
         .args(["-i", "-P", "-n", "-sTCP:LISTEN"])
         .output()
-        .map_err(|e| format!("执行 lsof 失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("执行 lsof 失败: {}", e)))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut results: Vec<PortOccupation> = Vec::new();

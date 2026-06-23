@@ -5,10 +5,14 @@ import {
   silentCheckForUpdates,
   downloadUpdate,
   installUpdate,
+  getArchStatus,
+  openCorrectArchDownload,
   type UpdateInfo,
+  type ArchStatus,
 } from "@/services/updater";
 import { showToast } from "@/components/ui/Toast";
-import { useAppStore } from "@/stores/appStore";
+import { ArchMismatchDialog, type ArchMismatchChoice } from "@/components/ui/ArchMismatchDialog";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 const RELEASES_URL = "https://github.com/en-o/codeshelf/releases/latest";
 const DEFAULT_RELEASE_NOTE = "修复了一些问题";
@@ -26,7 +30,9 @@ export function UpdateNotification() {
   const [progress, setProgress] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  const autoUpdate = useAppStore((state) => state.autoUpdate);
+  /** 架构不匹配时阻塞自动下载，等用户确认 */
+  const [archMismatch, setArchMismatch] = useState<ArchStatus | null>(null);
+  const autoUpdate = useSettingsStore((state) => state.autoUpdate);
 
   // 启动时静默检查更新（仅在自动更新开启时）
   useEffect(() => {
@@ -43,11 +49,22 @@ export function UpdateNotification() {
         // 记录到通知中心（含更新说明）
         showToast(
           "info",
-          `发现新版本 v${info.version}`,
+          `发现新版本${info.version ? ` v${info.version}` : ''}`,
           notes,
         );
-        // 自动开始下载
-        startDownload();
+        // 下载前先检测架构 —— 不匹配则弹窗拦截，等用户手动确认
+        let arch: ArchStatus | null = null;
+        try {
+          arch = await getArchStatus();
+        } catch (err) {
+          console.warn("架构检测失败，按同架构走默认更新流程", err);
+        }
+        if (arch?.mismatch) {
+          setArchMismatch(arch);
+          // 故意不调 startDownload —— 必须等 ArchMismatchDialog 的 onConfirm
+          return;
+        }
+        startDownload(info);
       } else {
         setState("idle");
       }
@@ -58,7 +75,48 @@ export function UpdateNotification() {
     return () => clearTimeout(timer);
   }, []);
 
-  async function startDownload() {
+  /** 用户在 ArchMismatchDialog 上点了"确认"后才会触发 */
+  function handleArchConfirm(choice: ArchMismatchChoice) {
+    const arch = archMismatch;
+    const info = updateInfo;
+    setArchMismatch(null);
+    if (!arch || !info) return;
+    if (choice === "same") {
+      // 继续当前架构的自动更新
+      startDownload(info);
+    } else {
+      // 浏览器打开匹配宿主架构的 dmg 直链
+      if (!info.version) {
+        showToast("warning", "未拿到新版本号", "请前往 GitHub Releases 手动下载");
+        open(RELEASES_URL);
+        setDismissed(true);
+        return;
+      }
+      openCorrectArchDownload(info.version, arch.hostArch)
+        .then(() => {
+          showToast(
+            "info",
+            "已在浏览器打开下载",
+            "下载完成后双击 dmg，将 CodeShelf 拖入 Applications 替换原 app 即可。数据不会丢失。",
+          );
+        })
+        .catch((err) => {
+          console.error("打开下载失败", err);
+          showToast("error", "打开下载失败", "请手动前往 GitHub Releases");
+          open(RELEASES_URL);
+        });
+      // 用户走了手动通道，关掉通知卡片
+      setDismissed(true);
+    }
+  }
+
+  /** 用户取消 / 关闭弹窗：什么也不做，更新流程中止 */
+  function handleArchCancel() {
+    setArchMismatch(null);
+    setState("idle");
+  }
+
+  async function startDownload(info: UpdateInfo) {
     setState("downloading");
     setProgress(0);
     try {
@@ -67,11 +125,10 @@ export function UpdateNotification() {
       });
       setState("ready");
       setShowNotes(true);
-      // 记录下载完成（含更新说明，写入通知中心）
-      const notes = getReleaseNotes(updateInfo);
+      const notes = getReleaseNotes(info);
       showToast(
         "success",
-        `v${updateInfo?.version} 更新已就绪`,
+        `${info.version ? `v${info.version} ` : ''}更新已就绪`,
         notes,
       );
     } catch (error) {
@@ -99,6 +156,19 @@ export function UpdateNotification() {
 
   function handleDismiss() {
     setDismissed(true);
+  }
+
+  // 架构不匹配的弹窗优先；此时不渲染常规通知卡（避免它显示"正在后台下载"误导）
+  if (archMismatch) {
+    return (
+      <ArchMismatchDialog
+        open
+        arch={archMismatch}
+        version={updateInfo?.version}
+        onCancel={handleArchCancel}
+        onConfirm={handleArchConfirm}
+      />
+    );
   }
 
   // 不显示通知的情况
@@ -145,7 +215,7 @@ export function UpdateNotification() {
                   ? "更新已就绪"
                   : state === "error"
                   ? "自动更新失败"
-                  : `发现新版本 v${updateInfo?.version}`}
+                  : `发现新版本${updateInfo?.version ? ` v${updateInfo.version}` : ''}`}
               </p>
               <p className="text-xs text-gray-500 mt-0.5">
                 {state === "downloading"

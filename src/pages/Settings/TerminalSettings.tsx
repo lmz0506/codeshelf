@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { FolderOpen, AlertCircle, Check, Monitor, Command, Apple, Settings, Play, Loader2, X, Wrench } from "lucide-react";
-import { useAppStore, TerminalConfig } from "@/stores/appStore";
+import { FolderOpen, AlertCircle, Check, Monitor, Command, Apple, Settings, Play, Loader2, X, Wrench, Terminal } from "lucide-react";
+import { useEditorsStore, type TerminalConfig } from "@/stores/editorsStore";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { detectPlatform } from "@/utils/platform";
 
 interface TerminalSettingsProps {
   onClose?: () => void;
@@ -17,7 +18,7 @@ interface TerminalTestResult {
 type TerminalType = TerminalConfig["type"];
 
 export function TerminalSettings({ onClose }: TerminalSettingsProps) {
-  const { terminalConfig, setTerminalConfig } = useAppStore();
+  const { terminalConfig, setTerminalConfig } = useEditorsStore();
   const [customPath, setCustomPath] = useState(terminalConfig.customPath || "");
   const [testingTerminal, setTestingTerminal] = useState<TerminalType | null>(null);
   const [testResults, setTestResults] = useState<Record<string, TerminalTestResult>>({});
@@ -145,17 +146,28 @@ export function TerminalSettings({ onClose }: TerminalSettingsProps) {
     setTempPath("");
   }
 
+  const currentPlatform = detectPlatform();
+  const defaultDescription =
+    currentPlatform === "macos" ? "Terminal.app" :
+    currentPlatform === "windows" ? "Windows Terminal / PowerShell" :
+    "自动检测 gnome-terminal / konsole / xterm";
+
   const terminalOptions = [
     {
-      group: "Windows",
+      group: `通用${currentPlatform === "linux" ? "（推荐 Linux 用户使用）" : ""}`,
       options: [
-        { value: "default" as const, label: "系统默认", description: "Windows Terminal / PowerShell", icon: Monitor },
+        { value: "default" as const, label: "系统默认", description: defaultDescription, icon: Terminal },
+      ],
+    },
+    {
+      group: `Windows${currentPlatform === "windows" ? "（当前系统）" : ""}`,
+      options: [
         { value: "powershell" as const, label: "PowerShell", description: "Windows PowerShell", icon: Command },
         { value: "cmd" as const, label: "CMD", description: "命令提示符", icon: Monitor },
       ],
     },
     {
-      group: "macOS",
+      group: `macOS${currentPlatform === "macos" ? "（当前系统）" : ""}`,
       options: [
         { value: "terminal" as const, label: "Terminal", description: "系统自带终端", icon: Apple },
         { value: "iterm" as const, label: "iTerm2", description: "需已安装 iTerm2", icon: Command },

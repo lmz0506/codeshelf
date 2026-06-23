@@ -1,6 +1,16 @@
+pub mod api_chat;
+pub mod chat;
+pub mod chat_bridge;
+pub mod extras;
 pub mod git;
 pub mod project;
+pub mod resume;
+pub mod resume_node_agent;
+pub mod resume_docx;
+pub mod settings;
 pub mod stats;
+pub mod storage_admin;
 pub mod system;
 pub mod toolbox;
-pub mod settings;
+pub mod tools;
+pub mod workflows;

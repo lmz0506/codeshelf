@@ -7,6 +7,8 @@ export { FloatingCategoryBall } from "./FloatingCategoryBall";
 export { ToastContainer, showToast, removeToast } from "./Toast";
 export type { ToastType, ToastMessage } from "./Toast";
 export { UpdateNotification } from "./UpdateNotification";
+export { ArchMismatchDialog } from "./ArchMismatchDialog";
+export type { ArchMismatchChoice } from "./ArchMismatchDialog";
 export { AnimatedLogo } from "./AnimatedLogo";
 export { NotificationPanel } from "./NotificationPanel";
 export { ShortcutQuickLookup } from "./ShortcutQuickLookup";

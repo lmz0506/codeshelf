@@ -15,6 +15,7 @@ import {
 import { open } from "@tauri-apps/plugin-dialog";
 import { ToolPanelHeader } from "./index";
 import { Input, Button } from "@/components/ui";
+import { LoadingSpinner } from "@/components/common";
 import {
   startDownload,
   pauseDownload,
@@ -235,10 +236,7 @@ export function FileDownloader({ onBack }: FileDownloaderProps) {
       <div className="flex-1 p-6">
         <div className="max-w-4xl mx-auto">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-              <Loader2 size={32} className="animate-spin mb-4" />
-              <p>加载中...</p>
-            </div>
+            <LoadingSpinner size={32} label="加载中..." className="py-20" />
           ) : tasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
               <Download size={48} className="mb-4 opacity-50" />

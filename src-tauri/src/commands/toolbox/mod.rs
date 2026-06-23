@@ -1,21 +1,24 @@
 // 工具箱模块 - 包含端口扫描、文件下载、进程管理、端口转发、静态服务、Claude Code 配置功能
 
-pub mod scanner;
-pub mod downloader;
-pub mod process;
-pub mod forwarder;
-pub mod server;
 pub mod claude_code;
-pub mod netcat;
-pub mod shortcuts;
 pub mod clipboard;
+pub mod docker;
+pub mod downloader;
+pub mod forwarder;
+pub mod netcat;
+pub mod pairdrop;
+pub mod process;
+pub mod scanner;
+pub mod server;
+pub mod shortcuts;
+pub mod ssh_tunnel;
 
 use serde::{Deserialize, Serialize};
 
 // ============== 端口扫描相关结构 ==============
 
 /// 扫描配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanConfig {
     /// 目标 IP 地址
@@ -33,7 +36,7 @@ pub struct ScanConfig {
 }
 
 /// 扫描结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ScanResult {
     pub ip: String,
     pub port: u16,
@@ -43,7 +46,7 @@ pub struct ScanResult {
 
 /// 扫描进度
 #[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanProgress {
     pub scanned: u32,
@@ -54,7 +57,7 @@ pub struct ScanProgress {
 // ============== 文件下载相关结构 ==============
 
 /// 下载任务
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadTask {
     pub id: String,
@@ -77,7 +80,7 @@ pub struct DownloadTask {
 }
 
 /// 下载配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadConfig {
     pub url: String,
@@ -88,7 +91,7 @@ pub struct DownloadConfig {
 
 /// 下载进度
 #[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadProgress {
     pub id: String,
@@ -101,7 +104,7 @@ pub struct DownloadProgress {
 // ============== 进程管理相关结构 ==============
 
 /// 进程信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessInfo {
     pub pid: u32,
@@ -111,14 +114,14 @@ pub struct ProcessInfo {
     pub local_addr: Option<String>,
     pub remote_addr: Option<String>,
     pub status: String,
-    pub memory: u64,  // 字节
-    pub cpu: f32,     // 百分比
+    pub memory: u64, // 字节
+    pub cpu: f32,    // 百分比
     pub working_dir: Option<String>,
     pub cmd: Option<String>,
 }
 
 /// 进程查询过滤
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessFilter {
     pub port: Option<u16>,
@@ -129,7 +132,7 @@ pub struct ProcessFilter {
 // ============== 端口转发相关结构 ==============
 
 /// 转发规则
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardRule {
     pub id: String,
@@ -156,7 +159,7 @@ pub struct ForwardRule {
 }
 
 /// 创建转发规则的输入
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardRuleInput {
     pub name: String,
@@ -168,7 +171,7 @@ pub struct ForwardRuleInput {
 }
 
 /// 转发统计
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardStats {
     pub rule_id: String,
@@ -177,10 +180,129 @@ pub struct ForwardStats {
     pub bytes_out: u64,
 }
 
+// ============== SSH 隧道相关结构 ==============
+
+/// SSH 认证方式（前端 tag 区分：key / password / sshConfig）
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SshAuthMethod {
+    /// 私钥文件（含可选 passphrase）
+    #[serde(rename_all = "camelCase")]
+    Key {
+        key_path: String,
+        passphrase: Option<String>,
+    },
+    /// 密码
+    #[serde(rename_all = "camelCase")]
+    Password { password: String },
+    /// 读取 ~/.ssh/config 的 Host 别名
+    #[serde(rename_all = "camelCase")]
+    SshConfig { host_alias: String },
+}
+
+/// SSH 隧道规则
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTunnel {
+    pub id: String,
+    pub name: String,
+    /// 本地监听端口
+    pub local_port: u16,
+    /// 远程目标主机（SSH 服务端看到的目标）
+    pub remote_host: String,
+    /// 远程目标端口
+    pub remote_port: u16,
+    /// SSH 服务器地址
+    pub ssh_host: String,
+    /// SSH 服务器端口，默认 22
+    #[serde(default = "default_ssh_port")]
+    pub ssh_port: u16,
+    /// SSH 登录用户（使用 SshConfig 时可为空，从配置文件读取）
+    #[serde(default)]
+    pub ssh_user: String,
+    /// 认证方式
+    pub auth: SshAuthMethod,
+    #[serde(default = "default_stopped")]
+    pub status: String,
+    #[serde(default)]
+    pub connections: u32,
+    #[serde(default)]
+    pub bytes_in: u64,
+    #[serde(default)]
+    pub bytes_out: u64,
+    #[serde(default)]
+    pub last_error: Option<String>,
+    /// 断线后自动重连（网络切换/休眠恢复）；缺省开启
+    #[serde(default = "default_true")]
+    pub auto_reconnect: bool,
+    /// 累计自动重连成功次数（运行期统计，加载时重置）
+    #[serde(default)]
+    pub reconnects: u32,
+    /// 所属分组；旧数据无此字段时落入「默认分组」
+    #[serde(default = "default_group")]
+    pub group: String,
+    pub created_at: String,
+}
+
+/// 创建/更新 SSH 隧道的输入
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTunnelInput {
+    pub name: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+    pub ssh_host: String,
+    pub ssh_port: Option<u16>,
+    pub ssh_user: Option<String>,
+    pub auth: SshAuthMethod,
+    /// 断线后自动重连；缺省开启
+    #[serde(default)]
+    pub auto_reconnect: Option<bool>,
+    /// 所属分组；为空时落入「默认分组」
+    #[serde(default)]
+    pub group: Option<String>,
+}
+
+/// SSH 隧道统计
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTunnelStats {
+    pub tunnel_id: String,
+    pub connections: u32,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
+}
+
+/// 端口连通性测试结果
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TestPortResult {
+    pub success: bool,
+    /// 命令输出（包含 stdout/stderr 的拼接）
+    pub output: String,
+    /// 检测方式："nc" / "Test-NetConnection" / "tcp"
+    pub method: String,
+    pub duration_ms: u64,
+}
+
+fn default_ssh_port() -> u16 {
+    22
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// SSH 隧道默认分组名（旧数据兼容）
+fn default_group() -> String {
+    "默认分组".to_string()
+}
+
 // ============== 静态服务相关结构 ==============
 
 /// 服务配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfig {
     pub id: String,
@@ -207,7 +329,7 @@ pub struct ServerConfig {
 }
 
 /// 代理配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProxyConfig {
     pub prefix: String,
@@ -215,7 +337,7 @@ pub struct ProxyConfig {
 }
 
 /// 创建服务的输入
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfigInput {
     pub name: String,
@@ -234,7 +356,7 @@ pub struct ServerConfigInput {
 
 /// 服务访问日志
 #[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessLog {
     pub timestamp: String,
@@ -251,18 +373,12 @@ pub struct AccessLog {
 pub fn common_ports() -> Vec<u16> {
     vec![
         // Web 服务
-        80, 443, 8080, 8443, 8000, 8888, 3000, 3001, 5000, 5173, 4200,
-        // 数据库
-        3306, 5432, 27017, 6379, 9200, 5984,
-        // SSH/FTP/Telnet
-        21, 22, 23, 2222,
-        // 邮件
-        25, 110, 143, 465, 587, 993, 995,
-        // 远程桌面
-        3389, 5900, 5901,
-        // 消息队列
-        5672, 15672, 9092, 2181,
-        // 其他服务
+        80, 443, 8080, 8443, 8000, 8888, 3000, 3001, 5000, 5173, 4200, // 数据库
+        3306, 5432, 27017, 6379, 9200, 5984, // SSH/FTP/Telnet
+        21, 22, 23, 2222, // 邮件
+        25, 110, 143, 465, 587, 993, 995, // 远程桌面
+        3389, 5900, 5901, // 消息队列
+        5672, 15672, 9092, 2181, // 其他服务
         53, 67, 68, 69, 161, 162, 389, 636, 1433, 1521, 11211,
     ]
 }
@@ -320,6 +436,23 @@ pub fn port_service_name(port: u16) -> Option<&'static str> {
     }
 }
 
+// ============== Nginx 配置生成 ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NginxConfigOptions {
+    pub service_name: String,
+    pub listen_port: u16,
+    pub root_dir: String,
+    pub index_page: Option<String>,
+    pub cors: Option<bool>,
+    pub gzip: Option<bool>,
+    pub url_prefix: Option<String>,
+    pub proxies: Option<Vec<ProxyConfig>>,
+    pub access_log: Option<bool>,
+    pub error_log: Option<bool>,
+}
+
 // ============== 工具函数 ==============
 
 /// 默认状态为停止
@@ -330,7 +463,7 @@ fn default_stopped() -> String {
 // ============== 快捷键备忘相关结构 ==============
 
 /// 快捷键条目
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutEntry {
     pub id: String,
@@ -344,7 +477,7 @@ pub struct ShortcutEntry {
 }
 
 /// 添加/编辑快捷键的输入
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutInput {
     pub category: Option<String>,
@@ -358,7 +491,7 @@ pub fn generate_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock before UNIX epoch")
         .as_nanos();
     format!("{:x}", timestamp)
 }

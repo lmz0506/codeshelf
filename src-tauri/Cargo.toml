@@ -1,6 +1,6 @@
 [package]
 name = "codeshelf"
-version = "0.1.20"
+version = "0.1.33"
 description = "代码书架 - 本地项目管理工具"
 authors = ["tan"]
 license = " Apache License 2.0"
@@ -14,6 +14,10 @@ rust-version = "1.77.2"
 name = "codeshelf_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+devtools = ["tauri/devtools"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -23,7 +27,6 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-log = "2"
-tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
@@ -34,22 +37,38 @@ tokio = { version = "1", features = ["full", "time", "sync"] }
 once_cell = "1.19"
 chrono = "0.4"
 dirs = "5"
+cron = "0.12"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros"] }
+thiserror = "2"
+specta = { version = "=2.0.0-rc.22", features = ["serde_json"] }
+specta-typescript = "0.0.9"
+tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 
 # 工具箱模块依赖
 futures = "0.3"
-reqwest = { version = "0.12", features = ["stream"] }
+reqwest = { version = "0.12", features = ["stream", "json", "cookies"] }
 url = "2.5"
+# 网页抓取的「规则提取」：regex 已在依赖树（1.12）；kuchikiki 提供 CSS 选择器，
+# 它本就被 wry/tauri-utils 引入并编译，这里精确复用同一版本，避免再编一份 html5ever。
+regex = "1"
+kuchikiki = "=0.8.8-speedreader"
 urlencoding = "2.1"
-axum = "0.7"
+axum = { version = "0.7", features = ["ws", "multipart"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "compression-gzip", "fs", "trace"] }
 sysinfo = "0.30"
 socket2 = "0.5"
 base64 = "0.22"
 arboard = "3"
+# 简历 docx 导出
+docx-rs = "0.4"
+# 显式禁用默认 aws-lc-rs 后端，改用 ring：项目内 reqwest/rustls 已经在用 ring，
+# 这样 Windows 开发机不需要额外安装 NASM/CMake，CI 也少编一个加密栈。
+russh = { version = "0.60", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-config = "0.58"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3", features = ["NSColor", "NSWindow", "NSResponder"] }
+objc2-app-kit = { version = "0.3", features = ["NSColor", "NSWindow", "NSResponder", "NSEvent", "NSScreen", "NSGraphics"] }
 objc2-foundation = { version = "0.3", features = ["NSThread"] }
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
@@ -62,4 +81,3 @@ windows = { version = "0.61", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_Threading",
 ] }
-

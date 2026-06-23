@@ -128,6 +128,70 @@ export interface ForwardStats {
   bytesOut: number;
 }
 
+// ============== SSH 隧道 ==============
+
+/** SSH 隧道默认分组名（旧数据兼容） */
+export const DEFAULT_SSH_GROUP = "默认分组";
+
+export type SshAuthMethod =
+  | { type: "key"; keyPath: string; passphrase?: string }
+  | { type: "password"; password: string }
+  | { type: "sshConfig"; hostAlias: string };
+
+export interface SshTunnel {
+  id: string;
+  name: string;
+  localPort: number;
+  remoteHost: string;
+  remotePort: number;
+  sshHost: string;
+  sshPort: number;
+  sshUser: string;
+  auth: SshAuthMethod;
+  status: "running" | "stopped" | "reconnecting";
+  connections: number;
+  bytesIn: number;
+  bytesOut: number;
+  lastError?: string | null;
+  /** 断线后自动重连（网络切换/休眠恢复） */
+  autoReconnect: boolean;
+  /** 累计自动重连成功次数 */
+  reconnects: number;
+  /** 所属分组；旧数据无此字段时为「默认分组」 */
+  group: string;
+  createdAt: string;
+}
+
+export interface SshTunnelInput {
+  name: string;
+  localPort: number;
+  remoteHost: string;
+  remotePort: number;
+  sshHost: string;
+  sshPort?: number;
+  sshUser?: string;
+  auth: SshAuthMethod;
+  autoReconnect?: boolean;
+  /** 所属分组；为空时落入「默认分组」 */
+  group?: string;
+}
+
+export interface SshTunnelStats {
+  tunnelId: string;
+  connections: number;
+  bytesIn: number;
+  bytesOut: number;
+}
+
+export interface TestPortResult {
+  success: boolean;
+  /** 命令输出（stdout/stderr 拼接） */
+  output: string;
+  /** 检测方式："nc" / "Test-NetConnection" / "tcp" */
+  method: string;
+  durationMs: number;
+}
+
 // ============== 静态服务 ==============
 
 export interface ProxyConfig {
@@ -166,6 +230,81 @@ export interface ServerConfigInput {
   indexPage?: string | null;
   /** 多个代理规则 */
   proxies?: ProxyConfig[];
+}
+
+// ============== Docker 镜像 ==============
+
+export interface DockerStatus {
+  available: boolean;
+  version?: string;
+  error?: string;
+}
+
+export interface DockerCommandResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  command: string;
+}
+
+export interface DockerImageInfo {
+  id: string;
+  repository: string;
+  tag: string;
+  size: string;
+  createdSince: string;
+}
+
+export interface DockerContainerInfo {
+  id: string;
+  image: string;
+  names: string;
+  status: string;
+  /** docker ps 的 State：running / exited / paused / created / restarting / dead / removing / unknown */
+  state: string;
+  ports: string;
+  composeProject?: string;
+  composeService?: string;
+  composeWorkingDir?: string;
+  composeConfigFiles: string[];
+}
+
+export interface DockerBuildInput {
+  projectPath: string;
+  dockerfilePath: string;
+  imageName: string;
+  tag?: string;
+  noCache?: boolean;
+}
+
+export interface DockerRunInput {
+  image: string;
+  containerName?: string;
+  ports?: string[];
+  env?: string[];
+  volumes?: string[];
+  network?: string;
+  restart?: string;
+  user?: string;
+  workdir?: string;
+  command?: string;
+  privileged?: boolean;
+  readOnly?: boolean;
+  extraArgs?: string[];
+}
+
+export interface DockerAiGenerateInput {
+  projectPath: string;
+  dockerfilePath?: string;
+  imageName?: string;
+  providerId?: string;
+  modelId?: string;
+}
+
+export interface DockerAiGenerateOutput {
+  content: string;
+  providerName: string;
+  modelName: string;
 }
 
 // ============== Claude Code 配置 ==============
@@ -211,7 +350,7 @@ export interface ConfigProfile {
 
 // ============== 工具箱页面状态 ==============
 
-export type ToolType = "monitor" | "downloader" | "server" | "claude" | "netcat" | "shortcuts" | "clipboard";
+export type ToolType = "monitor" | "downloader" | "server" | "docker" | "claude" | "netcat" | "shortcuts" | "clipboard" | "resume" | "sshTunnel" | "pairdrop";
 
 export interface ToolInfo {
   id: ToolType;
@@ -274,6 +413,8 @@ export interface NetcatSession {
   bytesReceived: number;
   messageCount: number;
   errorMessage?: string;
+  /** 本地地址（客户端模式连接后的 IP:PORT） */
+  localAddr?: string;
   clientCount: number;
   /** 自动发送配置 */
   autoSend: AutoSendConfig;
@@ -351,3 +492,43 @@ export interface ClipboardSettings {
   maxItems: number;
   monitorIntervalMs: number;
 }
+
+// ============== Nginx 配置生成 ==============
+
+export interface NginxConfigOptions {
+  serviceName: string;
+  listenPort: number;
+  rootDir: string;
+  indexPage?: string;
+  cors?: boolean;
+  gzip?: boolean;
+  urlPrefix?: string;
+  proxies?: Array<{ prefix: string; target: string }>;
+  accessLog?: boolean;
+  errorLog?: boolean;
+}
+
+// ============== 跨设备传输（PairDrop） ==============
+
+export interface PairDropNetworkUrl {
+  interface: string;
+  ip: string;
+  url: string;
+}
+
+export interface PairDropServiceStatus {
+  running: boolean;
+  port: number;
+  urls: PairDropNetworkUrl[];
+  peerCount: number;
+}
+
+export interface PairDropPeerInfo {
+  peerId: string;
+  displayName: string;
+  /** "desktop" | "mobile" | "browser" */
+  deviceType: string;
+  userAgent: string;
+  isSelf: boolean;
+}
+

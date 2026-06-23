@@ -1,0 +1,12 @@
+# Default: let git handle line endings normally
+* text=auto
+
+# Shell scripts must always use LF, even on Windows checkouts
+*.sh text eol=lf
+
+# Windows-only scripts stay CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# rust
+*.toml text eol=lf

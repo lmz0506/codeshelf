@@ -2,12 +2,12 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Search, Pin, PinOff, ExternalLink, ClipboardList, Copy } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useAppStore } from "@/stores/appStore";
+import { useUiStore } from "@/stores/uiStore";
 import { getClipboardHistory, writeToClipboard, togglePinClipboardEntry } from "@/services/toolbox";
 import { showToast } from "@/components/ui/Toast";
+import { restoreWindowState } from "@/hooks/useAppShortcuts";
+import { IS_MAC } from "@/utils/platform";
 import type { ClipboardEntry } from "@/types/toolbox";
-
-const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
@@ -25,17 +25,24 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 export function ClipboardQuickAccess() {
-  const show = useAppStore((s) => s.showClipboardQuickAccess);
-  const toggle = useAppStore((s) => s.toggleClipboardQuickAccess);
-  const navigateToTool = useAppStore((s) => s.navigateToTool);
+  const show = useUiStore((s) => s.showClipboardQuickAccess);
+  const toggle = useUiStore((s) => s.toggleClipboardQuickAccess);
+  const navigateToTool = useUiStore((s) => s.navigateToTool);
+  const isGlobalPopup = useUiStore((s) => s.popupAutoHideWindow);
 
   // 关闭弹窗：如果是全局快捷键从隐藏状态唤起的，自动藏回窗口
-  const closePopup = useCallback(() => {
+  const closePopup = useCallback(async () => {
     toggle();
-    const { popupAutoHideWindow, setPopupAutoHideWindow } = useAppStore.getState();
+    const { popupAutoHideWindow, setPopupAutoHideWindow, setPopupCursorPosition } = useUiStore.getState();
+    setPopupCursorPosition(null);
     if (popupAutoHideWindow) {
       setPopupAutoHideWindow(false);
-      getCurrentWindow().hide().catch(console.error);
+      try {
+        await restoreWindowState();
+        await getCurrentWindow().hide();
+      } catch (err) {
+        console.error(err);
+      }
     }
   }, [toggle]);
 
@@ -182,16 +189,22 @@ export function ClipboardQuickAccess() {
 
   if (!show) return null;
 
-  function goToFullPage() {
+  async function goToFullPage() {
     // 跳转完整页面时清除自动隐藏标记（用户需要看到主界面）
-    useAppStore.getState().setPopupAutoHideWindow(false);
+    useUiStore.getState().setPopupAutoHideWindow(false);
+    useUiStore.getState().setPopupCursorPosition(null);
+    await restoreWindowState();
     toggle();
     navigateToTool("clipboard");
   }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] bg-black/40"
+      className={`fixed inset-0 z-50 ${
+        isGlobalPopup
+          ? "bg-transparent flex items-start justify-start p-0"
+          : "flex items-start justify-center pt-[12vh] bg-black/40"
+      }`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) closePopup();
       }}

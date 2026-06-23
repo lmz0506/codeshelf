@@ -3,12 +3,12 @@
 /// 多个钩子链式共存不会冲突。
 ///
 /// 非 Windows 平台提供 no-op 命令存根。
-
+use crate::error::AppResult;
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, specta::Type)]
 #[allow(dead_code)]
-pub struct ShortcutInput {
+pub struct GlobalShortcutBinding {
     pub id: String,
     pub keys: String,
 }
@@ -17,14 +17,16 @@ pub struct ShortcutInput {
 
 #[cfg(target_os = "windows")]
 mod win {
-    use std::sync::mpsc::{self, SyncSender, Receiver};
+    use std::sync::mpsc::{self, Receiver, SyncSender};
     use std::sync::{Arc, Mutex, OnceLock};
     use std::thread::JoinHandle;
     use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
     use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+
+    use crate::error::AppResult;
     use windows::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
-        KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+        CallNextHookEx, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, KBDLLHOOKSTRUCT, MSG,
+        WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
     };
 
     // --- 修饰键位掩码 ---
@@ -73,21 +75,23 @@ mod win {
     fn is_modifier_vk(vk: u32) -> bool {
         matches!(
             vk,
-            VK_CONTROL | VK_MENU | VK_SHIFT
-                | VK_LCONTROL | VK_RCONTROL
-                | VK_LMENU | VK_RMENU
-                | VK_LSHIFT | VK_RSHIFT
-                | VK_LWIN | VK_RWIN
+            VK_CONTROL
+                | VK_MENU
+                | VK_SHIFT
+                | VK_LCONTROL
+                | VK_RCONTROL
+                | VK_LMENU
+                | VK_RMENU
+                | VK_LSHIFT
+                | VK_RSHIFT
+                | VK_LWIN
+                | VK_RWIN
         )
     }
 
     // --- 钩子回调 ---
 
-    unsafe extern "system" fn hook_proc(
-        n_code: i32,
-        w_param: WPARAM,
-        l_param: LPARAM,
-    ) -> LRESULT {
+    unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
         if n_code >= 0 {
             let msg = w_param.0 as u32;
             if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
@@ -129,10 +133,9 @@ mod win {
 
     // --- 钩子线程管理 ---
 
-    pub fn start_hook(app_handle: tauri::AppHandle) -> Result<HookState, String> {
+    pub fn start_hook(app_handle: tauri::AppHandle) -> AppResult<HookState> {
         let bindings = Arc::new(Mutex::new(Vec::<HookBinding>::new()));
-        let (sender, receiver): (SyncSender<String>, Receiver<String>) =
-            mpsc::sync_channel(64);
+        let (sender, receiver): (SyncSender<String>, Receiver<String>) = mpsc::sync_channel(64);
 
         // 保存绑定列表引用供 Tauri 命令使用
         HOOK_SHARED_BINDINGS
@@ -141,10 +144,7 @@ mod win {
 
         // 初始化全局共享状态
         HOOK_SHARED
-            .set(HookShared {
-                bindings,
-                sender,
-            })
+            .set(HookShared { bindings, sender })
             .map_err(|_| "键盘钩子已初始化".to_string())?;
 
         // 线程 ID 传递通道
@@ -218,10 +218,13 @@ mod win {
     }
 
     /// 按键解析：键名 -> Windows 虚拟键码
-    pub fn key_name_to_vk(name: &str) -> Result<u32, String> {
+    pub fn key_name_to_vk(name: &str) -> AppResult<u32> {
         // 单个字母 a-z
         if name.len() == 1 {
-            let ch = name.chars().next().unwrap();
+            let ch = name
+                .chars()
+                .next()
+                .expect("name.len() == 1 ensures at least one char");
             if ch.is_ascii_lowercase() {
                 return Ok(ch.to_ascii_uppercase() as u32); // VK_A=0x41 .. VK_Z=0x5A
             }
@@ -273,12 +276,12 @@ mod win {
             "\\" | "backslash" => Ok(0xDC),
             "]" | "bracketright" => Ok(0xDD),
             "'" | "quote" => Ok(0xDE),
-            _ => Err(format!("未知按键: {}", name)),
+            _ => Err(crate::error::AppError::from(format!("未知按键: {}", name))),
         }
     }
 
     /// 解析快捷键字符串，如 "ctrl+alt+c" -> (modifiers, vk_code)
-    pub fn parse_keys(keys: &str) -> Result<(u8, u32), String> {
+    pub fn parse_keys(keys: &str) -> AppResult<(u8, u32)> {
         let mut modifiers: u8 = 0;
         let mut vk_code: Option<u32> = None;
 
@@ -290,7 +293,10 @@ mod win {
                 "shift" => modifiers |= MOD_SHIFT,
                 _ => {
                     if vk_code.is_some() {
-                        return Err(format!("多个非修饰键: {}", keys));
+                        return Err(crate::error::AppError::from(format!(
+                            "多个非修饰键: {}",
+                            keys
+                        )));
                     }
                     vk_code = Some(key_name_to_vk(&part)?);
                 }
@@ -299,7 +305,7 @@ mod win {
 
         match vk_code {
             Some(vk) => Ok((modifiers, vk)),
-            None => Err(format!("缺少主键: {}", keys)),
+            None => Err(crate::error::AppError::from(format!("缺少主键: {}", keys))),
         }
     }
 }
@@ -312,6 +318,8 @@ mod non_win {
     use std::sync::Mutex;
     use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
 
+    use crate::error::AppResult;
+
     /// 快捷键 ID → action_id 映射，供 handler 查找
     pub struct GlobalShortcutState(pub Mutex<HashMap<u32, String>>);
 
@@ -322,29 +330,55 @@ mod non_win {
     }
 
     /// 按键名称 → Code 枚举
-    fn key_name_to_code(name: &str) -> Result<Code, String> {
+    fn key_name_to_code(name: &str) -> AppResult<Code> {
         // 单个字母 a-z
         if name.len() == 1 {
-            let ch = name.chars().next().unwrap();
+            let ch = name
+                .chars()
+                .next()
+                .expect("name.len() == 1 ensures at least one char");
             if ch.is_ascii_lowercase() {
                 return match ch {
-                    'a' => Ok(Code::KeyA), 'b' => Ok(Code::KeyB), 'c' => Ok(Code::KeyC),
-                    'd' => Ok(Code::KeyD), 'e' => Ok(Code::KeyE), 'f' => Ok(Code::KeyF),
-                    'g' => Ok(Code::KeyG), 'h' => Ok(Code::KeyH), 'i' => Ok(Code::KeyI),
-                    'j' => Ok(Code::KeyJ), 'k' => Ok(Code::KeyK), 'l' => Ok(Code::KeyL),
-                    'm' => Ok(Code::KeyM), 'n' => Ok(Code::KeyN), 'o' => Ok(Code::KeyO),
-                    'p' => Ok(Code::KeyP), 'q' => Ok(Code::KeyQ), 'r' => Ok(Code::KeyR),
-                    's' => Ok(Code::KeyS), 't' => Ok(Code::KeyT), 'u' => Ok(Code::KeyU),
-                    'v' => Ok(Code::KeyV), 'w' => Ok(Code::KeyW), 'x' => Ok(Code::KeyX),
-                    'y' => Ok(Code::KeyY), 'z' => Ok(Code::KeyZ),
-                    _ => Err(format!("未知按键: {}", name)),
+                    'a' => Ok(Code::KeyA),
+                    'b' => Ok(Code::KeyB),
+                    'c' => Ok(Code::KeyC),
+                    'd' => Ok(Code::KeyD),
+                    'e' => Ok(Code::KeyE),
+                    'f' => Ok(Code::KeyF),
+                    'g' => Ok(Code::KeyG),
+                    'h' => Ok(Code::KeyH),
+                    'i' => Ok(Code::KeyI),
+                    'j' => Ok(Code::KeyJ),
+                    'k' => Ok(Code::KeyK),
+                    'l' => Ok(Code::KeyL),
+                    'm' => Ok(Code::KeyM),
+                    'n' => Ok(Code::KeyN),
+                    'o' => Ok(Code::KeyO),
+                    'p' => Ok(Code::KeyP),
+                    'q' => Ok(Code::KeyQ),
+                    'r' => Ok(Code::KeyR),
+                    's' => Ok(Code::KeyS),
+                    't' => Ok(Code::KeyT),
+                    'u' => Ok(Code::KeyU),
+                    'v' => Ok(Code::KeyV),
+                    'w' => Ok(Code::KeyW),
+                    'x' => Ok(Code::KeyX),
+                    'y' => Ok(Code::KeyY),
+                    'z' => Ok(Code::KeyZ),
+                    _ => Err(crate::error::AppError::from(format!("未知按键: {}", name))),
                 };
             }
             if ch.is_ascii_digit() {
                 return match ch {
-                    '0' => Ok(Code::Digit0), '1' => Ok(Code::Digit1), '2' => Ok(Code::Digit2),
-                    '3' => Ok(Code::Digit3), '4' => Ok(Code::Digit4), '5' => Ok(Code::Digit5),
-                    '6' => Ok(Code::Digit6), '7' => Ok(Code::Digit7), '8' => Ok(Code::Digit8),
+                    '0' => Ok(Code::Digit0),
+                    '1' => Ok(Code::Digit1),
+                    '2' => Ok(Code::Digit2),
+                    '3' => Ok(Code::Digit3),
+                    '4' => Ok(Code::Digit4),
+                    '5' => Ok(Code::Digit5),
+                    '6' => Ok(Code::Digit6),
+                    '7' => Ok(Code::Digit7),
+                    '8' => Ok(Code::Digit8),
                     '9' => Ok(Code::Digit9),
                     _ => unreachable!(),
                 };
@@ -355,15 +389,31 @@ mod non_win {
         if let Some(rest) = name.strip_prefix('f') {
             if let Ok(n) = rest.parse::<u32>() {
                 return match n {
-                    1 => Ok(Code::F1), 2 => Ok(Code::F2), 3 => Ok(Code::F3),
-                    4 => Ok(Code::F4), 5 => Ok(Code::F5), 6 => Ok(Code::F6),
-                    7 => Ok(Code::F7), 8 => Ok(Code::F8), 9 => Ok(Code::F9),
-                    10 => Ok(Code::F10), 11 => Ok(Code::F11), 12 => Ok(Code::F12),
-                    13 => Ok(Code::F13), 14 => Ok(Code::F14), 15 => Ok(Code::F15),
-                    16 => Ok(Code::F16), 17 => Ok(Code::F17), 18 => Ok(Code::F18),
-                    19 => Ok(Code::F19), 20 => Ok(Code::F20), 21 => Ok(Code::F21),
-                    22 => Ok(Code::F22), 23 => Ok(Code::F23), 24 => Ok(Code::F24),
-                    _ => Err(format!("未知功能键: F{}", n)),
+                    1 => Ok(Code::F1),
+                    2 => Ok(Code::F2),
+                    3 => Ok(Code::F3),
+                    4 => Ok(Code::F4),
+                    5 => Ok(Code::F5),
+                    6 => Ok(Code::F6),
+                    7 => Ok(Code::F7),
+                    8 => Ok(Code::F8),
+                    9 => Ok(Code::F9),
+                    10 => Ok(Code::F10),
+                    11 => Ok(Code::F11),
+                    12 => Ok(Code::F12),
+                    13 => Ok(Code::F13),
+                    14 => Ok(Code::F14),
+                    15 => Ok(Code::F15),
+                    16 => Ok(Code::F16),
+                    17 => Ok(Code::F17),
+                    18 => Ok(Code::F18),
+                    19 => Ok(Code::F19),
+                    20 => Ok(Code::F20),
+                    21 => Ok(Code::F21),
+                    22 => Ok(Code::F22),
+                    23 => Ok(Code::F23),
+                    24 => Ok(Code::F24),
+                    _ => Err(crate::error::AppError::from(format!("未知功能键: F{}", n))),
                 };
             }
         }
@@ -402,25 +452,28 @@ mod non_win {
             "\\" | "backslash" => Ok(Code::Backslash),
             "]" | "bracketright" => Ok(Code::BracketRight),
             "'" | "quote" => Ok(Code::Quote),
-            _ => Err(format!("未知按键: {}", name)),
+            _ => Err(crate::error::AppError::from(format!("未知按键: {}", name))),
         }
     }
 
     /// 解析快捷键字符串，如 "ctrl+alt+c" → Shortcut
     /// macOS 映射: "ctrl" → Command (META), "alt" → Option (ALT)
-    pub fn parse_shortcut(keys: &str) -> Result<Shortcut, String> {
+    pub fn parse_shortcut(keys: &str) -> AppResult<Shortcut> {
         let mut modifiers = Modifiers::empty();
         let mut main_key: Option<Code> = None;
 
         for part in keys.split('+') {
             let part = part.trim().to_lowercase();
             match part.as_str() {
-                "ctrl" | "control" => modifiers |= Modifiers::META,  // macOS Command 键
-                "alt" => modifiers |= Modifiers::ALT,                // macOS Option 键
+                "ctrl" | "control" => modifiers |= Modifiers::META, // macOS Command 键
+                "alt" => modifiers |= Modifiers::ALT,               // macOS Option 键
                 "shift" => modifiers |= Modifiers::SHIFT,
                 _ => {
                     if main_key.is_some() {
-                        return Err(format!("多个非修饰键: {}", keys));
+                        return Err(crate::error::AppError::from(format!(
+                            "多个非修饰键: {}",
+                            keys
+                        )));
                     }
                     main_key = Some(key_name_to_code(&part)?);
                 }
@@ -429,7 +482,7 @@ mod non_win {
 
         match main_key {
             Some(code) => Ok(Shortcut::new(Some(modifiers), code)),
-            None => Err(format!("缺少主键: {}", keys)),
+            None => Err(crate::error::AppError::from(format!("缺少主键: {}", keys))),
         }
     }
 }
@@ -449,13 +502,13 @@ pub use non_win::GlobalShortcutState;
 // --- start_hook ---
 
 #[cfg(target_os = "windows")]
-pub fn start_hook(app_handle: tauri::AppHandle) -> Result<win::HookState, String> {
+pub fn start_hook(app_handle: tauri::AppHandle) -> AppResult<win::HookState> {
     win::start_hook(app_handle)
 }
 
 #[cfg(not(target_os = "windows"))]
 #[allow(dead_code)]
-pub fn start_hook(_app_handle: tauri::AppHandle) -> Result<(), String> {
+pub fn start_hook(_app_handle: tauri::AppHandle) -> AppResult<()> {
     log::warn!("键盘钩子仅支持 Windows 平台");
     Ok(())
 }
@@ -474,12 +527,11 @@ pub fn stop_hook_from_manager(_app: &tauri::AppHandle) {}
 
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub async fn register_global_shortcuts(
-    shortcuts: Vec<ShortcutInput>,
-) -> Result<(), String> {
+#[specta::specta]
+pub async fn register_global_shortcuts(shortcuts: Vec<GlobalShortcutBinding>) -> AppResult<()> {
     let bindings_lock = win::HOOK_SHARED_BINDINGS
         .get()
-        .ok_or_else(|| "键盘钩子未初始化".to_string())?;
+        .ok_or_else(|| crate::error::AppError::from("键盘钩子未初始化".to_string()))?;
 
     let mut new_bindings = Vec::with_capacity(shortcuts.len());
     for s in &shortcuts {
@@ -494,7 +546,7 @@ pub async fn register_global_shortcuts(
     // 整体替换绑定列表
     let mut bindings = bindings_lock
         .lock()
-        .map_err(|e| format!("锁获取失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("锁获取失败: {}", e)))?;
     *bindings = new_bindings;
 
     log::info!("已注册 {} 个全局快捷键", shortcuts.len());
@@ -503,10 +555,11 @@ pub async fn register_global_shortcuts(
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
+#[specta::specta]
 pub async fn register_global_shortcuts(
     app: tauri::AppHandle,
-    shortcuts: Vec<ShortcutInput>,
-) -> Result<(), String> {
+    shortcuts: Vec<GlobalShortcutBinding>,
+) -> AppResult<()> {
     use tauri::Manager;
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
@@ -515,19 +568,22 @@ pub async fn register_global_shortcuts(
     // 清除旧注册
     global_shortcut
         .unregister_all()
-        .map_err(|e| format!("注销快捷键失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("注销快捷键失败: {}", e)))?;
 
     // 更新映射
     let state = app.state::<GlobalShortcutState>();
-    let mut map = state.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
+    let mut map = state
+        .0
+        .lock()
+        .map_err(|e| crate::error::AppError::from(format!("锁获取失败: {}", e)))?;
     map.clear();
 
     for s in &shortcuts {
         let shortcut = non_win::parse_shortcut(&s.keys)?;
         let shortcut_id = shortcut.id();
-        global_shortcut
-            .register(shortcut)
-            .map_err(|e| format!("注册快捷键 {} 失败: {}", s.keys, e))?;
+        global_shortcut.register(shortcut).map_err(|e| {
+            crate::error::AppError::from(format!("注册快捷键 {} 失败: {}", s.keys, e))
+        })?;
         map.insert(shortcut_id, s.id.clone());
     }
 
@@ -537,11 +593,12 @@ pub async fn register_global_shortcuts(
 
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub async fn unregister_all_global_shortcuts() -> Result<(), String> {
+#[specta::specta]
+pub async fn unregister_all_global_shortcuts() -> AppResult<()> {
     if let Some(bindings_lock) = win::HOOK_SHARED_BINDINGS.get() {
         let mut bindings = bindings_lock
             .lock()
-            .map_err(|e| format!("锁获取失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("锁获取失败: {}", e)))?;
         bindings.clear();
         log::info!("已注销所有全局快捷键");
     }
@@ -550,18 +607,20 @@ pub async fn unregister_all_global_shortcuts() -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub async fn unregister_all_global_shortcuts(
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+#[specta::specta]
+pub async fn unregister_all_global_shortcuts(app: tauri::AppHandle) -> AppResult<()> {
     use tauri::Manager;
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
     app.global_shortcut()
         .unregister_all()
-        .map_err(|e| format!("注销快捷键失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("注销快捷键失败: {}", e)))?;
 
     let state = app.state::<GlobalShortcutState>();
-    let mut map = state.0.lock().map_err(|e| format!("锁获取失败: {}", e))?;
+    let mut map = state
+        .0
+        .lock()
+        .map_err(|e| crate::error::AppError::from(format!("锁获取失败: {}", e)))?;
     map.clear();
 
     log::info!("已注销所有全局快捷键 (macOS)");

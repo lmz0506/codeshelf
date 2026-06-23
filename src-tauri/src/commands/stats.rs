@@ -1,22 +1,41 @@
-use serde::{Deserialize, Serialize};
+// 统计数据缓存（SQLite 后端版）
+//
+// 存储布局（v1 schema）：
+//   - project_stats(project_path, unpushed, last_updated)
+//   - project_stats_commits_by_date(project_path, date, count)
+//   - project_stats_recent_commits(project_path, sort_order, ...)
+//   - stats_dirty(project_path)               -- 待重新统计的项目
+//   - stats_meta(key, value)                  -- 聚合 dashboard 数据（key='dashboard'）
+//
+// 读路径：
+//   - get_dashboard_stats / has_dirty_stats -> 一次 SELECT，飞快
+//
+// 写路径：
+//   - refresh_xxx_stats 跑 git → 写 3 张明细表 → 重新聚合 dashboard → 写 stats_meta
+//
+// 这些 struct 仍然保留，因为：
+//   1. command 签名要兼容
+//   2. v1_from_json 反序列化老 JSON 需要 PersistedStatsCache
+
+use crate::error::AppResult;
 use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
+
+use serde::{Deserialize, Serialize};
+use sqlx::Acquire;
 use tokio::task;
 
-use crate::storage;
+use crate::storage::db::pool;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-// Windows: CREATE_NO_WINDOW flag to hide console window
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+// ============== 公开数据结构 ==============
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct DashboardStats {
     pub total_projects: u32,
     pub today_commits: u32,
@@ -26,13 +45,13 @@ pub struct DashboardStats {
     pub last_updated: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct DailyActivity {
     pub date: String,
     pub count: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct RecentCommit {
     pub hash: String,
     pub short_hash: String,
@@ -44,25 +63,24 @@ pub struct RecentCommit {
     pub project_path: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct CachedDashboardData {
     pub stats: DashboardStats,
     pub heatmap_data: Vec<DailyActivity>,
     pub recent_commits: Vec<RecentCommit>,
 }
 
-/// 持久化的统计缓存结构
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+/// 持久化的统计缓存结构 — 仅用于从老 JSON 反序列化迁移
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct PersistedStatsCache {
     pub data: CachedDashboardData,
-    pub last_updated: i64,  // Unix 时间戳
-    pub dirty_projects: HashSet<String>,  // 需要重新统计的项目路径
-    /// 每个项目的统计数据缓存
+    pub last_updated: i64,
+    pub dirty_projects: HashSet<String>,
     pub project_stats: HashMap<String, ProjectStatsCache>,
 }
 
-/// 单个项目的统计缓存
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+/// 单个项目的统计缓存 — 同样用于反序列化迁移
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct ProjectStatsCache {
     pub unpushed: u32,
     pub commits_by_date: HashMap<String, u32>,
@@ -70,72 +88,37 @@ pub struct ProjectStatsCache {
     pub last_updated: i64,
 }
 
-// Global stats cache (内存缓存)
-static STATS_CACHE: Lazy<Mutex<PersistedStatsCache>> = Lazy::new(|| {
-    // 启动时从文件加载
-    let cache = load_stats_from_file().unwrap_or_default();
-    Mutex::new(cache)
-});
-
-/// 获取统计缓存文件路径
-fn get_stats_cache_path() -> PathBuf {
-    // 使用安装目录的 data 文件夹
-    match storage::get_storage_config() {
-        Ok(config) => config.stats_cache_file(),
-        Err(e) => {
-            log::error!("获取存储配置失败: {}", e);
-            // 如果无法获取配置，使用当前目录的 data 文件夹
-            PathBuf::from("data").join("stats_cache.json")
-        }
-    }
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+pub struct ProjectInfo {
+    pub id: Option<String>,
+    pub name: String,
+    pub path: String,
 }
 
-/// 从文件加载统计缓存
-fn load_stats_from_file() -> Result<PersistedStatsCache, String> {
-    let path = get_stats_cache_path();
-    if !path.exists() {
-        return Ok(PersistedStatsCache::default());
-    }
+// ============== 工具函数 ==============
 
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read stats cache: {}", e))?;
-
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse stats cache: {}", e))
-}
-
-/// 保存统计缓存到文件
-fn save_stats_to_file(cache: &PersistedStatsCache) -> Result<(), String> {
-    let path = get_stats_cache_path();
-    let content = serde_json::to_string(cache)
-        .map_err(|e| format!("Failed to serialize stats: {}", e))?;
-
-    fs::write(&path, content)
-        .map_err(|e| format!("Failed to write stats cache: {}", e))?;
-
-    Ok(())
-}
-
-fn run_git_command(path: &str, args: &[&str]) -> Result<String, String> {
+fn run_git_command(path: &str, args: &[&str]) -> AppResult<String> {
     #[cfg(target_os = "windows")]
     let output = Command::new("git")
         .args(["-C", path])
         .args(args)
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
 
     #[cfg(not(target_os = "windows"))]
     let output = Command::new("git")
         .args(["-C", path])
         .args(args)
         .output()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        Err(crate::error::AppError::from(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ))
     }
 }
 
@@ -165,39 +148,48 @@ fn get_dates_in_last_week() -> Vec<String> {
     dates
 }
 
-// Get commit history for a project (last year for heatmap)
-fn get_project_commits(path: &str, limit: u32) -> Vec<(String, String, String, String, String, String)> {
+fn get_project_commits(
+    path: &str,
+    limit: u32,
+) -> Vec<(String, String, String, String, String, String)> {
     let format = "%H|%h|%s|%an|%ae|%ai";
-    let output = run_git_command(path, &["log", &format!("-{}", limit), &format!("--format={}", format)]);
+    let output = run_git_command(
+        path,
+        &[
+            "log",
+            &format!("-{}", limit),
+            &format!("--format={}", format),
+        ],
+    );
 
     match output {
-        Ok(result) => {
-            result
-                .lines()
-                .filter_map(|line| {
-                    let parts: Vec<&str> = line.split('|').collect();
-                    if parts.len() >= 6 {
-                        Some((
-                            parts[0].to_string(),
-                            parts[1].to_string(),
-                            parts[2].to_string(),
-                            parts[3].to_string(),
-                            parts[4].to_string(),
-                            parts[5].to_string(),
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        }
+        Ok(result) => result
+            .lines()
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('|').collect();
+                if parts.len() >= 6 {
+                    Some((
+                        parts[0].to_string(),
+                        parts[1].to_string(),
+                        parts[2].to_string(),
+                        parts[3].to_string(),
+                        parts[4].to_string(),
+                        parts[5].to_string(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect(),
         Err(_) => Vec::new(),
     }
 }
 
-// Get unpushed commit count
 fn get_unpushed_count(path: &str) -> u32 {
-    let output = run_git_command(path, &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]);
+    let output = run_git_command(
+        path,
+        &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+    );
 
     match output {
         Ok(result) => {
@@ -212,14 +204,7 @@ fn get_unpushed_count(path: &str) -> u32 {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProjectInfo {
-    pub id: Option<String>,
-    pub name: String,
-    pub path: String,
-}
-
-/// 分析单个项目
+/// 跑 git 收集一个项目的统计（spawn_blocking 调用）
 fn analyze_project(name: String, path: String) -> ProjectStatsCache {
     let unpushed = get_unpushed_count(&path);
     let commits = get_project_commits(&path, 365);
@@ -253,8 +238,238 @@ fn analyze_project(name: String, path: String) -> ProjectStatsCache {
     }
 }
 
-/// 从项目缓存聚合生成 Dashboard 数据
-fn aggregate_dashboard_data(
+// ============== sqlite 持久化 ==============
+
+/// 一次性把一个项目的统计写入 sqlite（覆盖该项目的旧数据）
+async fn write_project_stats(project_path: &str, stats: &ProjectStatsCache) -> AppResult<()> {
+    let pool = pool();
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
+    let mut tx = conn
+        .begin()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
+
+    sqlx::query(
+        "INSERT INTO project_stats (project_path, unpushed, last_updated)
+         VALUES (?, ?, ?)
+         ON CONFLICT(project_path) DO UPDATE SET
+            unpushed = excluded.unpushed,
+            last_updated = excluded.last_updated",
+    )
+    .bind(project_path)
+    .bind(stats.unpushed as i64)
+    .bind(stats.last_updated)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| crate::error::AppError::from(format!("写 project_stats 失败: {}", e)))?;
+
+    // 清空旧明细，重新插入
+    sqlx::query("DELETE FROM project_stats_commits_by_date WHERE project_path = ?")
+        .bind(project_path)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("清空 commits_by_date 失败: {}", e)))?;
+    for (date, count) in &stats.commits_by_date {
+        sqlx::query(
+            "INSERT INTO project_stats_commits_by_date (project_path, date, count)
+             VALUES (?, ?, ?)",
+        )
+        .bind(project_path)
+        .bind(date)
+        .bind(*count as i64)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("插入 commits_by_date 失败: {}", e)))?;
+    }
+
+    sqlx::query("DELETE FROM project_stats_recent_commits WHERE project_path = ?")
+        .bind(project_path)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("清空 recent_commits 失败: {}", e)))?;
+    for (idx, rc) in stats.recent_commits.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO project_stats_recent_commits (
+                project_path, sort_order, hash, short_hash, message,
+                author, email, date, project_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(project_path)
+        .bind(idx as i64)
+        .bind(&rc.hash)
+        .bind(&rc.short_hash)
+        .bind(&rc.message)
+        .bind(&rc.author)
+        .bind(&rc.email)
+        .bind(&rc.date)
+        .bind(&rc.project_name)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("插入 recent_commits 失败: {}", e)))?;
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("提交事务失败: {}", e)))?;
+    Ok(())
+}
+
+/// 读所有项目的统计明细（用于聚合 dashboard）
+async fn read_all_project_stats() -> AppResult<HashMap<String, ProjectStatsCache>> {
+    let pool = pool();
+
+    let basics: Vec<(String, i64, i64)> =
+        sqlx::query_as("SELECT project_path, unpushed, last_updated FROM project_stats")
+            .fetch_all(pool)
+            .await
+            .map_err(|e| crate::error::AppError::from(format!("查询 project_stats 失败: {}", e)))?;
+
+    if basics.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let all_dates: Vec<(String, String, i64)> =
+        sqlx::query_as("SELECT project_path, date, count FROM project_stats_commits_by_date")
+            .fetch_all(pool)
+            .await
+            .map_err(|e| {
+                crate::error::AppError::from(format!("查询 commits_by_date 失败: {}", e))
+            })?;
+
+    let all_recent: Vec<(
+        String,
+        i64,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+    )> = sqlx::query_as(
+        "SELECT project_path, sort_order, hash, short_hash, message, author, email, date, project_name
+         FROM project_stats_recent_commits
+         ORDER BY project_path, sort_order",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| crate::error::AppError::from(format!("查询 recent_commits 失败: {}", e)))?;
+
+    let mut date_map: HashMap<String, HashMap<String, u32>> = HashMap::new();
+    for (proj, date, count) in all_dates {
+        date_map.entry(proj).or_default().insert(date, count as u32);
+    }
+
+    let mut recent_map: HashMap<String, Vec<RecentCommit>> = HashMap::new();
+    for (proj, _idx, hash, short_hash, message, author, email, date, project_name) in all_recent {
+        recent_map
+            .entry(proj.clone())
+            .or_default()
+            .push(RecentCommit {
+                hash,
+                short_hash,
+                message,
+                author,
+                email,
+                date,
+                project_name,
+                project_path: proj,
+            });
+    }
+
+    let mut out = HashMap::new();
+    for (path, unpushed, last_updated) in basics {
+        let commits_by_date = date_map.remove(&path).unwrap_or_default();
+        let recent_commits = recent_map.remove(&path).unwrap_or_default();
+        out.insert(
+            path,
+            ProjectStatsCache {
+                unpushed: unpushed as u32,
+                commits_by_date,
+                recent_commits,
+                last_updated,
+            },
+        );
+    }
+    Ok(out)
+}
+
+async fn read_dirty() -> AppResult<HashSet<String>> {
+    let rows: Vec<String> = sqlx::query_scalar("SELECT project_path FROM stats_dirty")
+        .fetch_all(pool())
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("查询 stats_dirty 失败: {}", e)))?;
+    Ok(rows.into_iter().collect())
+}
+
+async fn write_dirty(path: &str) -> AppResult<()> {
+    sqlx::query("INSERT INTO stats_dirty (project_path) VALUES (?) ON CONFLICT DO NOTHING")
+        .bind(path)
+        .execute(pool())
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("写 stats_dirty 失败: {}", e)))?;
+    Ok(())
+}
+
+async fn clear_dirty(paths: &[String]) -> AppResult<()> {
+    let pool = pool();
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
+    let mut tx = conn
+        .begin()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
+    for p in paths {
+        sqlx::query("DELETE FROM stats_dirty WHERE project_path = ?")
+            .bind(p)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| crate::error::AppError::from(format!("清除 stats_dirty 失败: {}", e)))?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("提交事务失败: {}", e)))?;
+    Ok(())
+}
+
+async fn read_dashboard() -> AppResult<CachedDashboardData> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT value FROM stats_meta WHERE key = ?")
+        .bind("dashboard")
+        .fetch_optional(pool())
+        .await
+        .map_err(|e| {
+            crate::error::AppError::from(format!("查询 stats_meta dashboard 失败: {}", e))
+        })?;
+
+    if let Some((json,)) = row {
+        serde_json::from_str(&json)
+            .map_err(|e| crate::error::AppError::from(format!("解析 dashboard JSON 失败: {}", e)))
+    } else {
+        Ok(CachedDashboardData::default())
+    }
+}
+
+async fn write_dashboard(data: &CachedDashboardData) -> AppResult<()> {
+    let json = serde_json::to_string(data)
+        .map_err(|e| crate::error::AppError::from(format!("序列化 dashboard 失败: {}", e)))?;
+    sqlx::query(
+        "INSERT INTO stats_meta (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind("dashboard")
+    .bind(&json)
+    .execute(pool())
+    .await
+    .map_err(|e| crate::error::AppError::from(format!("写 stats_meta dashboard 失败: {}", e)))?;
+    Ok(())
+}
+
+fn aggregate_dashboard(
     project_stats: &HashMap<String, ProjectStatsCache>,
     total_projects: u32,
 ) -> CachedDashboardData {
@@ -267,16 +482,15 @@ fn aggregate_dashboard_data(
 
     for stats in project_stats.values() {
         unpushed_commits += stats.unpushed;
-
         for (date, count) in &stats.commits_by_date {
             *commits_by_date.entry(date.clone()).or_insert(0) += count;
         }
-
         all_recent_commits.extend(stats.recent_commits.clone());
     }
 
     let today_commits = *commits_by_date.get(&today).unwrap_or(&0);
-    let week_commits: u32 = week_dates.iter()
+    let week_commits: u32 = week_dates
+        .iter()
         .map(|d| *commits_by_date.get(d).unwrap_or(&0))
         .sum();
 
@@ -302,55 +516,65 @@ fn aggregate_dashboard_data(
     }
 }
 
-/// 标记项目为脏数据（需要重新统计）
+// ============== Tauri 命令 ==============
+
 #[tauri::command]
-pub async fn mark_project_dirty(project_path: String) -> Result<(), String> {
-    let mut cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-    cache.dirty_projects.insert(project_path);
-    // 不立即保存，等刷新时再保存
-    Ok(())
+#[specta::specta]
+pub async fn mark_project_dirty(project_path: String) -> AppResult<()> {
+    write_dirty(&project_path).await
 }
 
-/// 标记所有项目为脏数据
 #[tauri::command]
-pub async fn mark_all_projects_dirty(projects: Vec<ProjectInfo>) -> Result<(), String> {
-    let mut cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-    for project in projects {
-        cache.dirty_projects.insert(project.path);
+#[specta::specta]
+pub async fn mark_all_projects_dirty(projects: Vec<ProjectInfo>) -> AppResult<()> {
+    let pool = pool();
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
+    let mut tx = conn
+        .begin()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
+    for p in &projects {
+        sqlx::query("INSERT INTO stats_dirty (project_path) VALUES (?) ON CONFLICT DO NOTHING")
+            .bind(&p.path)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| crate::error::AppError::from(format!("写 stats_dirty 失败: {}", e)))?;
     }
+    tx.commit()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("提交事务失败: {}", e)))?;
     Ok(())
 }
 
-/// 检查是否有脏数据
 #[tauri::command]
-pub async fn has_dirty_stats() -> Result<bool, String> {
-    let cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-    Ok(!cache.dirty_projects.is_empty())
+#[specta::specta]
+pub async fn has_dirty_stats() -> AppResult<bool> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM stats_dirty")
+        .fetch_one(pool())
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("查询 dirty 数量失败: {}", e)))?;
+    Ok(count > 0)
 }
 
-/// 获取缓存的统计数据（快速，不执行 Git 操作）
 #[tauri::command]
-pub async fn get_dashboard_stats() -> Result<CachedDashboardData, String> {
-    let cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-    Ok(cache.data.clone())
+#[specta::specta]
+pub async fn get_dashboard_stats() -> AppResult<CachedDashboardData> {
+    read_dashboard().await
 }
 
 /// 只刷新脏项目的统计数据（增量更新）
 #[tauri::command]
-pub async fn refresh_dirty_stats(projects: Vec<ProjectInfo>) -> Result<CachedDashboardData, String> {
-    // 获取脏项目列表
-    let dirty_paths: Vec<String> = {
-        let cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-        cache.dirty_projects.iter().cloned().collect()
-    };
+#[specta::specta]
+pub async fn refresh_dirty_stats(projects: Vec<ProjectInfo>) -> AppResult<CachedDashboardData> {
+    let dirty_paths = read_dirty().await?;
 
     if dirty_paths.is_empty() {
-        // 没有脏数据，直接返回缓存
-        let cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-        return Ok(cache.data.clone());
+        return read_dashboard().await;
     }
 
-    // 找出需要更新的项目
     let projects_to_update: Vec<ProjectInfo> = projects
         .iter()
         .filter(|p| dirty_paths.contains(&p.path))
@@ -358,11 +582,10 @@ pub async fn refresh_dirty_stats(projects: Vec<ProjectInfo>) -> Result<CachedDas
         .collect();
 
     if projects_to_update.is_empty() {
-        let cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-        return Ok(cache.data.clone());
+        return read_dashboard().await;
     }
 
-    // 并行分析脏项目
+    // 并行跑 git
     let mut handles = Vec::new();
     for project in projects_to_update {
         let name = project.name.clone();
@@ -371,53 +594,44 @@ pub async fn refresh_dirty_stats(projects: Vec<ProjectInfo>) -> Result<CachedDas
         handles.push(handle);
     }
 
-    // 收集结果
-    let mut new_stats: HashMap<String, ProjectStatsCache> = HashMap::new();
+    // 收集结果并写入
+    let mut cleared_paths: Vec<String> = Vec::new();
     for handle in handles {
         if let Ok((path, stats)) = handle.await {
-            new_stats.insert(path, stats);
+            write_project_stats(&path, &stats).await?;
+            cleared_paths.push(path);
         }
     }
+    clear_dirty(&cleared_paths).await?;
 
-    // 更新缓存
-    let cached_data = {
-        let mut cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-
-        // 合并新统计到现有缓存
-        for (path, stats) in new_stats {
-            cache.project_stats.insert(path.clone(), stats);
-            cache.dirty_projects.remove(&path);
-        }
-
-        // 重新聚合 Dashboard 数据
-        cache.data = aggregate_dashboard_data(&cache.project_stats, projects.len() as u32);
-        cache.last_updated = get_current_timestamp();
-
-        // 保存到文件
-        let _ = save_stats_to_file(&cache);
-
-        cache.data.clone()
-    };
-
-    Ok(cached_data)
+    // 重新聚合 dashboard
+    let all = read_all_project_stats().await?;
+    let dashboard = aggregate_dashboard(&all, projects.len() as u32);
+    write_dashboard(&dashboard).await?;
+    Ok(dashboard)
 }
 
-/// 完整刷新所有项目统计（首次加载或手动刷新）
+/// 完整刷新所有项目统计
 #[tauri::command]
-pub async fn refresh_dashboard_stats(projects: Vec<ProjectInfo>) -> Result<CachedDashboardData, String> {
+#[specta::specta]
+pub async fn refresh_dashboard_stats(projects: Vec<ProjectInfo>) -> AppResult<CachedDashboardData> {
     let total_projects = projects.len() as u32;
 
     if total_projects == 0 {
-        let cached_data = CachedDashboardData::default();
-        let mut cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-        cache.data = cached_data.clone();
-        cache.project_stats.clear();
-        cache.dirty_projects.clear();
-        let _ = save_stats_to_file(&cache);
-        return Ok(cached_data);
+        // 清空所有 stats 数据
+        sqlx::query("DELETE FROM project_stats")
+            .execute(pool())
+            .await
+            .map_err(|e| crate::error::AppError::from(format!("清空 project_stats 失败: {}", e)))?;
+        sqlx::query("DELETE FROM stats_dirty")
+            .execute(pool())
+            .await
+            .map_err(|e| crate::error::AppError::from(format!("清空 stats_dirty 失败: {}", e)))?;
+        let empty = CachedDashboardData::default();
+        write_dashboard(&empty).await?;
+        return Ok(empty);
     }
 
-    // 并行分析所有项目
     let mut handles = Vec::new();
     for project in &projects {
         let name = project.name.clone();
@@ -426,86 +640,108 @@ pub async fn refresh_dashboard_stats(projects: Vec<ProjectInfo>) -> Result<Cache
         handles.push(handle);
     }
 
-    // 收集结果
-    let mut project_stats: HashMap<String, ProjectStatsCache> = HashMap::new();
+    let mut cleared_paths: Vec<String> = Vec::new();
     for handle in handles {
         if let Ok((path, stats)) = handle.await {
-            project_stats.insert(path, stats);
+            write_project_stats(&path, &stats).await?;
+            cleared_paths.push(path);
         }
     }
+    clear_dirty(&cleared_paths).await?;
 
-    // 聚合数据
-    let cached_data = aggregate_dashboard_data(&project_stats, total_projects);
-
-    // 更新缓存
-    {
-        let mut cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-        cache.data = cached_data.clone();
-        cache.project_stats = project_stats;
-        cache.dirty_projects.clear();
-        cache.last_updated = get_current_timestamp();
-
-        // 保存到文件
-        let _ = save_stats_to_file(&cache);
-    }
-
-    Ok(cached_data)
+    let all = read_all_project_stats().await?;
+    let dashboard = aggregate_dashboard(&all, total_projects);
+    write_dashboard(&dashboard).await?;
+    Ok(dashboard)
 }
 
-/// 初始化统计缓存（应用启动时调用）
-/// 如果文件缓存存在且有效，直接使用；否则标记所有项目为脏
+/// 启动时调用。如果 sqlite 中已有缓存（24 小时内）就直接用；否则标记所有项目为脏
 #[tauri::command]
-pub async fn init_stats_cache(projects: Vec<ProjectInfo>) -> Result<CachedDashboardData, String> {
-    let mut cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
-
-    // 如果缓存有数据且不是太旧（24小时内），直接返回
+#[specta::specta]
+pub async fn init_stats_cache(projects: Vec<ProjectInfo>) -> AppResult<CachedDashboardData> {
     let now = get_current_timestamp();
-    let cache_age = now - cache.last_updated;
-    let has_valid_cache = cache.last_updated > 0
-        && cache_age < 86400  // 24 小时
-        && !cache.project_stats.is_empty();
+    let all = read_all_project_stats().await?;
+
+    let has_valid_cache = !all.is_empty()
+        && all
+            .values()
+            .map(|s| s.last_updated)
+            .max()
+            .map(|t| now - t < 86400)
+            .unwrap_or(false);
 
     if has_valid_cache {
-        // 检查项目列表是否变化
-        let cached_paths: HashSet<_> = cache.project_stats.keys().cloned().collect();
+        let cached_paths: HashSet<_> = all.keys().cloned().collect();
         let current_paths: HashSet<_> = projects.iter().map(|p| p.path.clone()).collect();
 
-        // 新增的项目标记为脏
+        // 新增项目 → 标记为脏
         for path in current_paths.difference(&cached_paths) {
-            cache.dirty_projects.insert(path.clone());
+            write_dirty(path).await?;
         }
 
-        // 删除的项目从缓存移除
+        // 删除项目 → 从 sqlite 移除
         for path in cached_paths.difference(&current_paths) {
-            cache.project_stats.remove(path);
+            sqlx::query("DELETE FROM project_stats WHERE project_path = ?")
+                .bind(path)
+                .execute(pool())
+                .await
+                .map_err(|e| {
+                    crate::error::AppError::from(format!("清理过期 project_stats 失败: {}", e))
+                })?;
         }
 
-        // 重新聚合（项目数可能变化）
-        cache.data = aggregate_dashboard_data(&cache.project_stats, projects.len() as u32);
-
-        return Ok(cache.data.clone());
+        let refreshed = read_all_project_stats().await?;
+        let dashboard = aggregate_dashboard(&refreshed, projects.len() as u32);
+        write_dashboard(&dashboard).await?;
+        return Ok(dashboard);
     }
 
-    // 缓存无效，标记所有项目为脏，但先返回空数据让 UI 快速显示
+    // 缓存无效：标记所有项目为脏，让前端触发 refresh
     for project in &projects {
-        cache.dirty_projects.insert(project.path.clone());
+        write_dirty(&project.path).await?;
     }
-
-    // 返回空数据或旧数据，让 UI 先显示
-    Ok(cache.data.clone())
+    read_dashboard().await
 }
 
 /// 清理已删除项目的缓存
 #[tauri::command]
-pub async fn cleanup_stats_cache(current_project_paths: Vec<String>) -> Result<(), String> {
-    let mut cache = STATS_CACHE.lock().map_err(|e| e.to_string())?;
+#[specta::specta]
+pub async fn cleanup_stats_cache(current_project_paths: Vec<String>) -> AppResult<()> {
+    let all_paths: Vec<String> = sqlx::query_scalar("SELECT project_path FROM project_stats")
+        .fetch_all(pool())
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("查询 project_stats 失败: {}", e)))?;
 
-    let paths_set: HashSet<_> = current_project_paths.into_iter().collect();
-
-    // 移除不存在的项目
-    cache.project_stats.retain(|path, _| paths_set.contains(path));
-    cache.dirty_projects.retain(|path| paths_set.contains(path));
-
-    let _ = save_stats_to_file(&cache);
+    let keep: HashSet<&String> = current_project_paths.iter().collect();
+    let pool = pool();
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("获取连接失败: {}", e)))?;
+    let mut tx = conn
+        .begin()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("开启事务失败: {}", e)))?;
+    for p in &all_paths {
+        if !keep.contains(p) {
+            sqlx::query("DELETE FROM project_stats WHERE project_path = ?")
+                .bind(p)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    crate::error::AppError::from(format!("删除 project_stats 失败: {}", e))
+                })?;
+            sqlx::query("DELETE FROM stats_dirty WHERE project_path = ?")
+                .bind(p)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    crate::error::AppError::from(format!("删除 stats_dirty 失败: {}", e))
+                })?;
+        }
+    }
+    tx.commit()
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("提交事务失败: {}", e)))?;
     Ok(())
 }

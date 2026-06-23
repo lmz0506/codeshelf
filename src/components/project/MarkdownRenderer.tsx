@@ -3,12 +3,67 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+import { Check, Copy } from 'lucide-react';
 import 'highlight.js/styles/github.css';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames || []),
+    'details',
+    'summary',
+    'mark',
+    'figure',
+    'figcaption',
+  ],
+  attributes: {
+    ...defaultSchema.attributes,
+    code: ['className'],
+    pre: ['className'],
+    span: ['className'],
+    div: ['className', 'id'],
+    a: [
+      ...(defaultSchema.attributes?.a || []),
+      'target',
+      'rel',
+      'title',
+    ],
+    img: [
+      ...(defaultSchema.attributes?.img || []),
+      'className',
+      'title',
+      'width',
+      'height',
+    ],
+    th: [...(defaultSchema.attributes?.th || []), 'align'],
+    td: [...(defaultSchema.attributes?.td || []), 'align'],
+  },
+};
 
 interface MarkdownRendererProps {
   content: string;
   basePath?: string; // 项目根路径，用于解析相对路径
+}
+
+function CodeBlockCopyButton({ getText }: { getText: () => string }) {
+  const { copy, copiedLabel } = useCopyToClipboard();
+  const copied = copiedLabel === "code";
+  return (
+    <button
+      type="button"
+      className={`absolute top-2 right-2 px-1.5 py-0.5 text-[11px] rounded border flex items-center gap-1 transition-opacity opacity-0 group-hover:opacity-100 ${
+        copied ? "bg-green-50 border-green-200 text-green-600" : "bg-white border-gray-200 text-gray-500 hover:text-blue-500"
+      }`}
+      onClick={() => copy(getText(), "code")}
+      title={copied ? "已复制" : "复制代码"}
+    >
+      {copied ? <Check size={11} /> : <Copy size={11} />}
+      {copied ? "已复制" : "复制"}
+    </button>
+  );
 }
 
 export function MarkdownRenderer({ content, basePath }: MarkdownRendererProps) {
@@ -48,7 +103,11 @@ export function MarkdownRenderer({ content, basePath }: MarkdownRendererProps) {
     <div className="markdown-body prose prose-sm max-w-none">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight, rehypeRaw]}
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeSanitize, sanitizeSchema],
+          rehypeHighlight,
+        ]}
         components={{
           // Customize rendering for better styling
           h1: ({ node, ...props }) => <h1 className="text-2xl font-bold mt-6 mb-4 pb-2 border-b border-gray-200" {...props} />,
@@ -85,7 +144,26 @@ export function MarkdownRenderer({ content, basePath }: MarkdownRendererProps) {
               </code>
             );
           },
-          pre: ({ node, ...props }) => <pre className="my-4 bg-gray-50 rounded-lg overflow-hidden" {...props} />,
+          pre: ({ node, children, ...props }) => {
+            // Extract text from nested code element for copy functionality
+            const getText = () => {
+              function extract(n: any): string {
+                if (typeof n === "string") return n;
+                if (Array.isArray(n)) return n.map(extract).join("");
+                if (n && typeof n === "object" && "props" in n) {
+                  return extract((n as any).props?.children);
+                }
+                return "";
+              }
+              return extract(children);
+            };
+            return (
+              <pre className="my-4 bg-gray-50 rounded-lg overflow-hidden relative group" {...props}>
+                <CodeBlockCopyButton getText={getText} />
+                {children}
+              </pre>
+            );
+          },
           blockquote: ({ node, ...props }) => (
             <blockquote className="my-4 pl-4 border-l-4 border-gray-300 text-gray-600 italic" {...props} />
           ),

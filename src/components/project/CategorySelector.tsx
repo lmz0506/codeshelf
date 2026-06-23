@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 
 interface CategorySelectorProps {
   selectedCategories: string[];
@@ -13,7 +13,7 @@ export function CategorySelector({
   onChange,
   multiple = true,
 }: CategorySelectorProps) {
-  const { categories, addCategory } = useAppStore();
+  const { categories, addCategory } = useProjectsStore();
   const [showNewInput, setShowNewInput] = useState(false);
   const [newCategory, setNewCategory] = useState("");
 

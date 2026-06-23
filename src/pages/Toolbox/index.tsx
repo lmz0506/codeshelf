@@ -9,8 +9,13 @@ import {
   Radio,
   Keyboard,
   ClipboardList,
+  Box,
+  Network,
+  FileText,
+  Send,
 } from "lucide-react";
-import { useAppStore } from "@/stores/appStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useUiStore } from "@/stores/uiStore";
 import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import type { ToolType } from "@/types/toolbox";
 
@@ -19,9 +24,13 @@ import { FileDownloader } from "./FileDownloader";
 import { LocalService } from "./LocalService";
 import { SystemMonitor } from "./SystemMonitor";
 import { ClaudeCodeManager } from "./ClaudeCodeManager";
-import NetcatTool from "./NetcatTool";
+import NetcatTool from "./netcat";
 import { ShortcutsMemo } from "./ShortcutsMemo";
 import { ClipboardManager } from "./ClipboardManager";
+import { DockerImageTool } from "./DockerImageTool";
+import { SshTunnel } from "./SshTunnel";
+import { ResumeGenerator } from "./ResumeGenerator";
+import { PairDrop } from "./PairDrop";
 
 const tools = [
   {
@@ -44,6 +53,13 @@ const tools = [
     description: "统一管理 Web 静态服务和端口转发，支持 CORS、gzip 和多代理规则",
     icon: Server,
     color: "bg-orange-500",
+  },
+  {
+    id: "docker" as ToolType,
+    name: "Docker 镜像",
+    description: "发现和编辑 Dockerfile，生成模板，构建、运行、推送和删除镜像",
+    icon: Box,
+    color: "bg-sky-500",
   },
   {
     id: "claude" as ToolType,
@@ -74,10 +90,41 @@ const tools = [
     icon: ClipboardList,
     color: "bg-teal-500",
   },
+  {
+    id: "resume" as ToolType,
+    name: "简历生成",
+    description: "基于 LangChain Deep Agents 分析项目代码，生成项目背景知识和 STAR 简历经历",
+    icon: FileText,
+    color: "bg-indigo-500",
+    beta: true,
+  },
+  {
+    id: "sshTunnel" as ToolType,
+    name: "SSH 隧道",
+    description: "通过 SSH 将远程内网端口映射到本地，例如远程 Redis/MySQL/管理面板",
+    icon: Network,
+    color: "bg-emerald-500",
+    beta: true,
+  },
+  {
+    id: "pairdrop" as ToolType,
+    name: "跨设备传输",
+    description: "局域网内一对一收发文字和文件，浏览器扫码即用，所有数据内存中转",
+    icon: Send,
+    color: "bg-pink-500",
+    beta: true,
+  },
 ];
 
 export function ToolboxPage() {
-  const { sidebarCollapsed, setSidebarCollapsed, toolboxNavigateTarget, clearToolboxNavigateTarget } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
+  const {
+    toolboxDockerProjectName,
+    toolboxDockerProjectPath,
+    toolboxNavigateTarget,
+    clearToolboxDockerProject,
+    clearToolboxNavigateTarget,
+  } = useUiStore();
   const [activeTool, setActiveTool] = useState<ToolType | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -105,6 +152,15 @@ export function ToolboxPage() {
         return <FileDownloader onBack={() => setActiveTool(null)} />;
       case "server":
         return <LocalService onBack={() => setActiveTool(null)} />;
+      case "docker":
+        return (
+          <DockerImageTool
+            onBack={() => setActiveTool(null)}
+            initialProjectPath={toolboxDockerProjectPath || undefined}
+            initialProjectName={toolboxDockerProjectName || undefined}
+            onInitialProjectConsumed={clearToolboxDockerProject}
+          />
+        );
       case "claude":
         return <ClaudeCodeManager onBack={() => setActiveTool(null)} />;
       case "netcat":
@@ -113,6 +169,12 @@ export function ToolboxPage() {
         return <ShortcutsMemo onBack={() => setActiveTool(null)} />;
       case "clipboard":
         return <ClipboardManager onBack={() => setActiveTool(null)} />;
+      case "resume":
+        return <ResumeGenerator onBack={() => setActiveTool(null)} />;
+      case "sshTunnel":
+        return <SshTunnel onBack={() => setActiveTool(null)} />;
+      case "pairdrop":
+        return <PairDrop onBack={() => setActiveTool(null)} />;
       default:
         return null;
     }
@@ -226,7 +288,7 @@ export function ToolPanelHeader({
   actions?: React.ReactNode;
   beta?: boolean;
 }) {
-  const { sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
 
   return (
     <header className="re-header sticky top-0 z-20" data-tauri-drag-region>

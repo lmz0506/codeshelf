@@ -1,18 +1,31 @@
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { MainLayout } from "@/components/layout";
-import { ShelfPage } from "@/pages/Shelf";
-import { DashboardPage } from "@/pages/Dashboard";
-import { SettingsPage } from "@/pages/Settings";
-import { ToolboxPage } from "@/pages/Toolbox";
 import { ToastContainer, UpdateNotification, ShortcutQuickLookup, ClipboardQuickAccess } from "@/components/ui";
-import { useAppStore } from "@/stores/appStore";
+import { ConfirmHost } from "@/components/common/useConfirm";
+
+// 页面按需加载：各 page 拆成独立 chunk，避免初始 index.js 突破 1MB。
+// 各 page 模块都是 named export，所以用 .then 包一层成 default。
+const ShelfPage = lazy(() => import("@/pages/Shelf").then((m) => ({ default: m.ShelfPage })));
+const DashboardPage = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.DashboardPage })));
+const SettingsPage = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.SettingsPage })));
+const ToolboxPage = lazy(() => import("@/pages/Toolbox").then((m) => ({ default: m.ToolboxPage })));
+const AiProvidersPage = lazy(() => import("@/pages/AiProviders").then((m) => ({ default: m.AiProvidersPage })));
+const ChatPage = lazy(() => import("@/pages/Chat").then((m) => ({ default: m.ChatPage })));
+const WorkflowsPage = lazy(() => import("@/pages/Workflows").then((m) => ({ default: m.WorkflowsPage })));
+const ApiChatPage = lazy(() => import("@/pages/ApiChat").then((m) => ({ default: m.ApiChatPage })));
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
+import { useEditorsStore, type EditorConfig, type TerminalConfig } from "@/stores/editorsStore";
+import { useNotificationsStore } from "@/stores/notificationsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { useResumeStore } from "@/stores/resumeStore";
+import { useSettingsStore, type Theme } from "@/stores/settingsStore";
+import { useUiStore } from "@/stores/uiStore";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
-import type { Project, Notification, AppShortcutBinding } from "@/types";
+import type { Project, Notification, AppShortcutBinding, AiProviderConfig } from "@/types";
 import type { ToolType } from "@/types/toolbox";
-import type { EditorConfig, TerminalConfig, Theme } from "@/stores/appStore";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,6 +36,14 @@ const queryClient = new QueryClient({
   },
 });
 
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center h-full min-h-[200px]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  );
+}
+
 // 后端返回的应用设置类型
 interface AppSettings {
   theme: string;
@@ -30,6 +51,8 @@ interface AppSettings {
   sidebar_collapsed: boolean;
   scan_depth: number;
   auto_update: boolean;
+  chat_history_dir?: string;
+  show_dock_icon?: boolean;
 }
 
 // 后端返回的 UI 状态类型
@@ -55,12 +78,11 @@ interface NotificationBackend {
 
 // 初始化应用：从后端 data 目录加载所有数据
 async function initializeApp() {
-  const { setInitialized } = useAppStore.getState();
-  const storeSet = useAppStore.setState;
+  const setInitialized = useUiStore.getState().setInitialized;
 
   try {
     // 并行加载所有数据
-    const [settings, labels, categories, editors, terminal, projects, uiState, notifications, appShortcuts] = await Promise.all([
+    const [settings, labels, categories, editors, terminal, projects, uiState, notifications, appShortcuts, aiProviders, sensitiveFilePatterns, savedResumes] = await Promise.all([
       invoke<AppSettings>("get_app_settings"),
       invoke<string[]>("get_labels"),
       invoke<string[]>("get_categories"),
@@ -70,6 +92,9 @@ async function initializeApp() {
       invoke<UiState>("get_ui_state"),
       invoke<NotificationBackend[]>("get_notifications"),
       invoke<AppShortcutBinding[]>("get_app_shortcuts"),
+      invoke<AiProviderConfig[]>("get_ai_providers"),
+      invoke<string[]>("get_sensitive_file_patterns"),
+      invoke<unknown[]>("get_resumes"),
     ]);
 
     // 转换终端配置格式
@@ -90,23 +115,33 @@ async function initializeApp() {
       createdAt: n.created_at,
     }));
 
-    // 直接设置状态，使用后端返回的数据（后端会处理默认值）
-    storeSet({
+    const normalizedAiProviders = useAiProvidersStore.getState().ensureAiDefaultProvider(aiProviders || []);
+
+    useSettingsStore.setState({
       theme: (settings.theme || "light") as Theme,
       viewMode: (settings.view_mode || "grid") as "grid" | "list",
       sidebarCollapsed: settings.sidebar_collapsed || false,
       scanDepth: settings.scan_depth || 3,
       autoUpdate: settings.auto_update !== false,
+      chatHistoryDir: settings.chat_history_dir,
+      showDockIcon: settings.show_dock_icon === true,
+      appShortcuts: appShortcuts || [],
+      sensitiveFilePatterns: sensitiveFilePatterns || [],
+    });
+    useProjectsStore.setState({
       labels: labels || [],
       categories: categories || [],
-      editors: editors || [],
-      terminalConfig,
       projects: projects || [],
       recentDetailProjectIds: uiState.recent_detail_project_ids || [],
-      notifications: notificationsFormatted,
-      appShortcuts: appShortcuts || [],
-      initialized: true,
     });
+    useEditorsStore.setState({
+      editors: editors || [],
+      terminalConfig,
+    });
+    useNotificationsStore.setState({ notifications: notificationsFormatted });
+    useAiProvidersStore.setState({ aiProviders: normalizedAiProviders });
+    useResumeStore.getState().setSavedResumes(savedResumes || []);
+    useUiStore.setState({ initialized: true });
 
     console.log("应用初始化完成，已从 data 目录加载数据");
   } catch (err) {
@@ -116,7 +151,8 @@ async function initializeApp() {
 }
 
 function AppContent() {
-  const initialized = useAppStore((state) => state.initialized);
+  const initialized = useUiStore((state) => state.initialized);
+  const popupAutoHideWindow = useUiStore((s) => s.popupAutoHideWindow);
 
   useEffect(() => {
     initializeApp();
@@ -127,7 +163,7 @@ function AppContent() {
   // 监听托盘菜单工具箱导航事件
   useEffect(() => {
     const unlisten = listen<string>("navigate-to-tool", (event) => {
-      useAppStore.getState().navigateToTool(event.payload as ToolType);
+      useUiStore.getState().navigateToTool(event.payload as ToolType);
     });
     return () => { unlisten.then((fn) => fn()); };
   }, []);
@@ -145,26 +181,41 @@ function AppContent() {
 
   return (
     <>
-      <MainLayout>
-        {(currentPage) => {
-          switch (currentPage) {
-            case "shelf":
-              return <ShelfPage />;
-            case "dashboard":
-              return <DashboardPage />;
-            case "toolbox":
-              return <ToolboxPage />;
-            case "settings":
-              return <SettingsPage />;
-            default:
-              return <ShelfPage />;
-          }
-        }}
-      </MainLayout>
+      <div style={{ display: popupAutoHideWindow ? 'none' : undefined }}>
+        <MainLayout>
+          {(currentPage) => (
+            <Suspense fallback={<PageFallback />}>
+              {(() => {
+                switch (currentPage) {
+                  case "shelf":
+                    return <ShelfPage />;
+                  case "dashboard":
+                    return <DashboardPage />;
+                  case "toolbox":
+                    return <ToolboxPage />;
+                  case "settings":
+                    return <SettingsPage />;
+                  case "aiProviders":
+                    return <AiProvidersPage />;
+                  case "chat":
+                    return <ChatPage />;
+                  case "workflows":
+                    return <WorkflowsPage />;
+                  case "apiChat":
+                    return <ApiChatPage />;
+                  default:
+                    return <ShelfPage />;
+                }
+              })()}
+            </Suspense>
+          )}
+        </MainLayout>
+      </div>
       <ToastContainer />
       <UpdateNotification />
       <ShortcutQuickLookup />
       <ClipboardQuickAccess />
+      <ConfirmHost />
     </>
   );
 }

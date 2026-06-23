@@ -1,13 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useAppStore } from "@/stores/appStore";
+import { useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { showToast } from "@/components/ui/Toast";
+import { IS_MAC } from "@/utils/platform";
 import type { AppShortcutBinding } from "@/types";
 import type { ToolType } from "@/types/toolbox";
-
-const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
 // ============== 默认快捷键配置 ==============
 
@@ -113,21 +113,22 @@ const TOOL_MAP: Record<string, ToolType> = {
 };
 
 function executeAction(actionId: string) {
-  const store = useAppStore.getState();
+  const uiStore = useUiStore.getState();
+  const settingsStore = useSettingsStore.getState();
 
   if (actionId === "tool_shortcuts") {
     // 快捷键备忘：弹出快速查找弹窗
-    store.toggleShortcutQuickLookup();
+    uiStore.toggleShortcutQuickLookup();
   } else if (actionId === "tool_clipboard") {
     // 剪贴板历史：弹出快速访问弹窗
-    store.toggleClipboardQuickAccess();
+    uiStore.toggleClipboardQuickAccess();
   } else if (actionId.startsWith("nav_")) {
     const page = actionId.replace("nav_", "") as "shelf" | "dashboard" | "toolbox" | "settings";
-    store.setCurrentPage(page);
+    uiStore.setCurrentPage(page);
   } else if (actionId.startsWith("tool_") && TOOL_MAP[actionId]) {
-    store.navigateToTool(TOOL_MAP[actionId]);
+    uiStore.navigateToTool(TOOL_MAP[actionId]);
   } else if (actionId === "toggle_sidebar") {
-    store.setSidebarCollapsed(!store.sidebarCollapsed);
+    settingsStore.setSidebarCollapsed(!settingsStore.sidebarCollapsed);
   }
 }
 
@@ -150,6 +151,13 @@ async function handleGlobalAction(actionId: string) {
       if (visible && !minimized) {
         await win.hide();
       } else {
+        // 显示窗口前，清理可能残留的弹窗状态
+        const store = useUiStore.getState();
+        if (store.popupAutoHideWindow) {
+          store.setPopupAutoHideWindow(false);
+          store.setPopupCursorPosition(null);
+          await restoreWindowState();
+        }
         await win.show();
         await win.unminimize();
         await win.setFocus();
@@ -162,7 +170,7 @@ async function handleGlobalAction(actionId: string) {
 
   // 弹窗类动作：不带主窗口，再次按下快捷键可以关闭
   if (POPUP_ACTIONS.has(actionId)) {
-    const store = useAppStore.getState();
+    const store = useUiStore.getState();
     const isPopupShowing =
       (actionId === "tool_clipboard" && store.showClipboardQuickAccess) ||
       (actionId === "tool_shortcuts" && store.showShortcutQuickLookup);
@@ -170,9 +178,11 @@ async function handleGlobalAction(actionId: string) {
     if (isPopupShowing) {
       // 弹窗已打开 → 关闭弹窗，并在需要时自动隐藏窗口
       executeAction(actionId);
+      store.setPopupCursorPosition(null);
       if (store.popupAutoHideWindow) {
         store.setPopupAutoHideWindow(false);
         try {
+          await restoreWindowState();
           await win.hide();
         } catch (err) {
           console.error("隐藏窗口失败:", err);
@@ -186,6 +196,94 @@ async function handleGlobalAction(actionId: string) {
       const visible = await win.isVisible();
       const minimized = visible && await win.isMinimized();
       const wasHidden = !visible || minimized;
+
+      // 剪贴板弹窗：获取光标位置并定位窗口
+      if (actionId === "tool_clipboard" && wasHidden) {
+        try {
+          const pos: { x: number; y: number } = await invoke("get_cursor_position");
+          store.setPopupCursorPosition(pos);
+
+          // 保存原始窗口位置和尺寸，用于恢复
+          const origPos = await win.outerPosition();
+          const origSize = await win.outerSize();
+          _savedWindowState = {
+            x: origPos.x, y: origPos.y,
+            width: origSize.width, height: origSize.height,
+          };
+
+          // 获取缩放因子（macOS Retina 为 2）
+          const scaleFactor = await win.scaleFactor();
+          const popupWidth = Math.round(540 * scaleFactor);
+          const popupHeight = Math.round(500 * scaleFactor);
+          // 光标坐标是逻辑坐标，需要转为物理坐标
+          const cursorPhysX = Math.round(pos.x * scaleFactor);
+          const cursorPhysY = Math.round(pos.y * scaleFactor);
+
+          // 获取当前屏幕信息（Tauri 返回物理像素）
+          const monitors = await (await import("@tauri-apps/api/window")).availableMonitors();
+          const currentMonitor = monitors.find((m) => {
+            const mx = m.position.x, my = m.position.y;
+            const mw = m.size.width, mh = m.size.height;
+            return cursorPhysX >= mx && cursorPhysX < mx + mw && cursorPhysY >= my && cursorPhysY < my + mh;
+          }) || monitors[0];
+
+          let newX = Math.round(cursorPhysX - popupWidth / 2);
+          let newY = Math.round(cursorPhysY + 10 * scaleFactor); // 默认在光标下方
+
+          if (currentMonitor) {
+            const monitorBottom = currentMonitor.position.y + currentMonitor.size.height;
+            const monitorRight = currentMonitor.position.x + currentMonitor.size.width;
+            const monitorLeft = currentMonitor.position.x;
+            const monitorTop = currentMonitor.position.y;
+
+            // 如果光标在屏幕下半部分，弹窗在光标上方
+            if (cursorPhysY > monitorTop + currentMonitor.size.height / 2) {
+              newY = Math.round(cursorPhysY - popupHeight - 10 * scaleFactor);
+            }
+            // 防止溢出屏幕
+            if (newX < monitorLeft) newX = monitorLeft;
+            if (newX + popupWidth > monitorRight) newX = Math.round(monitorRight - popupWidth);
+            if (newY < monitorTop) newY = monitorTop;
+            if (newY + popupHeight > monitorBottom) newY = Math.round(monitorBottom - popupHeight);
+          }
+
+          const { PhysicalPosition, PhysicalSize } = await import("@tauri-apps/api/dpi");
+          await win.setSize(new PhysicalSize(popupWidth, popupHeight));
+          await win.setPosition(new PhysicalPosition(newX, newY));
+        } catch (err) {
+          console.error("获取光标位置失败:", err);
+          store.setPopupCursorPosition(null);
+        }
+      } else if (actionId === "tool_shortcuts" && wasHidden) {
+        // 快捷键弹窗：也需要缩小窗口到弹窗大小
+        try {
+          const origPos = await win.outerPosition();
+          const origSize = await win.outerSize();
+          _savedWindowState = {
+            x: origPos.x, y: origPos.y,
+            width: origSize.width, height: origSize.height,
+          };
+          const scaleFactor = await win.scaleFactor();
+          const popupWidth = Math.round(540 * scaleFactor);
+          const popupHeight = Math.round(500 * scaleFactor);
+
+          // 获取屏幕信息居中显示
+          const monitors = await (await import("@tauri-apps/api/window")).availableMonitors();
+          const monitor = monitors[0];
+          if (monitor) {
+            const cx = Math.round(monitor.position.x + (monitor.size.width - popupWidth) / 2);
+            const cy = Math.round(monitor.position.y + (monitor.size.height - popupHeight) * 0.3);
+            const { PhysicalPosition, PhysicalSize } = await import("@tauri-apps/api/dpi");
+            await win.setSize(new PhysicalSize(popupWidth, popupHeight));
+            await win.setPosition(new PhysicalPosition(cx, cy));
+          }
+        } catch (err) {
+          console.error("调整窗口失败:", err);
+        }
+        store.setPopupCursorPosition(null);
+      } else {
+        store.setPopupCursorPosition(null);
+      }
 
       if (wasHidden) {
         store.setPopupAutoHideWindow(true);
@@ -223,6 +321,26 @@ let shortcutsReady = false;
 // 防止全局快捷键在窗口聚焦时 DOM keydown 与 OS 钩子双重触发
 let _lastLocalHandled = { id: "", time: 0 };
 
+// 保存窗口原始状态，用于弹窗关闭后恢复
+let _savedWindowState: { x: number; y: number; width: number; height: number } | null = null;
+
+/**
+ * 恢复窗口到弹窗打开前的位置和尺寸
+ */
+export async function restoreWindowState() {
+  if (!_savedWindowState) return;
+  try {
+    const win = getCurrentWindow();
+    const { PhysicalPosition, PhysicalSize } = await import("@tauri-apps/api/dpi");
+    await win.setSize(new PhysicalSize(_savedWindowState.width, _savedWindowState.height));
+    await win.setPosition(new PhysicalPosition(_savedWindowState.x, _savedWindowState.y));
+  } catch (err) {
+    console.error("恢复窗口状态失败:", err);
+  } finally {
+    _savedWindowState = null;
+  }
+}
+
 async function registerGlobalShortcuts(shortcuts: AppShortcutBinding[]) {
   const globalBindings = shortcuts
     .filter((s) => s.enabled && s.global)
@@ -251,17 +369,16 @@ async function unregisterGlobalShortcuts() {
  * 确保应用快捷键已初始化（首次或旧版升级时补齐新条目）
  */
 export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
-  const { appShortcuts, setAppShortcuts } = useAppStore.getState();
+  const { appShortcuts, setAppShortcuts } = useSettingsStore.getState();
 
   if (appShortcuts.length === 0) {
     // store 为空，先尝试从后端加载已保存的数据
     try {
       const saved: AppShortcutBinding[] = await invoke("get_app_shortcuts");
       if (saved && saved.length > 0) {
-        setAppShortcuts(saved);
         shortcutsReady = true;
-        // 继续往下检查是否需要补齐新条目
-        return ensureAppShortcutsPatched(saved, setAppShortcuts);
+        // 不在这里 setAppShortcuts，统一由 ensureAppShortcutsPatched 设置一次
+        return ensureAppShortcutsPatched(saved, setAppShortcuts, true);
       }
     } catch {
       // 读取失败，使用默认值
@@ -279,12 +396,13 @@ export async function ensureAppShortcuts(): Promise<AppShortcutBinding[]> {
     return defaults;
   }
 
-  return ensureAppShortcutsPatched(appShortcuts, setAppShortcuts);
+  return ensureAppShortcutsPatched(appShortcuts, setAppShortcuts, false);
 }
 
 async function ensureAppShortcutsPatched(
   appShortcuts: AppShortcutBinding[],
-  setAppShortcuts: (s: AppShortcutBinding[]) => void
+  setAppShortcuts: (s: AppShortcutBinding[]) => void,
+  forceSet: boolean = false
 ): Promise<AppShortcutBinding[]> {
   // 检查是否有新增的默认条目（版本升级时）
   const existingIds = new Set(appShortcuts.map((s) => s.id));
@@ -317,6 +435,10 @@ async function ensureAppShortcutsPatched(
     return patched;
   }
 
+  // 从后端加载时需要设置 store（此时 store 为空）
+  if (forceSet) {
+    setAppShortcuts(appShortcuts);
+  }
   shortcutsReady = true;
   return appShortcuts;
 }
@@ -330,7 +452,19 @@ async function ensureAppShortcutsPatched(
  * - 去重机制：窗口聚焦时 DOM 先处理，OS 钩子事件通过时间戳去重跳过
  */
 export function useAppShortcuts() {
-  const appShortcuts = useAppStore((state) => state.appShortcuts);
+  const appShortcuts = useSettingsStore((state) => state.appShortcuts);
+
+  // 基于全局快捷键内容派生稳定 key，只有实际快捷键变化时才重新注册
+  const globalShortcutsKey = useMemo(() => {
+    return appShortcuts
+      .filter((s) => s.global && s.enabled)
+      .map((s) => `${s.id}:${s.keys}`)
+      .sort()
+      .join("|");
+  }, [appShortcuts]);
+
+  const appShortcutsRef = useRef(appShortcuts);
+  appShortcutsRef.current = appShortcuts;
 
   // 应用内快捷键（DOM keydown）
   useEffect(() => {
@@ -344,7 +478,7 @@ export function useAppShortcuts() {
       const pressed = eventToKeys(e);
       if (!pressed) return;
 
-      const { appShortcuts } = useAppStore.getState();
+      const { appShortcuts } = useSettingsStore.getState();
       // 匹配所有已启用的快捷键（全局快捷键在窗口聚焦时也由 DOM 处理）
       const binding = appShortcuts.find(
         (s) => s.enabled && s.keys === pressed
@@ -372,8 +506,10 @@ export function useAppShortcuts() {
   }, []);
 
   // 系统级全局快捷键（Windows 键盘钩子事件监听）
+  // 依赖 globalShortcutsKey（基于内容的稳定 key），而非 appShortcuts 引用
+  // 这样 initializeApp/ensureAppShortcuts 多次 setAppShortcuts 不会重复注册
   useEffect(() => {
-    registerGlobalShortcuts(appShortcuts);
+    registerGlobalShortcuts(appShortcutsRef.current);
 
     const unlistenPromise = listen<string>("global-shortcut-event", (event) => {
       // 跳过已由 DOM keydown 处理的事件（窗口聚焦时防止重复触发）
@@ -388,5 +524,5 @@ export function useAppShortcuts() {
       unregisterGlobalShortcuts();
       unlistenPromise.then((fn) => fn());
     };
-  }, [appShortcuts]);
+  }, [globalShortcutsKey]);
 }

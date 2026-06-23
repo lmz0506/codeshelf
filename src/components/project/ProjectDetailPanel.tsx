@@ -1,22 +1,35 @@
 import { useState, useEffect } from "react";
-import { X, GitBranch, History, Terminal, RefreshCw, CloudUpload, FolderOpen, User, Clock, Edit2, FileText, Database, Loader2, GitCommit, Plus, Trash2, Check, Copy, Minus, Maximize2, Minimize2, ChevronDown, ChevronRight, ExternalLink, Files, Mail, ArrowRightLeft } from "lucide-react";
+import { X, GitBranch, RefreshCw, CloudUpload, FolderOpen, Edit2, FileText, Loader2, GitCommit, Copy, ArrowRightLeft, ArrowLeft } from "lucide-react";
+import { MacWindowControls } from "@/components/layout/MacWindowControls";
 import { CategorySelector } from "./CategorySelector";
 import { LabelSelector } from "./LabelSelector";
 import { SyncRemoteModal } from "./SyncRemoteModal";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { ReadmeSection } from "./ReadmeSection";
 import { BranchSwitchModal } from "./BranchSwitchModal";
 import { GitCommitModal } from "./GitCommitModal";
 import { AddRemoteModal } from "./AddRemoteModal";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { TerminalContextMenu } from "./TerminalContextMenu";
+import { ProjectQuickActions } from "./ProjectQuickActions";
+import { useProjectGitActions } from "./useProjectGitActions";
+import { CommitHistoryPanel } from "./git/CommitHistoryPanel";
+import { GitSidebar } from "./git/GitSidebar";
 import { showToast } from "@/components/ui";
 import type { Project, GitStatus, CommitInfo, RemoteInfo } from "@/types";
-import { getGitStatus, getCommitHistory, getRemotes, gitPull, gitPush, removeRemote } from "@/services/git";
-import { openInEditor, openInExplorer, openInTerminal, updateProject, openUrl } from "@/services/db";
-import { getEditorForProject, getEditorConfigForProject, getEditorIcon } from "@/utils/editor";
+import {
+  getGitStatus,
+  getCommitHistory,
+  getRemotes,
+  searchCommits,
+  type ConflictFileContent,
+} from "@/services/git";
+import { updateProject } from "@/services/db";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "@/stores/appStore";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useUiStore } from "@/stores/uiStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { useAiProvidersStore } from "@/stores/aiProvidersStore";
+import { createChatSession, saveChatSession } from "@/services/chat";
 
 interface ProjectDetailPanelProps {
   project: Project;
@@ -31,31 +44,60 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
   const [currentRemote, setCurrentRemote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pulling, setPulling] = useState(false);
-  const [pushing, setPushing] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showReadme, setShowReadme] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [showAddRemoteModal, setShowAddRemoteModal] = useState(false);
+  const [conflictPreview, setConflictPreview] = useState<ConflictFileContent | null>(null);
   const [showEditorMenu, setShowEditorMenu] = useState<{ x: number; y: number } | null>(null);
   const [showTerminalMenu, setShowTerminalMenu] = useState<{ x: number; y: number } | null>(null);
   const [readmeContent, setReadmeContent] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>(project.tags);
   const [selectedLabels, setSelectedLabels] = useState<string[]>(project.labels || []);
-  // 用于显示的本地项目数据（编辑后立即更新）
   const [localProject, setLocalProject] = useState<Project>(project);
-  const { editors, terminalConfig, markProjectDirty, projects, recentDetailProjectIds, addRecentDetailProject } = useAppStore();
+  const markProjectDirty = useProjectsStore((s) => s.markProjectDirty);
+  const projects = useProjectsStore((s) => s.projects);
+  const recentDetailProjectIds = useProjectsStore((s) => s.recentDetailProjectIds);
+  const addRecentDetailProject = useProjectsStore((s) => s.addRecentDetailProject);
+  const navigateToChatSession = useUiStore((s) => s.navigateToChatSession);
+  const aiProviders = useAiProvidersStore((s) => s.aiProviders);
+  const ensureAiDefaultProvider = useAiProvidersStore((s) => s.ensureAiDefaultProvider);
+  const setCurrentPage = useUiStore((s) => s.setCurrentPage);
   // 从 store 读取最新项目数据（编辑器/Claude 环境切换后立即刷新）
   const storeProject = projects.find((p) => p.id === project.id) || project;
 
   // 提交卡片展开状态
   const [expandedCommit, setExpandedCommit] = useState<string | null>(null);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
+  const [historyLimit, setHistoryLimit] = useState(20);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [commitView, setCommitView] = useState<"history" | "ahead" | "behind">("history");
 
-  // 窗口最大化状态
-  const [isMaximized, setIsMaximized] = useState(false);
+  const {
+    pulling,
+    pushing,
+    handlePull,
+    handlePush,
+    handleStageFiles,
+    handleUnstageFiles,
+    handleDiscardFiles,
+    handleFetchRemote,
+    handleCopyCommitMessage,
+    handleRevertCommit,
+    handleCherryPickCommit,
+    handlePreviewConflict,
+    handleUseConflictVersion,
+    handleMarkResolved,
+    handleRemoveRemote,
+  } = useProjectGitActions({
+    projectPath: project.path,
+    gitStatus,
+    currentRemote,
+    refresh: loadProjectDetails,
+    setConflictPreview,
+  });
 
   // 获取最近打开的项目列表（排除当前项目）
   const recentProjects = recentDetailProjectIds
@@ -69,121 +111,12 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
     addRecentDetailProject(project.id);
   }, [project.id, addRecentDetailProject]);
 
-  // 格式化相对时间
-  function formatRelativeTime(dateStr: string): string {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-
-    if (diffMin < 1) return "刚刚";
-    if (diffMin < 60) return `${diffMin} 分钟前`;
-
-    const diffHour = Math.floor(diffMin / 60);
-    if (diffHour < 24) return `${diffHour} 小时前`;
-
-    const diffDay = Math.floor(diffHour / 24);
-    if (diffDay < 7) return `${diffDay} 天前`;
-
-    const diffWeek = Math.floor(diffDay / 7);
-    if (diffWeek < 4) return `${diffWeek} 周前`;
-
-    const diffMonth = Math.floor(diffDay / 30);
-    if (diffMonth < 12) return `${diffMonth} 个月前`;
-
-    const diffYear = Math.floor(diffDay / 365);
-    return `${diffYear} 年前`;
-  }
-
-  // 解析引用类型
-  function getRefType(ref: string): "head" | "remote" | "tag" | "default" {
-    const r = ref.trim().toLowerCase();
-    if (r.includes("head") || r.includes("->")) return "head";
-    if (r.includes("origin/") || r.includes("upstream/")) return "remote";
-    if (r.includes("tag:")) return "tag";
-    return "default";
-  }
-
-  // 清理引用显示名称
-  function cleanRefName(ref: string): string {
-    return ref
-      .replace("HEAD -> ", "")
-      .replace("tag: ", "")
-      .trim();
-  }
-
   // 复制哈希到剪贴板
   async function copyHash(hash: string) {
     await navigator.clipboard.writeText(hash);
     setCopiedHash(hash);
     setTimeout(() => setCopiedHash(null), 2000);
     showToast("success", "已复制", "哈希值已复制到剪贴板");
-  }
-
-  // 获取远程仓库提交链接
-  function getRemoteCommitUrl(hash: string): string | null {
-    const remote = remotes.find(r => r.name === currentRemote);
-    if (!remote) return null;
-
-    let url = remote.url;
-    // 移除 .git 后缀
-    if (url.endsWith(".git")) {
-      url = url.slice(0, -4);
-    }
-
-    // 解析 Git URL
-    if (url.includes("github.com")) {
-      const match = url.match(/github\.com[:/](.+)$/);
-      if (match) return `https://github.com/${match[1]}/commit/${hash}`;
-    } else if (url.includes("gitee.com")) {
-      const match = url.match(/gitee\.com[:/](.+)$/);
-      if (match) return `https://gitee.com/${match[1]}/commit/${hash}`;
-    } else if (url.includes("gitlab")) {
-      const match = url.match(/gitlab[^/]*[:/](.+)$/);
-      if (match) {
-        const base = url.startsWith("https://") ? url.split(/[:/]/).slice(0, 3).join("://").replace(":///", "://") : "https://gitlab.com";
-        return `${base}/${match[1]}/-/commit/${hash}`;
-      }
-    }
-
-    return null;
-  }
-
-  // 检查窗口最大化状态
-  useEffect(() => {
-    checkMaximized();
-    const handleResize = () => checkMaximized();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  async function checkMaximized() {
-    try {
-      const appWindow = getCurrentWindow();
-      const maximized = await appWindow.isMaximized();
-      setIsMaximized(maximized);
-    } catch (error) {
-      console.error("Failed to check maximized state:", error);
-    }
-  }
-
-  async function handleToggleMaximize() {
-    try {
-      const appWindow = getCurrentWindow();
-      await appWindow.toggleMaximize();
-      checkMaximized();
-    } catch (error) {
-      console.error("Failed to toggle maximize:", error);
-    }
-  }
-
-  async function handleMinimize() {
-    try {
-      const appWindow = getCurrentWindow();
-      await appWindow.minimize();
-    } catch (error) {
-      console.error("Failed to minimize:", error);
-    }
   }
 
   // 当外部 project prop 改变时同步本地状态
@@ -195,7 +128,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
 
   useEffect(() => {
     loadProjectDetails();
-  }, [project.path]);
+  }, [project.path, historyLimit]);
 
   // 当远程列表加载完成后，设置默认当前远程
   useEffect(() => {
@@ -206,28 +139,74 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
 
   // 当切换远程仓库时，重新获取提交历史
   useEffect(() => {
-    if (currentRemote && gitStatus?.branch) {
+    if (commitView === "history" && currentRemote && gitStatus?.branch) {
       loadCommitHistory();
     }
-  }, [currentRemote, gitStatus?.branch]);
+  }, [currentRemote, gitStatus?.branch, historyLimit, commitView]);
+
+  useEffect(() => {
+    if (commitView !== "history") {
+      return;
+    }
+
+    const query = searchQuery.trim();
+    if (!query) {
+      loadCommitHistory();
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        setLoading(true);
+        const result = await searchCommits(project.path, query, "message", 50);
+        setCommits(result);
+      } catch (error) {
+        console.error("Failed to search commits:", error);
+        setCommits([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [project.path, searchQuery, commitView]);
 
   async function loadCommitHistory() {
-    if (!currentRemote || !gitStatus?.branch) return;
+    if (!gitStatus?.branch) return;
     try {
-      // 获取远程分支的提交历史
-      const refName = `${currentRemote}/${gitStatus.branch}`;
-      const commitHistory = await getCommitHistory(project.path, 10, refName);
+      const commitHistory = await getCommitHistory(project.path, historyLimit);
       setCommits(commitHistory);
     } catch (error) {
       console.error("Failed to load commit history:", error);
-      // 如果远程分支不存在，回退到本地分支的提交历史
       try {
-        const localCommits = await getCommitHistory(project.path, 10);
+        const localCommits = await getCommitHistory(project.path, historyLimit);
         setCommits(localCommits);
       } catch {
         setCommits([]);
       }
     }
+  }
+
+  async function loadDivergenceCommits(view: "ahead" | "behind") {
+    try {
+      setLoading(true);
+      setSearchQuery("");
+      setCommitView(view);
+      const range = view === "ahead" ? "@{upstream}..HEAD" : "HEAD..@{upstream}";
+      const result = await getCommitHistory(project.path, historyLimit, range);
+      setCommits(result);
+    } catch (error) {
+      console.error("Failed to load divergence commits:", error);
+      setCommits([]);
+      showToast("error", view === "ahead" ? "读取待推送提交失败" : "读取待拉取提交失败", "当前分支可能没有设置 upstream，或需要先执行 git fetch");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function showRecentCommits() {
+    setCommitView("history");
+    await loadCommitHistory();
   }
 
   async function loadProjectDetails() {
@@ -239,17 +218,24 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
       ]);
       setGitStatus(status);
       setRemotes(remoteList);
-
-      // 直接加载提交历史（不依赖 useEffect）
-      if (currentRemote && status.branch) {
-        const refName = `${currentRemote}/${status.branch}`;
+      if (commitView !== "history") {
+        const range = commitView === "ahead" ? "@{upstream}..HEAD" : "HEAD..@{upstream}";
         try {
-          const commitHistory = await getCommitHistory(project.path, 10, refName);
+          const commitHistory = await getCommitHistory(project.path, historyLimit, range);
           setCommits(commitHistory);
         } catch {
-          // 如果远程分支不存在，回退到本地分支的提交历史
+          setCommits([]);
+        }
+        return;
+      }
+
+      if (status.branch) {
+        try {
+          const commitHistory = await getCommitHistory(project.path, historyLimit);
+          setCommits(commitHistory);
+        } catch {
           try {
-            const localCommits = await getCommitHistory(project.path, 10);
+            const localCommits = await getCommitHistory(project.path, historyLimit);
             setCommits(localCommits);
           } catch {
             setCommits([]);
@@ -263,35 +249,32 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
     }
   }
 
-  async function handlePull() {
-    if (!gitStatus || !currentRemote || pulling) return;
-    try {
-      setPulling(true);
-      await gitPull(project.path, currentRemote, gitStatus.branch);
-      await loadProjectDetails();
-      markProjectDirty(project.path); // Mark for stats refresh
-      showToast("success", "拉取成功", `已从 ${currentRemote}/${gitStatus.branch} 拉取最新代码`);
-    } catch (error) {
-      console.error("Failed to pull:", error);
-      showToast("error", "拉取失败", String(error));
-    } finally {
-      setPulling(false);
-    }
-  }
+  async function handleOpenProjectChat() {
+    const providers = ensureAiDefaultProvider(aiProviders);
+    const provider = providers.find((item) => item.enabled && item.isDefaultProvider) || providers.find((item) => item.enabled);
+    const model = provider?.models.find((item) => item.enabled && item.isDefault) || provider?.models.find((item) => item.enabled);
 
-  async function handlePush() {
-    if (!gitStatus || !currentRemote || pushing) return;
+    if (!provider || !model) {
+      showToast("warning", "请先配置 AI 模型", "需要可用的供应商与模型后才能创建项目会话");
+      setCurrentPage("aiProviders");
+      return;
+    }
+
     try {
-      setPushing(true);
-      await gitPush(project.path, currentRemote, gitStatus.branch);
-      await loadProjectDetails();
-      markProjectDirty(project.path); // Mark for stats refresh
-      showToast("success", "推送成功", `已推送到 ${currentRemote}/${gitStatus.branch}`);
+      const session = await createChatSession({
+        title: `${project.name} 对话`,
+        providerId: provider.id,
+        modelId: model.id,
+      });
+      const saved = await saveChatSession({
+        ...session,
+        allowedCwd: project.path,
+      });
+      navigateToChatSession(saved.id);
+      showToast("success", "已创建项目会话", `目录已设置为 ${project.name}`);
     } catch (error) {
-      console.error("Failed to push:", error);
-      showToast("error", "推送失败", String(error));
-    } finally {
-      setPushing(false);
+      console.error("Failed to create project chat:", error);
+      showToast("error", "创建项目会话失败", String(error));
     }
   }
 
@@ -325,26 +308,7 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
     }
   }
 
-  async function handleRemoveRemote(remoteName: string) {
-    if (!confirm(`确定要删除远程仓库 "${remoteName}" 吗？`)) {
-      return;
-    }
-    try {
-      await removeRemote(project.path, remoteName);
-      await loadProjectDetails();
-      showToast("success", "删除成功", `远程仓库 ${remoteName} 已删除`);
-    } catch (error) {
-      console.error("Failed to remove remote:", error);
-      showToast("error", "删除失败", String(error));
-    }
-  }
 
-  const getRemoteType = (url: string) => {
-    if (url.includes("github.com")) return "GitHub";
-    if (url.includes("gitee.com")) return "Gitee";
-    if (url.includes("gitlab")) return "GitLab";
-    return "Git";
-  };
 
   return (
     <div className="project-detail-panel">
@@ -495,435 +459,90 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
             <span>{pushing ? '推送中...' : '推送'}</span>
           </button>
           <div className="divider-vertical"></div>
+          {/* 关闭详情面板 - 文字 + 左箭头，明显区别于右侧 macOS 窗口控制按钮 */}
           <button
             onClick={onClose}
-            className="icon-btn"
-            title="关闭面板"
+            className="back-to-shelf-btn"
+            title="返回项目书架（仅关闭详情面板，不关闭窗口）"
           >
-            <X size={16} />
+            <ArrowLeft size={14} />
+            <span>返回书架</span>
           </button>
-          {/* 窗口控制按钮 */}
-          <div className="flex items-center ml-1 border-l border-gray-200 pl-2 gap-1">
-            <button
-              onClick={handleToggleMaximize}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
-              title={isMaximized ? "还原" : "最大化"}
-            >
-              {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </button>
-            <button
-              onClick={handleMinimize}
-              className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
-              title="最小化"
-            >
-              <Minus size={14} />
-            </button>
-            <button
-              onClick={() => getCurrentWindow()?.close()}
-              className="w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white rounded-md transition-colors text-gray-400"
-              title="关闭窗口"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          {/* 窗口控制按钮 - 与主面板保持一致 */}
+          <MacWindowControls />
         </div>
       </header>
 
       {/* 主体内容 */}
-      <div className="flex flex-1 pt-[4.5rem]">
+      <div className="project-detail-content flex flex-1 pt-[4.5rem]">
         {/* Sidebar */}
         <aside className="project-detail-sidebar">
-          {/* 可滚动区域 */}
-          <div className="sidebar-scroll-area">
-          {/* 分支状态卡片 */}
-          <div className="sidebar-section">
-            <div className="section-header">
-              <span className="section-title">当前分支</span>
-              <span className={`status-badge ${gitStatus?.isClean ? 'status-badge-success' : 'status-badge-warning'}`}>
-                {gitStatus?.isClean ? "已同步" : "有修改"}
-              </span>
-            </div>
+          <GitSidebar
+            gitStatus={gitStatus}
+            remotes={remotes}
+            currentRemote={currentRemote}
+            onOpenBranchModal={() => setShowBranchModal(true)}
+            onAddRemote={() => setShowAddRemoteModal(true)}
+            onOpenSyncModal={() => setShowSyncModal(true)}
+            onSelectRemote={(remoteName) => {
+              setCurrentRemote(remoteName);
+              showToast("success", "切换成功", `已切换到远程仓库 ${remoteName}`);
+            }}
+            onRemoveRemote={handleRemoveRemote}
+            onFetchRemote={handleFetchRemote}
+            onStageFiles={handleStageFiles}
+            onUnstageFiles={handleUnstageFiles}
+            onDiscardFiles={handleDiscardFiles}
+            onPreviewConflict={handlePreviewConflict}
+          />
 
-            <div className="branch-card">
-              <div className="flex items-center gap-sm mb-xs">
-                <GitBranch size={16} className="text-blue-600" />
-                <span className="branch-name">{gitStatus?.branch || "master"}</span>
-              </div>
-              <div className="branch-meta">
-                <div className="branch-indicator"></div>
-                <span className="branch-changes">
-                  {gitStatus?.isClean
-                    ? "0 个修改"
-                    : `${(gitStatus?.unstaged.length || 0) + (gitStatus?.untracked.length || 0)} 个修改`
-                  }
-                </span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowBranchModal(true)}
-              className="branch-switch-btn"
-            >
-              <span>+</span>
-              <span>切换或创建分支</span>
-            </button>
-          </div>
-
-          {/* 远程仓库信息 */}
-          <div className="sidebar-section sidebar-section-flex">
-            <div className="section-header">
-              <span className="section-title">远程仓库</span>
-            </div>
-
-            {remotes.length > 0 ? (
-              <div className="remotes-scroll-area">
-                {[...remotes]
-                  .sort((a, b) => {
-                    // 当前远程仓库排在第一位
-                    if (a.name === currentRemote) return -1;
-                    if (b.name === currentRemote) return 1;
-                    return 0;
-                  })
-                  .map((remote) => {
-                  const isCurrent = remote.name === currentRemote;
-                  return (
-                    <div
-                      key={remote.name}
-                      className={`remote-card ${!isCurrent ? 'remote-card-secondary' : ''}`}
-                    >
-                      <div className="flex items-center gap-sm mb-xs relative z-10">
-                        <div className="remote-icon">
-                          <GitBranch size={12} className={isCurrent ? "text-blue-500" : "text-gray-400"} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="remote-name">
-                            {remote.name}
-                            {isCurrent ? (
-                              <span className="remote-badge">当前</span>
-                            ) : (
-                              <span className="remote-badge-secondary">备用</span>
-                            )}
-                          </div>
-                          <div className="remote-type">{getRemoteType(remote.url)}</div>
-                        </div>
-                        {/* 非当前仓库可切换和删除 */}
-                        {!isCurrent && (
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => {
-                                setCurrentRemote(remote.name);
-                                showToast("success", "切换成功", `已切换到远程仓库 ${remote.name}`);
-                              }}
-                              className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
-                              title="设为当前远程仓库"
-                            >
-                              <Check size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleRemoveRemote(remote.name)}
-                              className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                              title="删除此远程仓库"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      <div className="remote-url relative z-10">
-                        {remote.url}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-xl text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
-                <div className="text-sm font-medium mb-3">暂无远程仓库</div>
-                <button
-                  onClick={() => setShowAddRemoteModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                >
-                  <Plus size={14} />
-                  添加远程仓库
-                </button>
-              </div>
-            )}
-
-            {/* 同步按钮 */}
-            {remotes.length > 0 && (
-              <div className="flex gap-sm mt-md">
-                <button
-                  onClick={() => setShowAddRemoteModal(true)}
-                  className="flex-1 flex items-center justify-center gap-sm px-md py-sm bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium border border-gray-200"
-                >
-                  <Plus size={14} />
-                  <span>添加远程</span>
-                </button>
-                <button
-                  onClick={() => setShowSyncModal(true)}
-                  className="flex-1 sync-btn"
-                >
-                  <Database size={14} />
-                  <span>同步远程库</span>
-                </button>
-              </div>
-            )}
-          </div>
-          </div>{/* 可滚动区域结束 */}
-
-          {/* 快捷操作 - 固定在侧边栏底部 */}
-          <div className="sidebar-section-bottom">
-            <div className="quick-actions-title">快捷操作</div>
-            <div className="quick-actions-grid">
-              <button
-                onClick={loadReadme}
-                className="quick-action-btn-compact"
-                title="查看 README"
-              >
-                <FileText size={14} />
-                <span>README</span>
-              </button>
-              <button
-                onClick={() => {
-                  const editorPath = getEditorForProject(storeProject, editors);
-                  openInEditor(project.path, editorPath);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setShowEditorMenu({ x: e.clientX, y: e.clientY });
-                }}
-                className="quick-action-btn-compact"
-                title={(() => {
-                  const ed = getEditorConfigForProject(storeProject, editors);
-                  return ed ? `用 ${ed.name} 打开（右键选择）` : "在编辑器中打开（右键选择编辑器）";
-                })()}
-              >
-                <span className="editor-icon-text" style={{ fontSize: 10, width: 14, height: 14, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                  {(() => {
-                    const ed = getEditorConfigForProject(storeProject, editors);
-                    return ed ? getEditorIcon(ed.name) : "Ed";
-                  })()}
-                </span>
-                <span>{(() => {
-                  const ed = getEditorConfigForProject(storeProject, editors);
-                  return ed ? ed.name : "编辑器";
-                })()}</span>
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    await openInExplorer(project.path);
-                  } catch (error) {
-                    console.error("Failed to open explorer:", error);
-                    showToast("error", "打开文件夹失败", String(error));
-                  }
-                }}
-                className="quick-action-btn-compact"
-                title="打开文件夹"
-              >
-                <FolderOpen size={14} />
-                <span>文件夹</span>
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const termType = terminalConfig.type === "default" ? undefined : terminalConfig.type;
-                    const termPath = terminalConfig.paths?.[terminalConfig.type as keyof typeof terminalConfig.paths];
-                    await openInTerminal(project.path, termType, terminalConfig.customPath, termPath);
-                  } catch (error) {
-                    console.error("Failed to open terminal:", error);
-                    showToast("error", "打开终端失败", String(error));
-                  }
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setShowTerminalMenu({ x: e.clientX, y: e.clientY });
-                }}
-                className="quick-action-btn-compact"
-                title="终端（右键打开 Claude Code）"
-              >
-                <Terminal size={14} />
-                <span>终端</span>
-              </button>
-            </div>
-          </div>
+          <ProjectQuickActions
+            project={project}
+            storeProject={storeProject}
+            onLoadReadme={loadReadme}
+            onOpenProjectChat={handleOpenProjectChat}
+            onShowEditorMenu={setShowEditorMenu}
+            onShowTerminalMenu={setShowTerminalMenu}
+          />
         </aside>
 
-        {/* Main Content */}
-        <main className="project-detail-main">
-          {/* 提交历史头部 */}
-          <div className="commits-header">
-            <div className="commits-title">
-              <History size={16} className="text-gray-500" />
-              <span className="commits-title-text">最近提交</span>
-              <span className="commits-count">{commits.length}</span>
-            </div>
-            <button
-              onClick={loadProjectDetails}
-              className="icon-btn"
-              title="刷新"
-            >
-              <RefreshCw size={14} />
-            </button>
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          <div className="ml-72 px-4 pt-3 pb-1 flex-shrink-0">
+            <ReadmeSection
+              projectPath={project.path}
+              onOpenFullView={(c) => {
+                setReadmeContent(c);
+                setShowReadme(true);
+              }}
+            />
           </div>
-
-          {/* 提交列表 */}
-          <div className="commits-list">
-            {loading ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="loading-spinner"></div>
-              </div>
-            ) : commits.length === 0 ? (
-              <div className="empty-state">
-                <History size={48} className="empty-state-icon" />
-                <p className="empty-state-text">暂无提交记录</p>
-              </div>
-            ) : (
-              commits.map((commit, index) => {
-                const isExpanded = expandedCommit === commit.hash;
-                const remoteUrl = getRemoteCommitUrl(commit.hash);
-
-                return (
-                  <div
-                    key={commit.hash}
-                    className={`commit-card ${index === 0 ? 'commit-card-newest' : ''} ${isExpanded ? 'commit-card-expanded' : ''} animate-slide-up`}
-                    style={{ animationDelay: `${index * 0.05}s` }}
-                  >
-                    <div className="flex items-start gap-md">
-                      {/* 提交时间线 */}
-                      <div className="flex flex-col items-center self-stretch pt-xs">
-                        <div className={`commit-dot ${index === 0 ? 'commit-dot' : ''}`}></div>
-                        {index !== commits.length - 1 && <div className="commit-line"></div>}
-                      </div>
-
-                      {/* 提交内容 */}
-                      <div className="flex-1 min-w-0 pb-xs">
-                        {/* 头部 - 点击展开/收起 */}
-                        <div
-                          className="flex items-start justify-between gap-sm cursor-pointer"
-                          onClick={() => setExpandedCommit(isExpanded ? null : commit.hash)}
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-sm mb-xs">
-                              <button className="commit-expand-toggle">
-                                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                              </button>
-                              <span className="commit-message line-clamp-1">
-                                {commit.message}
-                              </span>
-                              {index === 0 && (
-                                <span className="commit-badge-new">最新</span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-md text-sm text-gray-600 ml-6">
-                              <span className="commit-hash">
-                                {commit.shortHash}
-                              </span>
-                              <span className="commit-author">
-                                <User size={12} />
-                                {commit.author}
-                              </span>
-                              <span
-                                className="commit-date"
-                                title={new Date(commit.date).toLocaleString("zh-CN")}
-                              >
-                                <Clock size={12} />
-                                {formatRelativeTime(commit.date)}
-                              </span>
-                            </div>
-
-                            {/* 文件变更统计 */}
-                            {(commit.filesChanged !== undefined || commit.insertions !== undefined || commit.deletions !== undefined) && (
-                              <div className="commit-stats ml-6">
-                                {commit.filesChanged !== undefined && (
-                                  <span className="commit-stat-files">
-                                    <Files size={11} />
-                                    {commit.filesChanged} 文件
-                                  </span>
-                                )}
-                                {commit.insertions !== undefined && commit.insertions > 0 && (
-                                  <span className="commit-stat-add">+{commit.insertions}</span>
-                                )}
-                                {commit.deletions !== undefined && commit.deletions > 0 && (
-                                  <span className="commit-stat-del">-{commit.deletions}</span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* 分支/标签引用 */}
-                            {commit.refs && commit.refs.length > 0 && (
-                              <div className="commit-refs ml-6">
-                                {commit.refs.map((ref, i) => {
-                                  const refType = getRefType(ref);
-                                  const refClass = refType === "head" ? "ref-tag-head" :
-                                                   refType === "remote" ? "ref-tag-remote" :
-                                                   refType === "tag" ? "ref-tag-tag" : "";
-                                  return (
-                                    <span key={i} className={`ref-tag ${refClass}`}>
-                                      {cleanRefName(ref)}
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* 展开详情 */}
-                        {isExpanded && (
-                          <div className="commit-detail ml-6">
-                            {/* 提交描述 */}
-                            {commit.body && (
-                              <div className="commit-body">{commit.body}</div>
-                            )}
-
-                            {/* 完整哈希 */}
-                            <div className="commit-full-hash">
-                              <span>完整哈希:</span>
-                              <code>{commit.hash}</code>
-                            </div>
-
-                            {/* 作者邮箱 */}
-                            <div className="commit-full-hash">
-                              <Mail size={12} />
-                              <span>{commit.email}</span>
-                            </div>
-
-                            {/* 快捷操作 */}
-                            <div className="commit-actions">
-                              <button
-                                className={`commit-action-btn ${copiedHash === commit.hash ? 'commit-action-btn-success' : ''}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  copyHash(commit.hash);
-                                }}
-                              >
-                                {copiedHash === commit.hash ? <Check size={12} /> : <Copy size={12} />}
-                                {copiedHash === commit.hash ? "已复制" : "复制哈希"}
-                              </button>
-                              {remoteUrl && (
-                                <button
-                                  className="commit-action-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openUrl(remoteUrl);
-                                  }}
-                                >
-                                  <ExternalLink size={12} />
-                                  在远程查看
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <CommitHistoryPanel
+              projectPath={project.path}
+              commits={commits}
+              remotes={remotes}
+              gitStatus={gitStatus}
+              currentRemote={currentRemote}
+              loading={loading}
+              expandedCommit={expandedCommit}
+              copiedHash={copiedHash}
+              searchQuery={searchQuery}
+              historyLimit={historyLimit}
+              activeView={commitView}
+              onRefresh={loadProjectDetails}
+              onShowHistory={showRecentCommits}
+              onShowAhead={() => loadDivergenceCommits("ahead")}
+              onShowBehind={() => loadDivergenceCommits("behind")}
+              onSearchChange={setSearchQuery}
+              onLoadMore={() => setHistoryLimit((limit) => limit + 20)}
+              onToggleCommit={(hash) => setExpandedCommit(expandedCommit === hash ? null : hash)}
+              onCopyHash={copyHash}
+              onCopyMessage={handleCopyCommitMessage}
+              onRevertCommit={handleRevertCommit}
+              onCherryPickCommit={handleCherryPickCommit}
+            />
           </div>
-        </main>
+        </div>
       </div>
 
       {/* 快速切换页脚 */}
@@ -947,6 +566,44 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
             ))}
           </div>
         </footer>
+      )}
+
+      {conflictPreview && (
+        <div className="modal-overlay animate-fade-in">
+          <div className="modal-content animate-scale-in max-w-6xl">
+            <div className="modal-header">
+              <div>
+                <h3 className="modal-title">冲突对比</h3>
+                <p className="modal-subtitle">{conflictPreview.file}</p>
+              </div>
+              <button onClick={() => setConflictPreview(null)} className="modal-close-btn">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="conflict-compare-grid">
+                <ConflictColumn title="共同祖先" content={conflictPreview.base} />
+                <ConflictColumn title="当前分支版本" content={conflictPreview.current} />
+                <ConflictColumn title="传入分支版本" content={conflictPreview.incoming} />
+              </div>
+              <div className="conflict-worktree-panel">
+                <div className="commit-files-title">当前工作区文件</div>
+                <pre>{conflictPreview.worktree || "无法读取当前文件内容"}</pre>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="modal-btn modal-btn-secondary" onClick={() => handleUseConflictVersion(conflictPreview.file, "ours")}>
+                采用当前分支版本
+              </button>
+              <button className="modal-btn modal-btn-secondary" onClick={() => handleUseConflictVersion(conflictPreview.file, "theirs")}>
+                采用传入分支版本
+              </button>
+              <button className="modal-btn modal-btn-primary" onClick={() => handleMarkResolved(conflictPreview.file)}>
+                已手动解决，标记完成
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Category Modal */}
@@ -1079,6 +736,15 @@ export function ProjectDetailPanel({ project, onClose, onUpdate, onSwitchProject
           onClose={() => setShowTerminalMenu(null)}
         />
       )}
+    </div>
+  );
+}
+
+function ConflictColumn({ title, content }: { title: string; content?: string | null }) {
+  return (
+    <div className="conflict-column">
+      <div className="commit-files-title">{title}</div>
+      <pre>{content || "此版本不存在或无法读取"}</pre>
     </div>
   );
 }

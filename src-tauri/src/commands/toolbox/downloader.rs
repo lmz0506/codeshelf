@@ -1,6 +1,7 @@
 // 文件下载模块 - 支持断点续传、重试机制、下载队列管理
 
 use super::{current_time, generate_id, DownloadConfig, DownloadTask};
+use crate::error::AppResult;
 use crate::storage;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -41,7 +42,7 @@ async fn ensure_tasks_loaded() {
 }
 
 /// 从文件加载下载任务
-fn load_tasks_from_file() -> Result<HashMap<String, DownloadTask>, String> {
+fn load_tasks_from_file() -> AppResult<HashMap<String, DownloadTask>> {
     let config = storage::get_storage_config()?;
     let path = config.download_tasks_file();
 
@@ -53,13 +54,13 @@ fn load_tasks_from_file() -> Result<HashMap<String, DownloadTask>, String> {
     }
 
     let content = fs::read_to_string(&path)
-        .map_err(|e| format!("读取下载任务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("读取下载任务失败: {}", e)))?;
 
     // 直接解析为任务数组
-    let tasks: Vec<DownloadTask> = serde_json::from_str(&content)
-        .unwrap_or_default();
+    let tasks: Vec<DownloadTask> = serde_json::from_str(&content).unwrap_or_default();
 
-    let result: HashMap<String, DownloadTask> = tasks.into_iter()
+    let result: HashMap<String, DownloadTask> = tasks
+        .into_iter()
         .map(|mut t| {
             // 重启后，下载中的任务变为暂停
             if t.status == "downloading" {
@@ -74,7 +75,7 @@ fn load_tasks_from_file() -> Result<HashMap<String, DownloadTask>, String> {
 }
 
 /// 保存下载任务到文件
-async fn save_tasks_to_file() -> Result<(), String> {
+async fn save_tasks_to_file() -> AppResult<()> {
     let config = storage::get_storage_config()?;
     config.ensure_dirs()?;
 
@@ -83,13 +84,13 @@ async fn save_tasks_to_file() -> Result<(), String> {
 
     // 直接保存为任务数组
     let content = serde_json::to_string(&tasks_vec)
-        .map_err(|e| format!("序列化下载任务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("序列化下载任务失败: {}", e)))?;
 
     let path = config.download_tasks_file();
     log::info!("保存下载任务到: {:?}", path);
 
     fs::write(&path, content)
-        .map_err(|e| format!("写入下载任务失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("写入下载任务失败: {}", e)))?;
 
     log::info!("下载任务保存成功，共 {} 个任务", tasks.len());
     Ok(())
@@ -125,7 +126,8 @@ fn extract_filename(url: &str) -> String {
 
 /// 开始下载
 #[tauri::command]
-pub async fn start_download(config: DownloadConfig) -> Result<String, String> {
+#[specta::specta]
+pub async fn start_download(config: DownloadConfig) -> AppResult<String> {
     ensure_tasks_loaded().await;
 
     let task_id = generate_id();
@@ -198,13 +200,13 @@ async fn download_with_retry(task_id: &str, url: &str, save_path: &str, max_retr
             Err(e) => {
                 // 检查是否被取消
                 if is_cancelled(task_id).await {
-                    update_task_status(task_id, "cancelled", Some(e.clone())).await;
+                    update_task_status(task_id, "cancelled", Some(e.to_string())).await;
                     return;
                 }
 
                 retries += 1;
                 if retries > max_retries {
-                    update_task_status(task_id, "failed", Some(e)).await;
+                    update_task_status(task_id, "failed", Some(e.to_string())).await;
                     return;
                 }
 
@@ -217,17 +219,15 @@ async fn download_with_retry(task_id: &str, url: &str, save_path: &str, max_retr
 }
 
 /// 执行下载
-async fn download_file(task_id: &str, url: &str, save_path: &str) -> Result<(), String> {
+async fn download_file(task_id: &str, url: &str, save_path: &str) -> AppResult<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(300))
         .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("创建 HTTP 客户端失败: {}", e)))?;
 
     // 检查是否存在部分下载的文件（断点续传）
     let existing_size = if Path::new(save_path).exists() {
-        fs::metadata(save_path)
-            .map(|m| m.len())
-            .unwrap_or(0)
+        fs::metadata(save_path).map(|m| m.len()).unwrap_or(0)
     } else {
         0
     };
@@ -257,12 +257,15 @@ async fn download_file(task_id: &str, url: &str, save_path: &str) -> Result<(), 
     let response = request
         .send()
         .await
-        .map_err(|e| format!("请求失败: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("请求失败: {}", e)))?;
 
     // 检查响应状态
     let status = response.status();
     if !status.is_success() && status.as_u16() != 206 {
-        return Err(format!("HTTP 错误: {}", status));
+        return Err(crate::error::AppError::from(format!(
+            "HTTP 错误: {}",
+            status
+        )));
     }
 
     // 从响应头获取文件大小（如果 HEAD 请求没有获取到）
@@ -292,7 +295,8 @@ async fn download_file(task_id: &str, url: &str, save_path: &str) -> Result<(), 
 
     // 确保目录存在
     if let Some(parent) = Path::new(save_path).parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| crate::error::AppError::from(format!("创建目录失败: {}", e)))?;
     }
 
     // 打开文件（追加模式用于断点续传）
@@ -300,9 +304,10 @@ async fn download_file(task_id: &str, url: &str, save_path: &str) -> Result<(), 
         OpenOptions::new()
             .append(true)
             .open(save_path)
-            .map_err(|e| format!("打开文件失败: {}", e))?
+            .map_err(|e| crate::error::AppError::from(format!("打开文件失败: {}", e)))?
     } else {
-        File::create(save_path).map_err(|e| format!("创建文件失败: {}", e))?
+        File::create(save_path)
+            .map_err(|e| crate::error::AppError::from(format!("创建文件失败: {}", e)))?
     };
 
     // 下载数据
@@ -316,12 +321,13 @@ async fn download_file(task_id: &str, url: &str, save_path: &str) -> Result<(), 
     while let Some(chunk) = stream.next().await {
         // 检查是否被取消
         if is_cancelled(task_id).await {
-            return Err("下载已取消".to_string());
+            return Err(crate::error::AppError::from("下载已取消".to_string()));
         }
 
-        let chunk = chunk.map_err(|e| format!("读取数据失败: {}", e))?;
+        let chunk =
+            chunk.map_err(|e| crate::error::AppError::from(format!("读取数据失败: {}", e)))?;
         file.write_all(&chunk)
-            .map_err(|e| format!("写入文件失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("写入文件失败: {}", e)))?;
 
         downloaded += chunk.len() as u64;
 
@@ -398,7 +404,8 @@ async fn update_task_status(task_id: &str, status: &str, error: Option<String>) 
 
 /// 暂停下载
 #[tauri::command]
-pub async fn pause_download(task_id: String) -> Result<(), String> {
+#[specta::specta]
+pub async fn pause_download(task_id: String) -> AppResult<()> {
     ensure_tasks_loaded().await;
 
     // 设置取消标志
@@ -417,7 +424,8 @@ pub async fn pause_download(task_id: String) -> Result<(), String> {
 
 /// 恢复下载
 #[tauri::command]
-pub async fn resume_download(task_id: String) -> Result<(), String> {
+#[specta::specta]
+pub async fn resume_download(task_id: String) -> AppResult<()> {
     ensure_tasks_loaded().await;
 
     // 获取任务信息
@@ -426,10 +434,13 @@ pub async fn resume_download(task_id: String) -> Result<(), String> {
         tasks.get(&task_id).cloned()
     };
 
-    let task = task.ok_or_else(|| format!("任务不存在: {}", task_id))?;
+    let task =
+        task.ok_or_else(|| crate::error::AppError::from(format!("任务不存在: {}", task_id)))?;
 
     if task.status != "paused" {
-        return Err("任务未暂停，无法恢复".to_string());
+        return Err(crate::error::AppError::from(
+            "任务未暂停，无法恢复".to_string(),
+        ));
     }
 
     // 重置取消标志
@@ -452,7 +463,8 @@ pub async fn resume_download(task_id: String) -> Result<(), String> {
 
 /// 取消下载
 #[tauri::command]
-pub async fn cancel_download(task_id: String) -> Result<(), String> {
+#[specta::specta]
+pub async fn cancel_download(task_id: String) -> AppResult<()> {
     ensure_tasks_loaded().await;
 
     // 设置取消标志
@@ -494,7 +506,8 @@ pub async fn cancel_download(task_id: String) -> Result<(), String> {
 
 /// 获取所有下载任务
 #[tauri::command]
-pub async fn get_download_tasks() -> Result<Vec<DownloadTask>, String> {
+#[specta::specta]
+pub async fn get_download_tasks() -> AppResult<Vec<DownloadTask>> {
     ensure_tasks_loaded().await;
 
     let tasks = DOWNLOAD_TASKS.lock().await;
@@ -503,7 +516,8 @@ pub async fn get_download_tasks() -> Result<Vec<DownloadTask>, String> {
 
 /// 获取单个下载任务
 #[tauri::command]
-pub async fn get_download_task(task_id: String) -> Result<Option<DownloadTask>, String> {
+#[specta::specta]
+pub async fn get_download_task(task_id: String) -> AppResult<Option<DownloadTask>> {
     ensure_tasks_loaded().await;
 
     let tasks = DOWNLOAD_TASKS.lock().await;
@@ -512,7 +526,8 @@ pub async fn get_download_task(task_id: String) -> Result<Option<DownloadTask>, 
 
 /// 清除已完成的下载任务
 #[tauri::command]
-pub async fn clear_completed_downloads() -> Result<u32, String> {
+#[specta::specta]
+pub async fn clear_completed_downloads() -> AppResult<u32> {
     ensure_tasks_loaded().await;
 
     let mut tasks = DOWNLOAD_TASKS.lock().await;
@@ -535,7 +550,8 @@ pub async fn clear_completed_downloads() -> Result<u32, String> {
 
 /// 打开下载文件夹
 #[tauri::command]
-pub async fn open_download_folder(task_id: String) -> Result<(), String> {
+#[specta::specta]
+pub async fn open_download_folder(task_id: String) -> AppResult<()> {
     ensure_tasks_loaded().await;
 
     let save_path = {
@@ -543,7 +559,7 @@ pub async fn open_download_folder(task_id: String) -> Result<(), String> {
         tasks.get(&task_id).map(|t| t.save_path.clone())
     };
 
-    let path = save_path.ok_or_else(|| "任务不存在".to_string())?;
+    let path = save_path.ok_or_else(|| crate::error::AppError::from("任务不存在".to_string()))?;
 
     // 获取目录路径
     let dir = Path::new(&path)
@@ -557,7 +573,7 @@ pub async fn open_download_folder(task_id: String) -> Result<(), String> {
         std::process::Command::new("explorer")
             .arg(&dir)
             .spawn()
-            .map_err(|e| format!("打开文件夹失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("打开文件夹失败: {}", e)))?;
     }
 
     #[cfg(target_os = "macos")]
@@ -565,7 +581,7 @@ pub async fn open_download_folder(task_id: String) -> Result<(), String> {
         std::process::Command::new("open")
             .arg(&dir)
             .spawn()
-            .map_err(|e| format!("打开文件夹失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("打开文件夹失败: {}", e)))?;
     }
 
     #[cfg(target_os = "linux")]
@@ -573,7 +589,7 @@ pub async fn open_download_folder(task_id: String) -> Result<(), String> {
         std::process::Command::new("xdg-open")
             .arg(&dir)
             .spawn()
-            .map_err(|e| format!("打开文件夹失败: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("打开文件夹失败: {}", e)))?;
     }
 
     Ok(())
@@ -581,7 +597,8 @@ pub async fn open_download_folder(task_id: String) -> Result<(), String> {
 
 /// 删除下载任务（可选删除文件）
 #[tauri::command]
-pub async fn remove_download_task(task_id: String, delete_file: Option<bool>) -> Result<(), String> {
+#[specta::specta]
+pub async fn remove_download_task(task_id: String, delete_file: Option<bool>) -> AppResult<()> {
     ensure_tasks_loaded().await;
 
     let delete_file = delete_file.unwrap_or(false);

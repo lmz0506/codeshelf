@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
-import { useAppStore, Theme, TerminalConfig } from "@/stores/appStore";
-import { Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard } from "lucide-react";
-import { MacWindowControls } from "@/components/layout/MacWindowControls";
+import { useSettingsStore, Theme } from "@/stores/settingsStore";
+import { useEditorsStore, TerminalConfig } from "@/stores/editorsStore";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { Monitor, Code, Terminal, Search, ChevronRight, Tag, Download, Info, Keyboard, Link2, Server } from "lucide-react";
+import { PageHeader } from "@/components/common";
 import { getVersion } from "@tauri-apps/api/app";
 import { EditorSettings } from "./EditorSettings";
 import { TerminalSettings } from "./TerminalSettings";
@@ -11,11 +13,20 @@ import { LabelSettings } from "./LabelSettings";
 import { UpdateSettings } from "./UpdateSettings";
 import { AboutSettings } from "./AboutSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
+import { ChatBridgeSettings } from "./ChatBridgeSettings";
+import { McpGatewaySettings } from "./McpGatewaySettings";
 
-type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "shortcuts" | "update" | "about" | null;
+type SettingsSection = "appearance" | "editor" | "terminal" | "scan" | "labels" | "shortcuts" | "chatBridge" | "mcpGateway" | "update" | "about" | null;
 
 export function SettingsPage() {
-  const { theme, sidebarCollapsed, setSidebarCollapsed, editors, terminalConfig, scanDepth, labels, appShortcuts } = useAppStore();
+  const theme = useSettingsStore((s) => s.theme);
+  const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useSettingsStore((s) => s.setSidebarCollapsed);
+  const scanDepth = useSettingsStore((s) => s.scanDepth);
+  const appShortcuts = useSettingsStore((s) => s.appShortcuts);
+  const editors = useEditorsStore((s) => s.editors);
+  const terminalConfig = useEditorsStore((s) => s.terminalConfig);
+  const labels = useProjectsStore((s) => s.labels);
   const [activeSection, setActiveSection] = useState<SettingsSection>(null);
   const [appVersion, setAppVersion] = useState<string>("...");
 
@@ -29,6 +40,11 @@ export function SettingsPage() {
     return editors[0].name;
   };
 
+  // 获取主题显示名称
+  const getThemeName = (t: Theme) => {
+    return t === "light" ? "浅色模式" : "深色模式";
+  };
+
   // 获取终端类型显示名称
   const getTerminalTypeName = (type: TerminalConfig["type"]) => {
     const names: Record<string, string> = {
@@ -40,11 +56,6 @@ export function SettingsPage() {
       custom: "自定义终端",
     };
     return names[type] || type;
-  };
-
-  // 获取主题显示名称
-  const getThemeName = (t: Theme) => {
-    return t === "light" ? "浅色模式" : "深色模式";
   };
 
   const settingsCards = [
@@ -97,6 +108,22 @@ export function SettingsPage() {
       component: ShortcutSettings,
     },
     {
+      id: "chatBridge" as const,
+      title: "聊天桥接",
+      description: "OpenClaw 中继，接入飞书/钉钉/企微",
+      icon: Link2,
+      value: "点击配置",
+      component: ChatBridgeSettings,
+    },
+    {
+      id: "mcpGateway" as const,
+      title: "MCP Gateway",
+      description: "将接口库暴露给 Claude/Codex/Kimi/Copilot",
+      icon: Server,
+      value: "外部调用",
+      component: McpGatewaySettings,
+    },
+    {
       id: "update" as const,
       title: "应用更新",
       description: "检查并安装新版本",
@@ -121,22 +148,10 @@ export function SettingsPage() {
   return (
     <div className="flex flex-col min-h-full">
       {/* Header with Title and Integrated Window Controls */}
-      <header className="re-header sticky top-0 z-20" data-tauri-drag-region>
-        <span
-          className="toggle"
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        >
-          ☰
-        </span>
-
-        <div className="flex-1 flex items-center gap-3" data-tauri-drag-region>
-          <span className="text-lg font-semibold ml-2">⚙️ 设置</span>
-        </div>
-
-        <div className="re-actions flex items-center">
-          <MacWindowControls />
-        </div>
-      </header>
+      <PageHeader
+        title="⚙️ 设置"
+        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
 
       <div className="p-5" style={{ marginTop: "40px" }}>
         {/* Settings Cards Grid */}

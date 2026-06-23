@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { addProject } from "@/services/db";
 import { isGitRepo, gitInit } from "@/services/git";
-import { useAppStore } from "@/stores/appStore";
+import { useProjectsStore } from "@/stores/projectsStore";
 import type { Project } from "@/types";
 
 interface AddProjectDialogProps {
@@ -13,7 +13,7 @@ interface AddProjectDialogProps {
 }
 
 export function AddProjectDialog({ onConfirm, onCancel }: AddProjectDialogProps) {
-  const { categories: storeCategories, addCategory, labels: storeLabels, addLabel } = useAppStore();
+  const { categories: storeCategories, addCategory, labels: storeLabels, addLabel } = useProjectsStore();
   const [mode, setMode] = useState<"local" | "git">("local");
   const [localPath, setLocalPath] = useState("");
   const [gitUrl, setGitUrl] = useState("");

@@ -1,6 +1,8 @@
+use crate::error::AppResult;
 use std::process::Command;
 
 use crate::storage;
+use serde::Serialize;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -14,13 +16,14 @@ const CREATE_NEW_CONSOLE: u32 = 0x00000010;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[tauri::command]
-pub async fn open_in_explorer(path: String) -> Result<(), String> {
+#[specta::specta]
+pub async fn open_in_explorer(path: String) -> AppResult<()> {
     #[cfg(target_os = "windows")]
     {
         Command::new("explorer")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("Failed to open explorer: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("Failed to open explorer: {}", e)))?;
     }
 
     #[cfg(target_os = "macos")]
@@ -28,21 +31,18 @@ pub async fn open_in_explorer(path: String) -> Result<(), String> {
         Command::new("open")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("Failed to open Finder: {}", e))?;
+            .map_err(|e| crate::error::AppError::from(format!("Failed to open Finder: {}", e)))?;
     }
 
     #[cfg(target_os = "linux")]
     {
         // Try common file managers
-        let result = Command::new("xdg-open")
-            .arg(&path)
-            .spawn();
+        let result = Command::new("xdg-open").arg(&path).spawn();
 
         if result.is_err() {
-            Command::new("nautilus")
-                .arg(&path)
-                .spawn()
-                .map_err(|e| format!("Failed to open file manager: {}", e))?;
+            Command::new("nautilus").arg(&path).spawn().map_err(|e| {
+                crate::error::AppError::from(format!("Failed to open file manager: {}", e))
+            })?;
         }
     }
 
@@ -50,7 +50,8 @@ pub async fn open_in_explorer(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn open_in_editor(path: String, editor_path: Option<String>) -> Result<(), String> {
+#[specta::specta]
+pub async fn open_in_editor(path: String, editor_path: Option<String>) -> AppResult<()> {
     let editor = editor_path.unwrap_or_else(|| {
         // Default to VS Code if no editor specified
         #[cfg(target_os = "windows")]
@@ -70,37 +71,45 @@ pub async fn open_in_editor(path: String, editor_path: Option<String>) -> Result
             Command::new("open")
                 .args(["-a", &editor, &path])
                 .spawn()
-                .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
+                .map_err(|e| {
+                    crate::error::AppError::from(format!(
+                        "Failed to open editor '{}': {}",
+                        editor, e
+                    ))
+                })?;
         } else {
-            Command::new(&editor)
-                .arg(&path)
-                .spawn()
-                .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
+            Command::new(&editor).arg(&path).spawn().map_err(|e| {
+                crate::error::AppError::from(format!("Failed to open editor '{}': {}", editor, e))
+            })?;
         }
     }
 
     #[cfg(target_os = "windows")]
     {
-        Command::new(&editor)
-            .arg(&path)
-            .spawn()
-            .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
+        Command::new(&editor).arg(&path).spawn().map_err(|e| {
+            crate::error::AppError::from(format!("Failed to open editor '{}': {}", editor, e))
+        })?;
     }
 
     #[cfg(target_os = "linux")]
     {
-        Command::new(&editor)
-            .arg(&path)
-            .spawn()
-            .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
+        Command::new(&editor).arg(&path).spawn().map_err(|e| {
+            crate::error::AppError::from(format!("Failed to open editor '{}': {}", editor, e))
+        })?;
     }
 
     Ok(())
 }
 
 #[tauri::command]
+#[specta::specta]
 #[allow(unused_variables)]
-pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custom_path: Option<String>, terminal_path: Option<String>) -> Result<(), String> {
+pub async fn open_in_terminal(
+    path: String,
+    terminal_type: Option<String>,
+    custom_path: Option<String>,
+    terminal_path: Option<String>,
+) -> AppResult<()> {
     let term_type = terminal_type.unwrap_or_else(|| "default".to_string());
 
     #[cfg(target_os = "windows")]
@@ -111,10 +120,14 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                 // Use Set-Location with -LiteralPath for paths with special characters
                 let escaped_path = path.replace("'", "''");
                 Command::new(ps_path)
-                    .args(["-NoExit", "-Command", &format!("Set-Location -LiteralPath '{}'", escaped_path)])
+                    .args([
+                        "-NoExit",
+                        "-Command",
+                        &format!("Set-Location -LiteralPath '{}'", escaped_path),
+                    ])
                     .creation_flags(CREATE_NEW_CONSOLE)
                     .spawn()
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| crate::error::AppError::from(e.to_string()))?;
             }
             "cmd" => {
                 let cmd_path = terminal_path.as_deref().unwrap_or("cmd");
@@ -123,7 +136,7 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                     .args(["/k", &format!("cd /d \"{}\"", path)])
                     .creation_flags(CREATE_NEW_CONSOLE)
                     .spawn()
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| crate::error::AppError::from(e.to_string()))?;
             }
             "custom" => {
                 if let Some(custom) = custom_path {
@@ -131,25 +144,34 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                         .arg(&path)
                         .creation_flags(CREATE_NEW_CONSOLE)
                         .spawn()
-                        .map_err(|e| format!("Failed to open custom terminal '{}': {}", custom, e))?;
+                        .map_err(|e| {
+                            crate::error::AppError::from(format!(
+                                "Failed to open custom terminal '{}': {}",
+                                custom, e
+                            ))
+                        })?;
                 } else {
-                    return Err("Custom terminal path not provided".to_string());
+                    return Err(crate::error::AppError::from(
+                        "Custom terminal path not provided".to_string(),
+                    ));
                 }
             }
             _ => {
                 // Default: Windows Terminal if available, otherwise PowerShell
                 let wt_path = terminal_path.as_deref().unwrap_or("wt");
-                let wt_result = Command::new(wt_path)
-                    .args(["-d", &path])
-                    .spawn();
+                let wt_result = Command::new(wt_path).args(["-d", &path]).spawn();
 
                 if wt_result.is_err() {
                     let escaped_path = path.replace("'", "''");
                     Command::new("powershell")
-                        .args(["-NoExit", "-Command", &format!("Set-Location -LiteralPath '{}'", escaped_path)])
+                        .args([
+                            "-NoExit",
+                            "-Command",
+                            &format!("Set-Location -LiteralPath '{}'", escaped_path),
+                        ])
                         .creation_flags(CREATE_NEW_CONSOLE)
                         .spawn()
-                        .map_err(|e| e.to_string())?;
+                        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
                 }
             }
         }
@@ -162,7 +184,7 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                 Command::new("open")
                     .args(["-a", "iTerm", &path])
                     .spawn()
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| crate::error::AppError::from(e.to_string()))?;
             }
             "custom" => {
                 if let Some(custom) = custom_path {
@@ -171,15 +193,24 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                         Command::new("open")
                             .args(["-a", &custom, &path])
                             .spawn()
-                            .map_err(|e| format!("Failed to open custom terminal '{}': {}", custom, e))?;
+                            .map_err(|e| {
+                                crate::error::AppError::from(format!(
+                                    "Failed to open custom terminal '{}': {}",
+                                    custom, e
+                                ))
+                            })?;
                     } else {
-                        Command::new(&custom)
-                            .arg(&path)
-                            .spawn()
-                            .map_err(|e| format!("Failed to open custom terminal '{}': {}", custom, e))?;
+                        Command::new(&custom).arg(&path).spawn().map_err(|e| {
+                            crate::error::AppError::from(format!(
+                                "Failed to open custom terminal '{}': {}",
+                                custom, e
+                            ))
+                        })?;
                     }
                 } else {
-                    return Err("Custom terminal path not provided".to_string());
+                    return Err(crate::error::AppError::from(
+                        "Custom terminal path not provided".to_string(),
+                    ));
                 }
             }
             _ => {
@@ -187,7 +218,7 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                 Command::new("open")
                     .args(["-a", "Terminal", &path])
                     .spawn()
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| crate::error::AppError::from(e.to_string()))?;
             }
         }
     }
@@ -200,9 +231,16 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                     Command::new(&custom)
                         .current_dir(&path)
                         .spawn()
-                        .map_err(|e| format!("Failed to open custom terminal '{}': {}", custom, e))?;
+                        .map_err(|e| {
+                            crate::error::AppError::from(format!(
+                                "Failed to open custom terminal '{}': {}",
+                                custom, e
+                            ))
+                        })?;
                 } else {
-                    return Err("Custom terminal path not provided".to_string());
+                    return Err(crate::error::AppError::from(
+                        "Custom terminal path not provided".to_string(),
+                    ));
                 }
             }
             "powershell" => {
@@ -216,7 +254,7 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                     Command::new("powershell")
                         .args(["-NoExit", "-Command", &format!("cd '{}'", path)])
                         .spawn()
-                        .map_err(|e| e.to_string())?;
+                        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
                 }
             }
             "cmd" => {
@@ -229,15 +267,13 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                     Command::new("cmd")
                         .args(["/k", &format!("cd /d {}", path)])
                         .spawn()
-                        .map_err(|e| e.to_string())?;
+                        .map_err(|e| crate::error::AppError::from(e.to_string()))?;
                 }
             }
             _ => {
                 // Default: try Windows Terminal (WSL) with custom path, then common Linux terminals
                 let wt_path = terminal_path.as_deref().unwrap_or("wt.exe");
-                let wt_result = Command::new(wt_path)
-                    .args(["-d", &path])
-                    .spawn();
+                let wt_result = Command::new(wt_path).args(["-d", &path]).spawn();
 
                 if wt_result.is_err() {
                     let terminals = ["gnome-terminal", "konsole", "xterm", "xfce4-terminal"];
@@ -248,9 +284,7 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                             "gnome-terminal" => Command::new(term)
                                 .args(["--working-directory", &path])
                                 .spawn(),
-                            _ => Command::new(term)
-                                .current_dir(&path)
-                                .spawn(),
+                            _ => Command::new(term).current_dir(&path).spawn(),
                         };
 
                         if result.is_ok() {
@@ -260,7 +294,9 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
                     }
 
                     if !opened {
-                        return Err("No supported terminal emulator found".to_string());
+                        return Err(crate::error::AppError::from(
+                            "No supported terminal emulator found".to_string(),
+                        ));
                     }
                 }
             }
@@ -271,14 +307,15 @@ pub async fn open_in_terminal(path: String, terminal_type: Option<String>, custo
 }
 
 #[tauri::command]
-pub async fn open_url(url: String) -> Result<(), String> {
+#[specta::specta]
+pub async fn open_url(url: String) -> AppResult<()> {
     #[cfg(target_os = "windows")]
     {
         Command::new("cmd")
             .args(["/c", "start", "", &url])
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| crate::error::AppError::from(e.to_string()))?;
     }
 
     #[cfg(target_os = "macos")]
@@ -286,7 +323,7 @@ pub async fn open_url(url: String) -> Result<(), String> {
         Command::new("open")
             .arg(&url)
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| crate::error::AppError::from(e.to_string()))?;
     }
 
     #[cfg(target_os = "linux")]
@@ -294,13 +331,13 @@ pub async fn open_url(url: String) -> Result<(), String> {
         Command::new("xdg-open")
             .arg(&url)
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| crate::error::AppError::from(e.to_string()))?;
     }
 
     Ok(())
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 pub struct TerminalTestResult {
     pub available: bool,
     pub error: Option<String>,
@@ -308,7 +345,11 @@ pub struct TerminalTestResult {
 }
 
 #[tauri::command]
-pub async fn test_terminal(terminal_type: String, custom_path: Option<String>) -> Result<TerminalTestResult, String> {
+#[specta::specta]
+pub async fn test_terminal(
+    terminal_type: String,
+    custom_path: Option<String>,
+) -> AppResult<TerminalTestResult> {
     // If custom path provided, test it directly
     if let Some(ref path) = custom_path {
         #[cfg(target_os = "windows")]
@@ -318,9 +359,7 @@ pub async fn test_terminal(terminal_type: String, custom_path: Option<String>) -
             .output();
 
         #[cfg(not(target_os = "windows"))]
-        let result = Command::new(path)
-            .arg("--version")
-            .output();
+        let result = Command::new(path).arg("--version").output();
 
         return Ok(match result {
             Ok(_) => TerminalTestResult {
@@ -350,7 +389,7 @@ pub async fn test_terminal(terminal_type: String, custom_path: Option<String>) -
     }
 }
 
-fn test_powershell() -> Result<TerminalTestResult, String> {
+fn test_powershell() -> AppResult<TerminalTestResult> {
     // Try different PowerShell paths
     let paths_to_try = if cfg!(target_os = "windows") {
         vec![
@@ -379,10 +418,7 @@ fn test_powershell() -> Result<TerminalTestResult, String> {
             .output();
 
         #[cfg(not(target_os = "windows"))]
-        let result = Command::new(path)
-            .arg("-Command")
-            .arg("echo test")
-            .output();
+        let result = Command::new(path).arg("-Command").arg("echo test").output();
 
         if result.is_ok() {
             return Ok(TerminalTestResult {
@@ -404,19 +440,12 @@ fn test_powershell() -> Result<TerminalTestResult, String> {
     })
 }
 
-fn test_cmd() -> Result<TerminalTestResult, String> {
+fn test_cmd() -> AppResult<TerminalTestResult> {
     let paths_to_try = if cfg!(target_os = "windows") {
-        vec![
-            "cmd",
-            "cmd.exe",
-            "C:\\Windows\\System32\\cmd.exe",
-        ]
+        vec!["cmd", "cmd.exe", "C:\\Windows\\System32\\cmd.exe"]
     } else {
         // Linux/WSL
-        vec![
-            "cmd.exe",
-            "/mnt/c/Windows/System32/cmd.exe",
-        ]
+        vec!["cmd.exe", "/mnt/c/Windows/System32/cmd.exe"]
     };
 
     for path in &paths_to_try {
@@ -428,10 +457,7 @@ fn test_cmd() -> Result<TerminalTestResult, String> {
             .output();
 
         #[cfg(not(target_os = "windows"))]
-        let result = Command::new(path)
-            .arg("/c")
-            .arg("echo test")
-            .output();
+        let result = Command::new(path).arg("/c").arg("echo test").output();
 
         if result.is_ok() {
             return Ok(TerminalTestResult {
@@ -453,7 +479,7 @@ fn test_cmd() -> Result<TerminalTestResult, String> {
     })
 }
 
-fn test_macos_terminal() -> Result<TerminalTestResult, String> {
+fn test_macos_terminal() -> AppResult<TerminalTestResult> {
     #[cfg(target_os = "macos")]
     {
         let result = Command::new("osascript")
@@ -483,7 +509,7 @@ fn test_macos_terminal() -> Result<TerminalTestResult, String> {
     })
 }
 
-fn test_iterm() -> Result<TerminalTestResult, String> {
+fn test_iterm() -> AppResult<TerminalTestResult> {
     #[cfg(target_os = "macos")]
     {
         let result = Command::new("osascript")
@@ -513,7 +539,7 @@ fn test_iterm() -> Result<TerminalTestResult, String> {
     })
 }
 
-fn test_default_terminal() -> Result<TerminalTestResult, String> {
+fn test_default_terminal() -> AppResult<TerminalTestResult> {
     #[cfg(target_os = "windows")]
     {
         // Try Windows Terminal first
@@ -542,9 +568,7 @@ fn test_default_terminal() -> Result<TerminalTestResult, String> {
     #[cfg(target_os = "linux")]
     {
         // Try Windows Terminal (WSL) first
-        let wt_result = Command::new("wt.exe")
-            .arg("--version")
-            .output();
+        let wt_result = Command::new("wt.exe").arg("--version").output();
 
         if wt_result.is_ok() {
             return Ok(TerminalTestResult {
@@ -563,9 +587,7 @@ fn test_default_terminal() -> Result<TerminalTestResult, String> {
         ];
 
         for (term, arg) in terminals {
-            let result = Command::new(term)
-                .arg(arg)
-                .output();
+            let result = Command::new(term).arg(arg).output();
 
             if result.is_ok() {
                 return Ok(TerminalTestResult {
@@ -585,40 +607,52 @@ fn test_default_terminal() -> Result<TerminalTestResult, String> {
 }
 
 #[tauri::command]
-pub async fn read_readme(path: String) -> Result<String, String> {
-    use std::path::PathBuf;
+#[specta::specta]
+pub async fn read_readme(path: String) -> AppResult<String> {
     use std::fs;
+    use std::path::PathBuf;
 
     let project_path = PathBuf::from(&path);
 
     // Try different README file names
-    let readme_names = vec!["README.md", "readme.md", "Readme.md", "README.MD", "README", "readme"];
+    let readme_names = vec![
+        "README.md",
+        "readme.md",
+        "Readme.md",
+        "README.MD",
+        "README",
+        "readme",
+    ];
 
     for name in readme_names {
         let readme_path = project_path.join(name);
         if readme_path.exists() {
-            return fs::read_to_string(readme_path)
-                .map_err(|e| format!("Failed to read README: {}", e));
+            return fs::read_to_string(readme_path).map_err(|e| {
+                crate::error::AppError::from(format!("Failed to read README: {}", e))
+            });
         }
     }
 
-    Err("README file not found".to_string())
+    Err(crate::error::AppError::from(
+        "README file not found".to_string(),
+    ))
 }
 
 #[tauri::command]
-pub async fn check_git_version() -> Result<String, String> {
+#[specta::specta]
+pub async fn check_git_version() -> AppResult<String> {
     #[cfg(target_os = "windows")]
     let output = Command::new("git")
         .arg("--version")
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| format!("Git not found: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("Git not found: {}", e)))?;
 
     #[cfg(not(target_os = "windows"))]
     let output = Command::new("git")
         .arg("--version")
         .output()
-        .map_err(|e| format!("Git not found: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("Git not found: {}", e)))?;
 
     if output.status.success() {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -626,34 +660,39 @@ pub async fn check_git_version() -> Result<String, String> {
         let version = version.replace("git version ", "");
         Ok(version)
     } else {
-        Err("Git not installed".to_string())
+        Err(crate::error::AppError::from(
+            "Git not installed".to_string(),
+        ))
     }
 }
 
 #[tauri::command]
-pub async fn check_node_version() -> Result<String, String> {
+#[specta::specta]
+pub async fn check_node_version() -> AppResult<String> {
     #[cfg(target_os = "windows")]
     let output = Command::new("node")
         .arg("--version")
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| format!("Node.js not found: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("Node.js not found: {}", e)))?;
 
     #[cfg(not(target_os = "windows"))]
     let output = Command::new("node")
         .arg("--version")
         .output()
-        .map_err(|e| format!("Node.js not found: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("Node.js not found: {}", e)))?;
 
     if output.status.success() {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(version)
     } else {
-        Err("Node.js not installed".to_string())
+        Err(crate::error::AppError::from(
+            "Node.js not installed".to_string(),
+        ))
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 pub struct AppPaths {
     pub data_dir: String,
     pub config_dir: String,
@@ -663,7 +702,8 @@ pub struct AppPaths {
 }
 
 #[tauri::command]
-pub async fn get_app_paths(app_handle: tauri::AppHandle) -> Result<AppPaths, String> {
+#[specta::specta]
+pub async fn get_app_paths(app_handle: tauri::AppHandle) -> AppResult<AppPaths> {
     use tauri::Manager;
 
     let path_resolver = app_handle.path();
@@ -676,26 +716,34 @@ pub async fn get_app_paths(app_handle: tauri::AppHandle) -> Result<AppPaths, Str
         )
     } else {
         (
-            path_resolver.app_data_dir()
+            path_resolver
+                .app_data_dir()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| "未知".to_string()),
-            path_resolver.app_log_dir()
+            path_resolver
+                .app_log_dir()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| "未知".to_string()),
         )
     };
 
-    let config_dir = path_resolver.app_config_dir()
+    let config_dir = path_resolver
+        .app_config_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| "未知".to_string());
 
-    let cache_dir = path_resolver.app_cache_dir()
+    let cache_dir = path_resolver
+        .app_cache_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| "未知".to_string());
 
     // 获取当前可执行文件路径
     let install_dir = std::env::current_exe()
-        .map(|p| p.parent().map(|parent| parent.to_string_lossy().to_string()).unwrap_or_else(|| "未知".to_string()))
+        .map(|p| {
+            p.parent()
+                .map(|parent| parent.to_string_lossy().to_string())
+                .unwrap_or_else(|| "未知".to_string())
+        })
         .unwrap_or_else(|_| "未知".to_string());
 
     Ok(AppPaths {
@@ -708,17 +756,19 @@ pub async fn get_app_paths(app_handle: tauri::AppHandle) -> Result<AppPaths, Str
 }
 
 #[tauri::command]
-pub async fn clear_logs(app_handle: tauri::AppHandle) -> Result<String, String> {
-    use tauri::Manager;
+#[specta::specta]
+pub async fn clear_logs(app_handle: tauri::AppHandle) -> AppResult<String> {
     use std::fs;
+    use tauri::Manager;
 
     // 优先使用新的日志路径
     let log_dir = if let Ok(config) = storage::get_storage_config() {
         config.logs_dir.clone()
     } else {
         let path_resolver = app_handle.path();
-        path_resolver.app_log_dir()
-            .map_err(|e| format!("无法获取日志目录: {}", e))?
+        path_resolver
+            .app_log_dir()
+            .map_err(|e| crate::error::AppError::from(format!("无法获取日志目录: {}", e)))?
     };
 
     if !log_dir.exists() {
@@ -730,7 +780,7 @@ pub async fn clear_logs(app_handle: tauri::AppHandle) -> Result<String, String> 
 
     // 遍历日志目录中的所有文件
     let entries = fs::read_dir(&log_dir)
-        .map_err(|e| format!("无法读取日志目录: {}", e))?;
+        .map_err(|e| crate::error::AppError::from(format!("无法读取日志目录: {}", e)))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -752,5 +802,126 @@ pub async fn clear_logs(app_handle: tauri::AppHandle) -> Result<String, String> 
         format!("{} B", total_size)
     };
 
-    Ok(format!("已清除 {} 个日志文件，释放 {}", deleted_count, size_str))
+    Ok(format!(
+        "已清除 {} 个日志文件，释放 {}",
+        deleted_count, size_str
+    ))
+}
+
+#[derive(serde::Serialize, specta::Type)]
+pub struct CursorPosition {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// 获取鼠标光标的屏幕坐标（同步命令，在主线程执行）
+#[tauri::command]
+#[specta::specta]
+pub fn get_cursor_position() -> AppResult<CursorPosition> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSEvent;
+        use objc2_foundation::MainThreadMarker;
+
+        let _mtm = MainThreadMarker::new()
+            .ok_or_else(|| crate::error::AppError::from("必须在主线程调用".to_string()))?;
+        let point = NSEvent::mouseLocation();
+        // macOS 坐标系：原点在左下角，需要转换为左上角
+        let screen_height = {
+            use objc2_app_kit::NSScreen;
+            NSScreen::mainScreen(_mtm)
+                .map(|s| s.frame().size.height)
+                .unwrap_or(900.0)
+        };
+        Ok(CursorPosition {
+            x: point.x,
+            y: screen_height - point.y,
+        })
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+        let mut point = POINT { x: 0, y: 0 };
+        unsafe {
+            GetCursorPos(&mut point)
+                .map_err(|e| crate::error::AppError::from(format!("GetCursorPos failed: {}", e)))?;
+        }
+        Ok(CursorPosition {
+            x: point.x as f64,
+            y: point.y as f64,
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Err(crate::error::AppError::from(
+            "Linux 暂不支持获取光标位置".to_string(),
+        ))
+    }
+}
+
+// ============== 架构检测（更新器使用） ==============
+
+/// 当前 app 二进制 + 实际宿主机的架构状态
+///
+/// macOS 关键场景：Intel 二进制跑在 Apple Silicon 上时（Rosetta 翻译），
+/// 编译时的 ARCH = "x86_64" 但宿主其实是 "aarch64"。Tauri 更新器只会
+/// 按二进制架构去 latest.json 里查链接，永远拿不到匹配宿主的那一份。
+#[derive(Debug, Serialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchStatus {
+    /// 当前进程的编译目标架构（rust target arch）："x86_64" / "aarch64" / ...
+    pub binary_arch: String,
+    /// 宿主机的真实物理架构
+    pub host_arch: String,
+    /// 操作系统："macos" / "windows" / "linux"
+    pub os: String,
+    /// 是否运行在 Rosetta 翻译层下（macOS 专有；其他平台恒 false）
+    pub is_rosetta: bool,
+    /// binary_arch != host_arch 即视为不匹配
+    pub mismatch: bool,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_arch_status() -> AppResult<ArchStatus> {
+    let binary_arch = std::env::consts::ARCH.to_string();
+    let os = std::env::consts::OS.to_string();
+
+    #[cfg(target_os = "macos")]
+    let is_rosetta = is_running_under_rosetta();
+    #[cfg(not(target_os = "macos"))]
+    let is_rosetta = false;
+
+    let host_arch = if is_rosetta {
+        // Rosetta：x86_64 二进制 / aarch64 宿主
+        "aarch64".to_string()
+    } else {
+        binary_arch.clone()
+    };
+
+    let mismatch = host_arch != binary_arch;
+
+    Ok(ArchStatus {
+        binary_arch,
+        host_arch,
+        os,
+        is_rosetta,
+        mismatch,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn is_running_under_rosetta() -> bool {
+    // sysctl.proc_translated == 1 表示当前进程在 Rosetta 下运行
+    match Command::new("sysctl")
+        .args(["-in", "sysctl.proc_translated"])
+        .output()
+    {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).trim() == "1",
+        Err(_) => false,
+    }
 }

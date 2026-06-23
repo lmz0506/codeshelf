@@ -10,7 +10,10 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { CommitHeatmap } from "@/components/ui";
-import { useAppStore } from "@/stores/appStore";
+import { EmptyState, PageHeader } from "@/components/common";
+import { useProjectsStore } from "@/stores/projectsStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { navigateToProject } from "@/stores/navigation";
 import {
   initStatsCache,
   refreshDashboardStats,
@@ -19,10 +22,10 @@ import {
   type RecentCommit,
 } from "@/services/stats";
 import type { DashboardStats, DailyActivity } from "@/types";
-import { MacWindowControls } from "@/components/layout/MacWindowControls";
 
 export function DashboardPage() {
-  const { projects, sidebarCollapsed, setSidebarCollapsed, navigateToProject } = useAppStore();
+  const projects = useProjectsStore((s) => s.projects);
+  const { sidebarCollapsed, setSidebarCollapsed } = useSettingsStore();
   const [stats, setStats] = useState<DashboardStats>({
     totalProjects: 0,
     todayCommits: 0,
@@ -170,20 +173,11 @@ export function DashboardPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header with Title and Integrated Window Controls */}
-      <header className="re-header flex-shrink-0" data-tauri-drag-region>
-        <span
-          className="toggle"
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        >
-          ☰
-        </span>
-
-        <div className="flex-1 flex items-center gap-3" data-tauri-drag-region>
-          <span className="text-lg font-semibold ml-2">📊 数据统计</span>
-        </div>
-
-        <div className="re-actions flex items-center">
-          {/* Refresh Button */}
+      <PageHeader
+        title="📊 数据统计"
+        sticky={false}
+        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+        actions={
           <button
             onClick={handleRefreshStats}
             disabled={refreshing || loading}
@@ -193,10 +187,8 @@ export function DashboardPage() {
             <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
             <span>{refreshing ? '刷新中...' : '刷新'}</span>
           </button>
-
-          <MacWindowControls />
-        </div>
-      </header>
+        }
+      />
 
       {loading ? (
         <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
@@ -304,10 +296,7 @@ export function DashboardPage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                  <GitCommit size={28} className="mb-2 opacity-50" />
-                  <p className="text-sm">暂无提交记录</p>
-                </div>
+                <EmptyState icon={GitCommit} title="暂无提交记录" className="flex-1 flex flex-col items-center justify-center" />
               )}
             </div>
           </div>

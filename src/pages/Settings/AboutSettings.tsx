@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { CheckCircle, XCircle, Loader2, ExternalLink, Github, Heart, FolderOpen, Copy, Check, Trash2, Download, AlertCircle } from "lucide-react";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 
 interface DependencyStatus {
   name: string;
@@ -28,7 +29,7 @@ interface AboutSettingsProps {
 export function AboutSettings(_props: AboutSettingsProps) {
   const [appVersion, setAppVersion] = useState<string>("...");
   const [appPaths, setAppPaths] = useState<AppPaths | null>(null);
-  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const { copy, copiedLabel: copiedPath } = useCopyToClipboard();
   const [clearingLogs, setClearingLogs] = useState(false);
   const [clearLogResult, setClearLogResult] = useState<string | null>(null);
   const [dependencies, setDependencies] = useState<DependencyStatus[]>([
@@ -116,14 +117,8 @@ export function AboutSettings(_props: AboutSettingsProps) {
     }
   };
 
-  const copyToClipboard = async (path: string, label: string) => {
-    try {
-      await navigator.clipboard.writeText(path);
-      setCopiedPath(label);
-      setTimeout(() => setCopiedPath(null), 2000);
-    } catch (e) {
-      console.error("Failed to copy:", e);
-    }
+  const copyToClipboard = (path: string, label: string) => {
+    copy(path, label);
   };
 
   const clearLogs = async () => {
@@ -308,7 +303,7 @@ export function AboutSettings(_props: AboutSettingsProps) {
           {pathItems.map((item) => (
             <div
               key={item.label}
-              className="re-card p-3 flex items-center justify-between group"
+              className="bg-white rounded-2xl border border-gray-200 shadow-sm p-3 flex items-center justify-between"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
